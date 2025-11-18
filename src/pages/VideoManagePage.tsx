@@ -574,6 +574,13 @@ export default function VideoManagePage() {
     }
 
     setLoading(true);
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    // 创建 AbortController 用于取消上传
+    const abortController = new AbortController();
+    setUploadAbortController(abortController);
+    
     try {
       const { supabase } = await import('../api/supabase');
       const { uploadVideoFile, saveAnnotations } = await import('../api/database');
@@ -587,13 +594,74 @@ export default function VideoManagePage() {
           throw new Error('无法获取视频文件对象');
         }
         
-        const videoUrl = await uploadVideoFile(updateVideoFile.originFileObj as File);
+        const videoFile = updateVideoFile.originFileObj as File;
+        const fileSizeMB = videoFile.size / 1024 / 1024;
+        
+        // 检查文件大小
+        if (fileSizeMB > 1024) {
+          message.error({
+            content: `文件过大 (${fileSizeMB.toFixed(1)}MB)，超过1GB限制，无法上传。`,
+            duration: 5
+          });
+          setUploadProgress(0);
+          setIsUploading(false);
+          setUploadAbortController(null);
+          return;
+        }
+        
+        // 记录上传开始时间
+        const uploadStartTime = Date.now();
+        
+        // 模拟上传进度
+        const progressInterval = setInterval(() => {
+          if (!abortController.signal.aborted) {
+            setUploadProgress(prev => {
+              let newProgress = prev;
+              if (prev < 70) {
+                newProgress = prev + 3;
+              } else if (prev < 90) {
+                newProgress = prev + 1;
+              } else if (prev < 95) {
+                newProgress = prev + 0.5;
+              }
+              
+              // 计算上传速度和剩余时间
+              const currentTime = Date.now();
+              const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
+              
+              if (elapsedSeconds > 0) {
+                const uploadedBytes = (newProgress / 100) * videoFile.size;
+                const uploadedMB = uploadedBytes / 1024 / 1024;
+                const speed = uploadedBytes / 1024 / 1024 / elapsedSeconds;
+                const remainingBytes = videoFile.size - uploadedBytes;
+                const remainingSeconds = remainingBytes / (speed * 1024 * 1024);
+                
+                setUploadedSize(`${uploadedMB.toFixed(1)}/${fileSizeMB.toFixed(1)} MB`);
+                setUploadSpeed(`${speed.toFixed(2)} MB/s`);
+                
+                if (remainingSeconds < 60) {
+                  setRemainingTime(`约 ${Math.ceil(remainingSeconds)} 秒`);
+                } else {
+                  setRemainingTime(`约 ${Math.ceil(remainingSeconds / 60)} 分钟`);
+                }
+              }
+              
+              return newProgress;
+            });
+          }
+        }, 2000);
+        
+        setUploadProgress(10);
+        const videoUrl = await uploadVideoFile(videoFile);
+        
+        clearInterval(progressInterval);
         
         if (!videoUrl) {
           throw new Error('视频上传失败，未返回URL');
         }
         
         console.log('✅ 视频上传成功，URL:', videoUrl);
+        setUploadProgress(95);
         
         // 更新视频URL和名称
         const { error } = await supabase
@@ -613,9 +681,11 @@ export default function VideoManagePage() {
 
       // 如果有新Excel文件，解析并更新标注数据
       if (updateExcelFile) {
+        setUploadProgress(updateVideoFile ? 96 : 20);
         console.log('📤 解析并更新Excel数据...');
         const excelData = await parseExcel(updateExcelFile.originFileObj as File);
         
+        setUploadProgress(updateVideoFile ? 97 : 60);
         // 删除旧的标注数据
         const { error: deleteError } = await supabase
           .from('annotations')
@@ -626,21 +696,45 @@ export default function VideoManagePage() {
           throw deleteError;
         }
 
+        setUploadProgress(updateVideoFile ? 98 : 80);
         // 插入新的标注数据
         await saveAnnotations(currentEditRecord.id, excelData);
         
         console.log('✅ Excel数据已更新');
       }
 
+      setUploadProgress(100);
       message.success('更新成功');
-      setIsUpdateModalVisible(false);
-      setUpdateVideoFile(null);
-      setUpdateExcelFile(null);
-      setCurrentEditRecord(null);
-      loadVideoList();
+      
+      // 延迟关闭，让用户看到100%
+      setTimeout(() => {
+        setIsUpdateModalVisible(false);
+        setUpdateVideoFile(null);
+        setUpdateExcelFile(null);
+        setCurrentEditRecord(null);
+        setUploadProgress(0);
+        setIsUploading(false);
+        setUploadAbortController(null);
+        setUploadSpeed('');
+        setUploadedSize('');
+        setRemainingTime('');
+        loadVideoList();
+      }, 500);
     } catch (error) {
       console.error('❌ 更新失败:', error);
-      message.error('更新失败');
+      
+      if (abortController.signal.aborted) {
+        message.info('更新已取消');
+      } else {
+        message.error('更新失败');
+      }
+      
+      setUploadProgress(0);
+      setIsUploading(false);
+      setUploadAbortController(null);
+      setUploadSpeed('');
+      setUploadedSize('');
+      setRemainingTime('');
     } finally {
       setLoading(false);
     }
@@ -1136,6 +1230,48 @@ export default function VideoManagePage() {
             </div>
           </div>
 
+          {/* 上传进度条 */}
+          {isUploading && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '14px', fontWeight: 500 }}>
+                  更新进度：{uploadProgress.toFixed(1)}%
+                </span>
+                {uploadAbortController && (
+                  <Button 
+                    size="small" 
+                    danger 
+                    onClick={() => {
+                      if (uploadAbortController) {
+                        uploadAbortController.abort();
+                        message.info('正在取消更新...');
+                      }
+                    }}
+                  >
+                    取消更新
+                  </Button>
+                )}
+              </div>
+              <Progress 
+                percent={uploadProgress} 
+                status={uploadProgress === 100 ? 'success' : 'active'}
+                strokeColor={{
+                  '0%': '#108ee9',
+                  '100%': '#87d068',
+                }}
+              />
+              {uploadSpeed && (
+                <div style={{ marginTop: 8, fontSize: '13px', color: '#666' }}>
+                  <Space split="|">
+                    <span>📦 {uploadedSize}</span>
+                    <span>⚡ {uploadSpeed}</span>
+                    <span>⏱️ {remainingTime}</span>
+                  </Space>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <div style={{ marginBottom: 8, color: '#666' }}>
               更新视频文件（选填，不选则保持原视频）：
@@ -1154,8 +1290,9 @@ export default function VideoManagePage() {
               onRemove={() => setUpdateVideoFile(null)}
               accept="video/*"
               maxCount={1}
+              disabled={isUploading}
             >
-              <Button icon={<UploadOutlined />}>选择新视频</Button>
+              <Button icon={<UploadOutlined />} disabled={isUploading}>选择新视频</Button>
             </Upload>
           </div>
 
@@ -1177,8 +1314,9 @@ export default function VideoManagePage() {
               onRemove={() => setUpdateExcelFile(null)}
               accept=".xlsx,.xls"
               maxCount={1}
+              disabled={isUploading}
             >
-              <Button icon={<UploadOutlined />}>选择新Excel</Button>
+              <Button icon={<UploadOutlined />} disabled={isUploading}>选择新Excel</Button>
             </Upload>
           </div>
 
