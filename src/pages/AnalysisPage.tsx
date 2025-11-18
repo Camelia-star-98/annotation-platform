@@ -439,11 +439,18 @@ export default function AnalysisPage() {
                     包含以下 {videos.length} 个视频的所有标注数据：
                   </Text>
                   {selectedVideoNames.length > 0 ? (
-                    selectedVideoNames.map((name, index) => (
-                      <Tag key={index} color="blue" style={{ marginBottom: 8, marginRight: 8 }}>
-                        {name}
-                      </Tag>
-                    ))
+                    <div style={{ marginBottom: 16 }}>
+                      {videos.map((video, index) => (
+                        <div key={index} style={{ marginBottom: 8 }}>
+                          <Tag color="blue" style={{ marginRight: 8 }}>
+                            {video.name}
+                          </Tag>
+                          <Tag color={video.subject && video.subject !== '未知' ? 'green' : 'red'}>
+                            科目: {video.subject || '未设置'}
+                          </Tag>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <Text type="secondary">暂无选中的视频</Text>
                   )}
