@@ -223,8 +223,11 @@ export async function saveAnnotations(
     // 这里重复 upsert 会用 annotations[0].videoUrl（空值）覆盖正确的 URL
 
     // 第2步：转换并保存标注数据
+    // 每个标注人有独立的数据副本，ID包含标注人姓名
+    const annotatorName = annotations[0]?.annotator || 'unknown';
+    
     const data = annotations.map((item, index) => ({
-      id: item.id || `${videoId}_${index + 1}`, // 如果没有ID，自动生成
+      id: item.id || `${videoId}_${item.sentenceNo || index + 1}_${annotatorName}`, // ID包含标注人，实现数据隔离
       video_id: videoId,
       sentence_no: item.sentenceNo,
       time_range: item.timeRange,
@@ -237,8 +240,11 @@ export async function saveAnnotations(
       minor_category: item.minorCategory || '',
       remark: item.remark || '',
       status: item.status || false,
-      annotator: item.annotator || ''
+      annotator: annotatorName
     }));
+
+    console.log('📝 标注人:', annotatorName);
+    console.log('📝 生成的ID示例:', data[0]?.id);
 
     // 使用upsert（如果存在则更新，不存在则插入）
     const { error } = await supabase

@@ -59,7 +59,7 @@ export default function AnnotationPage() {
   const loadVideoData = async (id: string) => {
     setLoading(true);
     try {
-      const { getVideos, getAnnotations } = await import('../api/database');
+      const { getVideos, supabase } = await import('../api/database');
       
       // 获取视频信息
       const allVideos = await getVideos();
@@ -69,14 +69,87 @@ export default function AnnotationPage() {
         setCurrentVideo(video);
       }
       
-      // 获取标注数据
-      const annotationData = await getAnnotations(id);
+      // 获取当前标注人的标注数据
+      console.log('🔍 查询标注数据 - 视频ID:', id, '标注人:', userName);
+      const { data: myAnnotations, error } = await supabase
+        .from('annotations')
+        .select('*')
+        .eq('video_id', id)
+        .eq('annotator', userName)
+        .order('sentence_no', { ascending: true });
+
+      if (error) {
+        console.error('❌ 获取标注数据失败:', error);
+        throw error;
+      }
+
+      console.log('📊 找到的标注数据:', myAnnotations?.length || 0, '条');
       
-      if (annotationData.length > 0) {
-        setAnnotations(annotationData);
-        message.success(`加载了 ${annotationData.length} 条标注数据`);
+      if (myAnnotations && myAnnotations.length > 0) {
+        // 已有标注数据，加载自己的标注
+        const formattedData = myAnnotations.map(item => ({
+          id: item.id,
+          videoId: item.video_id,
+          sentenceNo: item.sentence_no,
+          timeRange: item.time_range,
+          startTime: item.start_time,
+          endTime: item.end_time,
+          originalText: item.original_text,
+          aiRewrittenText: item.ai_rewritten_text,
+          humanAnnotatedText: item.human_annotated_text,
+          majorCategory: item.major_category || '',
+          minorCategory: item.minor_category || '',
+          remark: item.remark || '',
+          status: item.status || false,
+          annotator: item.annotator || '',
+          isQualified: item.is_qualified,
+          inspector: item.inspector || '',
+          reviewer: item.reviewer || '',
+          reviewStatus: item.review_status
+        }));
+        
+        setAnnotations(formattedData);
+        message.success(`加载了您的标注数据：${formattedData.length} 条`);
       } else {
-        message.warning('该视频暂无标注数据');
+        // 第一次标注，加载原始数据模板（任意一个标注人的数据作为模板，或者从上传的数据）
+        console.log('🆕 第一次标注，加载原始数据模板');
+        
+        // 获取任意一份标注数据作为模板（获取原文、AI改写等基础数据）
+        const { data: templateData } = await supabase
+          .from('annotations')
+          .select('*')
+          .eq('video_id', id)
+          .order('sentence_no', { ascending: true })
+          .limit(200);
+
+        if (templateData && templateData.length > 0) {
+          // 使用模板数据，但清空标注内容
+          const newAnnotations = templateData.map((item, index) => ({
+            id: `${id}_${item.sentence_no || index + 1}_${userName}`, // 新ID包含当前标注人
+            videoId: id,
+            sentenceNo: item.sentence_no,
+            timeRange: item.time_range,
+            startTime: item.start_time,
+            endTime: item.end_time,
+            originalText: item.original_text,
+            aiRewrittenText: item.ai_rewritten_text,
+            humanAnnotatedText: '', // 清空，等待标注
+            majorCategory: '',
+            minorCategory: '',
+            remark: '',
+            status: false,
+            annotator: userName,
+            isQualified: undefined,
+            inspector: '',
+            reviewer: '',
+            reviewStatus: undefined
+          }));
+          
+          setAnnotations(newAnnotations);
+          message.info(`首次标注：加载了 ${newAnnotations.length} 条待标注数据`);
+        } else {
+          message.warning('该视频暂无标注数据模板');
+        }
       }
     } catch (error) {
       console.error('加载视频数据失败:', error);
