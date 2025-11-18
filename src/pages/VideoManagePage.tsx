@@ -566,32 +566,49 @@ export default function VideoManagePage() {
   // 执行更新
   const handleUpdateSubmit = async () => {
     if (!currentEditRecord) return;
+    
+    // 验证是否至少选择了一个文件
+    if (!updateVideoFile && !updateExcelFile) {
+      message.warning('请至少选择一个文件进行更新');
+      return;
+    }
 
     setLoading(true);
     try {
       const { supabase } = await import('../api/supabase');
-      const { addVideo } = await import('../api/database');
+      const { uploadVideoFile, saveAnnotations } = await import('../api/database');
 
       // 如果有新视频文件，上传并更新
       if (updateVideoFile) {
-        console.log('📤 上传新视频文件...');
+        console.log('📤 上传新视频文件...', updateVideoFile);
+        
+        // 验证文件对象
+        if (!updateVideoFile.originFileObj) {
+          throw new Error('无法获取视频文件对象');
+        }
+        
         const videoUrl = await uploadVideoFile(updateVideoFile.originFileObj as File);
         
-        if (videoUrl) {
-          // 更新视频URL
-          const { error } = await supabase
-            .from('videos')
-            .update({ 
-              url: videoUrl,
-              name: updateVideoFile.name 
-            })
-            .eq('id', currentEditRecord.id);
-
-          if (error) {
-            throw error;
-          }
-          console.log('✅ 视频已更新');
+        if (!videoUrl) {
+          throw new Error('视频上传失败，未返回URL');
         }
+        
+        console.log('✅ 视频上传成功，URL:', videoUrl);
+        
+        // 更新视频URL和名称
+        const { error } = await supabase
+          .from('videos')
+          .update({ 
+            url: videoUrl,
+            name: updateVideoFile.name 
+          })
+          .eq('id', currentEditRecord.id);
+
+        if (error) {
+          console.error('❌ 更新数据库失败:', error);
+          throw error;
+        }
+        console.log('✅ 视频信息已更新到数据库');
       }
 
       // 如果有新Excel文件，解析并更新标注数据
@@ -610,7 +627,6 @@ export default function VideoManagePage() {
         }
 
         // 插入新的标注数据
-        const { saveAnnotations } = await import('../api/database');
         await saveAnnotations(currentEditRecord.id, excelData);
         
         console.log('✅ Excel数据已更新');
