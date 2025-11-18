@@ -66,6 +66,12 @@ export default function VideoManagePage() {
   const [videoFileList, setVideoFileList] = useState<UploadFile[]>([]);
   const [excelFileList, setExcelFileList] = useState<UploadFile[]>([]);
   const [requiredAnnotators, setRequiredAnnotators] = useState<number>(1); // 待标注数量
+  
+  // 更新相关状态
+  const [isUpdateModalVisible, setIsUpdateModalVisible] = useState(false);
+  const [currentEditRecord, setCurrentEditRecord] = useState<VideoData | null>(null);
+  const [updateVideoFile, setUpdateVideoFile] = useState<UploadFile | null>(null);
+  const [updateExcelFile, setUpdateExcelFile] = useState<UploadFile | null>(null);
 
   // 加载视频列表
   useEffect(() => {
@@ -524,7 +530,78 @@ export default function VideoManagePage() {
     });
   };
 
-  // 删除视频
+  // 更新视频或Excel
+  const handleUpdate = (record: VideoData) => {
+    setCurrentEditRecord(record);
+    setIsUpdateModalVisible(true);
+  };
+
+  // 执行更新
+  const handleUpdateSubmit = async () => {
+    if (!currentEditRecord) return;
+
+    setLoading(true);
+    try {
+      const { supabase } = await import('../api/supabase');
+      const { addVideo } = await import('../api/database');
+
+      // 如果有新视频文件，上传并更新
+      if (updateVideoFile) {
+        console.log('📤 上传新视频文件...');
+        const videoUrl = await uploadVideoFile(updateVideoFile.originFileObj as File);
+        
+        if (videoUrl) {
+          // 更新视频URL
+          const { error } = await supabase
+            .from('videos')
+            .update({ 
+              url: videoUrl,
+              name: updateVideoFile.name 
+            })
+            .eq('id', currentEditRecord.id);
+
+          if (error) {
+            throw error;
+          }
+          console.log('✅ 视频已更新');
+        }
+      }
+
+      // 如果有新Excel文件，解析并更新标注数据
+      if (updateExcelFile) {
+        console.log('📤 解析并更新Excel数据...');
+        const excelData = await parseExcel(updateExcelFile.originFileObj as File);
+        
+        // 删除旧的标注数据
+        const { error: deleteError } = await supabase
+          .from('annotations')
+          .delete()
+          .eq('video_id', currentEditRecord.id);
+
+        if (deleteError) {
+          throw deleteError;
+        }
+
+        // 插入新的标注数据
+        const { saveAnnotations } = await import('../api/database');
+        await saveAnnotations(currentEditRecord.id, excelData);
+        
+        console.log('✅ Excel数据已更新');
+      }
+
+      message.success('更新成功');
+      setIsUpdateModalVisible(false);
+      setUpdateVideoFile(null);
+      setUpdateExcelFile(null);
+      setCurrentEditRecord(null);
+      loadVideoList();
+    } catch (error) {
+      console.error('❌ 更新失败:', error);
+      message.error('更新失败');
+    } finally {
+      setLoading(false);
+    }
+  };
   const handleDelete = async (record: VideoData) => {
     setLoading(true);
     try {
@@ -713,10 +790,17 @@ export default function VideoManagePage() {
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 200,
       align: 'center' as const,
       render: (_: any, record: VideoData) => (
         <Space>
+          <Button
+            size="small"
+            icon={<UploadOutlined />}
+            onClick={() => handleUpdate(record)}
+          >
+            更新
+          </Button>
           <Popconfirm
             title="确定要删除吗？"
             description="删除后数据将无法恢复，包括视频文件和所有标注数据"
@@ -951,6 +1035,96 @@ export default function VideoManagePage() {
             <div style={{ marginTop: 4, fontSize: '12px', color: '#999' }}>
               设置需要多少人对此视频进行标注
             </div>
+          </div>
+        </Space>
+      </Modal>
+
+      {/* 更新弹窗 */}
+      <Modal
+        title={`更新：${currentEditRecord?.videoName || ''}`}
+        open={isUpdateModalVisible}
+        onOk={handleUpdateSubmit}
+        onCancel={() => {
+          setIsUpdateModalVisible(false);
+          setUpdateVideoFile(null);
+          setUpdateExcelFile(null);
+          setCurrentEditRecord(null);
+        }}
+        okText="确认更新"
+        cancelText="取消"
+        width={600}
+        confirmLoading={loading}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="large">
+          <div style={{ 
+            padding: '12px', 
+            background: '#f0f2f5', 
+            borderRadius: '4px',
+            marginBottom: 16 
+          }}>
+            <div style={{ marginBottom: 8 }}>
+              <strong>当前视频：</strong> {currentEditRecord?.videoName}
+            </div>
+            <div>
+              <strong>当前表格：</strong> {currentEditRecord?.excelName}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ marginBottom: 8, color: '#666' }}>
+              更新视频文件（选填，不选则保持原视频）：
+            </div>
+            <Upload
+              fileList={updateVideoFile ? [updateVideoFile] : []}
+              beforeUpload={(file) => {
+                setUpdateVideoFile({
+                  uid: file.uid || Date.now().toString(),
+                  name: file.name,
+                  status: 'done',
+                  originFileObj: file
+                } as any);
+                return false;
+              }}
+              onRemove={() => setUpdateVideoFile(null)}
+              accept="video/*"
+              maxCount={1}
+            >
+              <Button icon={<UploadOutlined />}>选择新视频</Button>
+            </Upload>
+          </div>
+
+          <div>
+            <div style={{ marginBottom: 8, color: '#666' }}>
+              更新标注表格（选填，不选则保持原表格）：
+            </div>
+            <Upload
+              fileList={updateExcelFile ? [updateExcelFile] : []}
+              beforeUpload={(file) => {
+                setUpdateExcelFile({
+                  uid: file.uid || Date.now().toString(),
+                  name: file.name,
+                  status: 'done',
+                  originFileObj: file
+                } as any);
+                return false;
+              }}
+              onRemove={() => setUpdateExcelFile(null)}
+              accept=".xlsx,.xls"
+              maxCount={1}
+            >
+              <Button icon={<UploadOutlined />}>选择新Excel</Button>
+            </Upload>
+          </div>
+
+          <div style={{ 
+            padding: '12px', 
+            background: '#fffbe6', 
+            border: '1px solid #ffe58f',
+            borderRadius: '4px',
+            fontSize: '13px',
+            color: '#666'
+          }}>
+            💡 提示：只需上传要更新的文件，未选择的文件将保持不变
           </div>
         </Space>
       </Modal>
