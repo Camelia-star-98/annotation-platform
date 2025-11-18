@@ -713,26 +713,17 @@ export default function VideoManagePage() {
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 150,
       align: 'center' as const,
       render: (_: any, record: VideoData) => (
         <Space>
-          <Button
-            size="small"
-            icon={<UploadOutlined />}
-            onClick={() => {
-              // TODO: 实现更新功能
-              message.info('更新功能开发中');
-            }}
-          >
-            更新
-          </Button>
           <Popconfirm
             title="确定要删除吗？"
-            description="删除后数据将无法恢复"
+            description="删除后数据将无法恢复，包括视频文件和所有标注数据"
             onConfirm={() => handleDelete(record)}
             okText="确定"
             cancelText="取消"
+            okButtonProps={{ danger: true }}
           >
             <Button size="small" danger icon={<DeleteOutlined />}>
               删除
