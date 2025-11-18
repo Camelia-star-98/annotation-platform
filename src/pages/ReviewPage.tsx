@@ -189,34 +189,37 @@ export default function ReviewPage() {
     try {
       const { supabase } = await import('../api/supabase');
       
-      // 1. 更新所有已复检的数据
+      // 1. 获取所有已复检的数据ID
       const reviewedItems = reviewData.filter(item => item.status);
+      const reviewedIds = reviewedItems.map(item => item.id);
       
       console.log('📝 准备保存复检结果:', {
         videoId,
         videoName,
         annotatorName,
         reviewerName,
-        reviewedCount: reviewedItems.length
+        reviewedCount: reviewedItems.length,
+        reviewedIds
       });
 
-      // 批量更新复检状态
-      for (const item of reviewedItems) {
-        const { error } = await supabase
-          .from('annotations')
-          .update({
-            reviewer: reviewerName,
-            review_status: true, // 假设复检通过
-            status: true
-          })
-          .eq('id', item.id);
+      // 2. 批量更新复检状态（一次请求）
+      const { error: updateError } = await supabase
+        .from('annotations')
+        .update({
+          reviewer: reviewerName,
+          review_status: true,
+          status: true
+        })
+        .in('id', reviewedIds);
 
-        if (error) {
-          console.error('更新标注失败:', item.id, error);
-        }
+      if (updateError) {
+        console.error('❌ 批量更新失败:', updateError);
+        throw updateError;
       }
 
-      // 2. 检查该视频的该标注人是否所有数据都复检完成
+      console.log('✅ 批量更新成功，共更新', reviewedIds.length, '条数据');
+
+      // 3. 检查该视频的该标注人是否所有数据都复检完成
       const allReviewed = reviewData.every(item => item.status);
       
       if (allReviewed) {
@@ -232,7 +235,7 @@ export default function ReviewPage() {
           .eq('id', videoId);
 
         if (videoError) {
-          console.error('更新视频状态失败:', videoError);
+          console.error('❌ 更新视频状态失败:', videoError);
         } else {
           console.log('✅ 视频已标记为完成');
         }
@@ -245,8 +248,8 @@ export default function ReviewPage() {
         navigate('/review-select');
       }, 1500);
     } catch (error) {
-      console.error('提交复检失败:', error);
-      message.error('提交复检失败');
+      console.error('❌ 提交复检失败:', error);
+      message.error('提交复检失败，请重试');
     } finally {
       setLoading(false);
     }
