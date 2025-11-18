@@ -369,7 +369,7 @@ export default function InspectionSelectPage() {
           }}>
             <p style={{ margin: 0, fontSize: 14, color: '#1890ff' }}>
               <strong>预计抽样：</strong>
-              约 {Math.ceil((selectedVideo?.pendingInspection || 0) * samplePercentage / 100)} 条数据
+              约 {Math.max(1, Math.ceil((selectedVideo?.pendingInspection || 0) * samplePercentage / 100))} 条数据
             </p>
           </div>
           

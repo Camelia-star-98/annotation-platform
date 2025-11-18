@@ -90,7 +90,9 @@ export default function InspectionManagePage() {
         // 实施抽样（如果不是100%）
         let sampledAnnotations = pendingAnnotations;
         if (samplePercentage < 100) {
-          const sampleSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
+          const calculatedSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
+          // 确保至少抽取1条数据
+          const sampleSize = Math.max(1, calculatedSize);
           
           // Fisher-Yates 洗牌算法随机抽样
           const shuffled = [...pendingAnnotations];
@@ -100,7 +102,7 @@ export default function InspectionManagePage() {
           }
           
           sampledAnnotations = shuffled.slice(0, sampleSize);
-          console.log('🎯 抽样后数据数量:', sampledAnnotations.length);
+          console.log('🎯 抽样后数据数量:', sampledAnnotations.length, '(保证最少1条)');
           setSampledCount(sampledAnnotations.length);
         } else {
           setSampledCount(pendingAnnotations.length);
