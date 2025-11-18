@@ -64,6 +64,12 @@ export default function AnalysisPage() {
       const selectedVids = allVideos.filter(v => selectedVideoIds.includes(v.id));
       setVideos(selectedVids);
       
+      // 创建视频ID到科目的映射
+      const videoSubjectMap = new Map<string, string>();
+      selectedVids.forEach(v => {
+        videoSubjectMap.set(v.id, v.subject || '未知');
+      });
+      
       // 加载所有标注数据
       const allAnnotations = await getAllAnnotations();
       
@@ -74,13 +80,19 @@ export default function AnalysisPage() {
         // 聚合分析：所有选中视频的数据
         filteredData = allAnnotations.filter(item => 
           selectedVideoIds.includes(item.videoId) && item.reviewStatus === true
-        );
+        ).map(item => ({
+          ...item,
+          subject: videoSubjectMap.get(item.videoId) || '未知' // 从视频映射中获取科目
+        }));
       } else {
         // 单视频分析
         const targetVideoId = selectedSingleVideo || selectedVideoIds[0];
         filteredData = allAnnotations.filter(item => 
           item.videoId === targetVideoId && item.reviewStatus === true
-        );
+        ).map(item => ({
+          ...item,
+          subject: videoSubjectMap.get(item.videoId) || '未知'
+        }));
         if (!selectedSingleVideo) {
           setSelectedSingleVideo(targetVideoId);
         }
