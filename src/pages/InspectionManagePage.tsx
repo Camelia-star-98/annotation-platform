@@ -47,7 +47,6 @@ export default function InspectionManagePage() {
   const [filteredData, setFilteredData] = useState<any[]>([]);
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]); // 展开的行
-  const [isModalVisible, setIsModalVisible] = useState(false);
   const [isBatchInspectModalVisible, setIsBatchInspectModalVisible] = useState(false);
   const [batchInspectResult, setBatchInspectResult] = useState<'pass' | 'fail' | null>(null);
   const [inspectorName, setInspectorName] = useState(defaultInspectorName);
@@ -610,39 +609,6 @@ export default function InspectionManagePage() {
           </Card>
         </div>
       </Content>
-
-      {/* 质检人姓名输入弹窗 */}
-      <Modal
-        title="开始质检"
-        open={isModalVisible}
-        onOk={handleConfirmStart}
-        onCancel={() => setIsModalVisible(false)}
-        okText="开始质检"
-        cancelText="取消"
-      >
-        <div style={{ padding: '20px 0' }}>
-          <Space direction="vertical" style={{ width: '100%' }} size="middle">
-            <div>
-              <label style={{ display: 'block', marginBottom: 8 }}>
-                质检人姓名
-              </label>
-              <Input
-                placeholder="请输入姓名"
-                value={inspectorName}
-                onChange={(e) => setInspectorName(e.target.value)}
-                prefix={<UserOutlined />}
-                onPressEnter={handleConfirmStart}
-                size="large"
-              />
-            </div>
-            <div style={{ background: '#f0f2f5', padding: 12, borderRadius: 4 }}>
-              <p style={{ margin: 0, color: '#666' }}>
-                即将质检 <strong style={{ color: '#1890ff' }}>{selectedRows.length}</strong> 条数据
-              </p>
-            </div>
-          </Space>
-        </div>
-      </Modal>
 
       {/* 批量质检弹窗（合并了输入姓名和选择结果） */}
       <Modal
