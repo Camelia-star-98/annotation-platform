@@ -8,12 +8,14 @@ import {
   Space,
   Tag,
   message,
-  Typography
+  Typography,
+  Popconfirm
 } from 'antd';
 import {
   ArrowLeftOutlined,
   PlayCircleOutlined,
-  CheckCircleOutlined
+  CheckCircleOutlined,
+  RollbackOutlined
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
@@ -81,6 +83,32 @@ export default function AnnotationTaskListPage() {
     });
   };
 
+  // 撤回任务（取消发布）
+  const handleWithdrawTask = async (task: AnnotationTask) => {
+    setLoading(true);
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      // 将视频的 is_published 设置为 false
+      const { error } = await supabase
+        .from('videos')
+        .update({ is_published: false })
+        .eq('id', task.id);
+      
+      if (error) {
+        throw error;
+      }
+      
+      message.success(`已撤回任务"${task.videoName}"`);
+      loadTasks(); // 重新加载任务列表
+    } catch (error) {
+      console.error('撤回任务失败:', error);
+      message.error('撤回任务失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const columns = [
     {
       title: '视频名称',
@@ -134,16 +162,33 @@ export default function AnnotationTaskListPage() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 200,
       fixed: 'right' as const,
       render: (_: any, record: AnnotationTask) => (
-        <Button
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          onClick={() => handleStartAnnotation(record)}
-        >
-          开始标注
-        </Button>
+        <Space>
+          <Button
+            type="primary"
+            icon={<PlayCircleOutlined />}
+            onClick={() => handleStartAnnotation(record)}
+          >
+            开始标注
+          </Button>
+          <Popconfirm
+            title="确认撤回？"
+            description="撤回后，该任务将从任务列表中移除，标注员将无法访问"
+            onConfirm={() => handleWithdrawTask(record)}
+            okText="确认撤回"
+            cancelText="取消"
+            okButtonProps={{ danger: true }}
+          >
+            <Button
+              danger
+              icon={<RollbackOutlined />}
+            >
+              撤回
+            </Button>
+          </Popconfirm>
+        </Space>
       )
     }
   ];
