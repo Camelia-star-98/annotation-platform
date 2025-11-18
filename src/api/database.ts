@@ -482,3 +482,89 @@ export async function getBatchCompletedAnnotatorsCount(
   }
 }
 
+// ========== 问题分类相关 ==========
+
+// 获取所有问题分类
+export async function getProblemCategories(): Promise<{ majorCategory: string; minorCategories: string[] }[]> {
+  try {
+    const { data, error } = await supabase
+      .from('problem_categories')
+      .select('*')
+      .order('major_category', { ascending: true })
+      .order('minor_category', { ascending: true });
+
+    if (error) {
+      console.error('获取问题分类失败:', error);
+      return [];
+    }
+
+    // 按大类分组
+    const grouped = new Map<string, string[]>();
+    data?.forEach(item => {
+      if (!grouped.has(item.major_category)) {
+        grouped.set(item.major_category, []);
+      }
+      grouped.get(item.major_category)!.push(item.minor_category);
+    });
+
+    // 转换为数组格式
+    return Array.from(grouped.entries()).map(([majorCategory, minorCategories]) => ({
+      majorCategory,
+      minorCategories
+    }));
+  } catch (error) {
+    console.error('获取问题分类失败:', error);
+    return [];
+  }
+}
+
+// 添加新的问题分类
+export async function addProblemCategory(majorCategory: string, minorCategory: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('problem_categories')
+      .insert({
+        major_category: majorCategory,
+        minor_category: minorCategory
+      });
+
+    if (error) {
+      // 如果是唯一键冲突，说明分类已存在
+      if (error.code === '23505') {
+        console.warn('分类已存在:', majorCategory, minorCategory);
+        return true;
+      }
+      console.error('添加问题分类失败:', error);
+      return false;
+    }
+
+    console.log('✅ 成功添加问题分类:', majorCategory, '-', minorCategory);
+    return true;
+  } catch (error) {
+    console.error('添加问题分类失败:', error);
+    return false;
+  }
+}
+
+// 删除问题分类
+export async function deleteProblemCategory(majorCategory: string, minorCategory: string): Promise<boolean> {
+  try {
+    const { error } = await supabase
+      .from('problem_categories')
+      .delete()
+      .eq('major_category', majorCategory)
+      .eq('minor_category', minorCategory);
+
+    if (error) {
+      console.error('删除问题分类失败:', error);
+      return false;
+    }
+
+    console.log('✅ 成功删除问题分类:', majorCategory, '-', minorCategory);
+    return true;
+  } catch (error) {
+    console.error('删除问题分类失败:', error);
+    return false;
+  }
+}
+

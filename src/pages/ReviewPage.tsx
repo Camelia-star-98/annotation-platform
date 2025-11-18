@@ -17,7 +17,6 @@ import {
 } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined } from '@ant-design/icons';
 import ReactPlayer from 'react-player';
-import { PROBLEM_CATEGORIES } from '../mock/data';
 import type { AnnotationItem, ProblemCategory } from '../types';
 import './ReviewPage.css';
 
@@ -36,7 +35,7 @@ export default function ReviewPage() {
   const annotatorName = location.state?.annotatorName;
   
   const [reviewData, setReviewData] = useState<AnnotationItem[]>([]);
-  const [categories, setCategories] = useState<ProblemCategory[]>(PROBLEM_CATEGORIES);
+  const [categories, setCategories] = useState<ProblemCategory[]>([]);
   const [selectedMajorCategory, setSelectedMajorCategory] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -48,12 +47,26 @@ export default function ReviewPage() {
   const [loading, setLoading] = useState(false);
   const pageSize = 20; // 改为20条每页
 
-  // 初始化复检数据
+  // 初始化复检数据和分类
   useEffect(() => {
+    loadCategories();
     if (videoId && annotatorName) {
       loadReviewData();
     }
   }, [videoId, annotatorName]);
+
+  // 加载问题分类
+  const loadCategories = async () => {
+    try {
+      const { getProblemCategories } = await import('../api/database');
+      const loadedCategories = await getProblemCategories();
+      setCategories(loadedCategories);
+      console.log('✅ 加载了', loadedCategories.length, '个问题分类');
+    } catch (error) {
+      console.error('加载问题分类失败:', error);
+      message.error('加载问题分类失败');
+    }
+  };
 
   const loadReviewData = async () => {
     setLoading(true);
@@ -134,43 +147,59 @@ export default function ReviewPage() {
   };
 
   // 新建类别
-  const handleCreateCategory = () => {
+  const handleCreateCategory = async () => {
     if (!newCategoryName.trim()) {
       message.warning('请输入类别名称');
       return;
     }
 
-    if (newCategoryType === 'major') {
-      // 新建大类
-      if (categories.some(cat => cat.majorCategory === newCategoryName)) {
-        message.warning('该大类已存在');
-        return;
-      }
-      setCategories([...categories, {
-        majorCategory: newCategoryName,
-        minorCategories: []
-      }]);
-      message.success('大类创建成功');
-    } else {
-      // 新建小类
-      if (!selectedMajorForMinor) {
-        message.warning('请选择所属大类');
-        return;
-      }
-      const major = categories.find(cat => cat.majorCategory === selectedMajorForMinor);
-      if (major && major.minorCategories.includes(newCategoryName)) {
-        message.warning('该小类已存在');
-        return;
-      }
-      setCategories(prev => prev.map(cat =>
-        cat.majorCategory === selectedMajorForMinor
-          ? { ...cat, minorCategories: [...cat.minorCategories, newCategoryName] }
-          : cat
-      ));
-      message.success('小类创建成功');
-    }
+    try {
+      const { addProblemCategory } = await import('../api/database');
 
-    setIsModalVisible(false);
+      if (newCategoryType === 'major') {
+        // 新建大类（添加一个默认小类）
+        if (categories.some(cat => cat.majorCategory === newCategoryName)) {
+          message.warning('该大类已存在');
+          return;
+        }
+        
+        // 保存到数据库
+        const success = await addProblemCategory(newCategoryName, '默认分类');
+        if (success) {
+          // 重新加载分类
+          await loadCategories();
+          message.success('大类创建成功');
+        } else {
+          message.error('创建失败，请重试');
+        }
+      } else {
+        // 新建小类
+        if (!selectedMajorForMinor) {
+          message.warning('请选择所属大类');
+          return;
+        }
+        const major = categories.find(cat => cat.majorCategory === selectedMajorForMinor);
+        if (major && major.minorCategories.includes(newCategoryName)) {
+          message.warning('该小类已存在');
+          return;
+        }
+        
+        // 保存到数据库
+        const success = await addProblemCategory(selectedMajorForMinor, newCategoryName);
+        if (success) {
+          // 重新加载分类
+          await loadCategories();
+          message.success('小类创建成功');
+        } else {
+          message.error('创建失败，请重试');
+        }
+      }
+
+      setIsModalVisible(false);
+    } catch (error) {
+      console.error('创建类别失败:', error);
+      message.error('创建类别失败');
+    }
   };
 
   // 提交复检 - 第一步：打开复检人姓名输入弹窗

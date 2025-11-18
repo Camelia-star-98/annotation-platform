@@ -16,8 +16,8 @@ import {
 } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import ReactPlayer from 'react-player';
-import { PROBLEM_CATEGORIES, generateMockAnnotations } from '../mock/data';
-import type { AnnotationItem } from '../types';
+import { generateMockAnnotations } from '../mock/data';
+import type { AnnotationItem, ProblemCategory } from '../types';
 import './AnnotationPage.css';
 
 const { Header, Content } = Layout;
@@ -47,7 +47,25 @@ export default function AnnotationPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [currentVideo, setCurrentVideo] = useState<any>(null);
+  const [categories, setCategories] = useState<ProblemCategory[]>([]);
   const pageSize = 20; // 修改为每页20条
+
+  // 加载问题分类
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      const { getProblemCategories } = await import('../api/database');
+      const loadedCategories = await getProblemCategories();
+      setCategories(loadedCategories);
+      console.log('✅ 加载了', loadedCategories.length, '个问题分类');
+    } catch (error) {
+      console.error('加载问题分类失败:', error);
+      message.error('加载问题分类失败');
+    }
+  };
 
   // 加载视频数据（新模式）
   useEffect(() => {
@@ -172,7 +190,7 @@ export default function AnnotationPage() {
   }, [currentVideoIndex, videos, uploadedAnnotations, isUploadMode]);
 
   // 构建级联选择器选项
-  const categoryOptions = PROBLEM_CATEGORIES.map(cat => ({
+  const categoryOptions = categories.map(cat => ({
     value: cat.majorCategory,
     label: cat.majorCategory,
     children: cat.minorCategories.map(sub => ({
@@ -341,7 +359,7 @@ export default function AnnotationPage() {
           // 组合成 [[大类1, 小类1], [大类2, 小类2], ...] 格式
           currentValue = minors.map((minor, index) => {
             // 找到该小类对应的大类
-            const matchedCategory = PROBLEM_CATEGORIES.find(cat => 
+            const matchedCategory = categories.find(cat => 
               cat.minorCategories.includes(minor)
             );
             return [matchedCategory?.majorCategory || majors[0] || '', minor];
