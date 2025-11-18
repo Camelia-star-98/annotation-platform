@@ -49,6 +49,7 @@ export default function VideoManagePage() {
   const [uploadModalVisible, setUploadModalVisible] = useState(false);
   const [previewModalVisible, setPreviewModalVisible] = useState(false);
   const [previewContent, setPreviewContent] = useState<any>(null);
+  const [previewRecord, setPreviewRecord] = useState<VideoData | null>(null); // 保存当前预览的记录
   const [previewType, setPreviewType] = useState<'video' | 'excel'>('video');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isUploading, setIsUploading] = useState(false);
@@ -806,6 +807,7 @@ export default function VideoManagePage() {
     
     setPreviewType('video');
     setPreviewContent(record);
+    setPreviewRecord(record); // 保存记录信息
     setPreviewModalVisible(true);
   };
 
@@ -823,6 +825,7 @@ export default function VideoManagePage() {
       
       setPreviewType('excel');
       setPreviewContent(annotations);
+      setPreviewRecord(record); // 保存记录信息
       setPreviewModalVisible(true);
     } catch (error) {
       console.error('加载标注数据失败:', error);
@@ -1335,7 +1338,11 @@ export default function VideoManagePage() {
 
       {/* 预览弹窗 */}
       <Modal
-        title={previewType === 'video' ? '视频预览' : '标注数据预览'}
+        title={
+          previewType === 'video' 
+            ? `视频预览 - ${previewRecord?.videoName || ''}` 
+            : `标注数据预览 - ${previewRecord?.excelName || ''}`
+        }
         open={previewModalVisible}
         onCancel={() => setPreviewModalVisible(false)}
         footer={null}
