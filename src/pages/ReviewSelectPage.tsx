@@ -10,7 +10,8 @@ import {
   message,
   Typography,
   Collapse,
-  Tabs
+  Tabs,
+  Popconfirm
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -18,7 +19,8 @@ import {
   UserOutlined,
   VideoCameraOutlined,
   EyeOutlined,
-  ClockCircleOutlined
+  ClockCircleOutlined,
+  DeleteOutlined
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
@@ -183,6 +185,40 @@ export default function ReviewSelectPage() {
     });
   };
 
+  // 删除标注人的所有标注数据
+  const handleDelete = async (videoId: string, videoName: string, annotatorName: string) => {
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      console.log('🗑️ 准备删除标注数据:', {
+        videoId,
+        videoName,
+        annotatorName
+      });
+
+      // 删除该视频该标注人的所有标注数据
+      const { error } = await supabase
+        .from('annotations')
+        .delete()
+        .eq('video_id', videoId)
+        .eq('annotator', annotatorName);
+
+      if (error) {
+        console.error('❌ 删除失败:', error);
+        message.error('删除失败');
+        return;
+      }
+
+      message.success(`已删除 ${annotatorName} 在视频"${videoName}"中的所有标注数据`);
+      
+      // 重新加载数据
+      loadVideoAndAnnotators();
+    } catch (error) {
+      console.error('❌ 删除异常:', error);
+      message.error('删除失败');
+    }
+  };
+
   // 渲染视频列表（可复用组件）
   const renderVideoList = (videoList: VideoWithAnnotators[]) => {
     if (videoList.length === 0) {
@@ -301,17 +337,35 @@ export default function ReviewSelectPage() {
                 {
                   title: '操作',
                   key: 'action',
-                  width: 120,
+                  width: 200,
                   align: 'center' as const,
                   render: (_: any, record: AnnotatorData) => (
-                    <Button
-                      type="primary"
-                      icon={<EyeOutlined />}
-                      size="small"
-                      onClick={() => handleReview(video.videoId, video.videoName, record.annotatorName)}
-                    >
-                      开始复检
-                    </Button>
+                    <Space>
+                      <Button
+                        type="primary"
+                        icon={<EyeOutlined />}
+                        size="small"
+                        onClick={() => handleReview(video.videoId, video.videoName, record.annotatorName)}
+                      >
+                        开始复检
+                      </Button>
+                      <Popconfirm
+                        title="确认删除"
+                        description={`确定要删除标注人"${record.annotatorName}"的所有标注数据吗？此操作不可恢复！`}
+                        onConfirm={() => handleDelete(video.videoId, video.videoName, record.annotatorName)}
+                        okText="确认删除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                      >
+                        <Button
+                          danger
+                          icon={<DeleteOutlined />}
+                          size="small"
+                        >
+                          删除
+                        </Button>
+                      </Popconfirm>
+                    </Space>
                   )
                 }
               ]}
