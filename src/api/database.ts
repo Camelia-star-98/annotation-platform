@@ -31,6 +31,7 @@ export async function addVideo(video: VideoInfo): Promise<VideoInfo | null> {
   console.log('  - url:', video.url);
   console.log('  - subject:', video.subject);
   console.log('  - duration:', video.duration);
+  console.log('  - required_annotators:', video.required_annotators);
   
   // 确保 URL 不为空
   if (!video.url) {
@@ -44,7 +45,8 @@ export async function addVideo(video: VideoInfo): Promise<VideoInfo | null> {
     name: video.name,
     url: video.url,
     subject: video.subject,
-    duration: video.duration
+    duration: video.duration,
+    required_annotators: video.required_annotators || 1 // 添加待标注数量字段
   };
   
   console.log('📤 准备插入数据库的数据:', insertData);
