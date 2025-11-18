@@ -28,6 +28,7 @@ interface AnnotatorData {
   totalAnnotations: number;
   reviewedCount: number;
   pendingCount: number;
+  reviewers: string[]; // 复检人列表
 }
 
 interface VideoWithAnnotators {
@@ -63,6 +64,7 @@ export default function ReviewSelectPage() {
       allAnnotations.forEach(annotation => {
         const videoId = annotation.videoId;
         const annotator = annotation.annotator || '未知标注员';
+        const reviewer = annotation.reviewer; // 获取复检人
         
         if (!videoMap.has(videoId)) {
           const video = videos.find(v => v.id === videoId);
@@ -82,14 +84,19 @@ export default function ReviewSelectPage() {
             annotatorName: annotator,
             totalAnnotations: 0,
             reviewedCount: 0,
-            pendingCount: 0
+            pendingCount: 0,
+            reviewers: []
           };
           videoData.annotators.push(annotatorData);
         }
 
         annotatorData.totalAnnotations++;
-        if (annotation.status) {
+        if (annotation.reviewStatus === true) {
           annotatorData.reviewedCount++;
+          // 添加复检人到列表（去重）
+          if (reviewer && !annotatorData.reviewers.includes(reviewer)) {
+            annotatorData.reviewers.push(reviewer);
+          }
         } else {
           annotatorData.pendingCount++;
         }
@@ -277,6 +284,25 @@ export default function ReviewSelectPage() {
                         <Tag color={count > 0 ? 'orange' : 'default'}>
                           {count} 条
                         </Tag>
+                      )
+                    },
+                    {
+                      title: '复检人',
+                      dataIndex: 'reviewers',
+                      key: 'reviewers',
+                      width: 200,
+                      render: (reviewers: string[]) => (
+                        <Space wrap>
+                          {reviewers.length > 0 ? (
+                            reviewers.map(reviewer => (
+                              <Tag key={reviewer} color="cyan" icon={<CheckCircleOutlined />}>
+                                {reviewer}
+                              </Tag>
+                            ))
+                          ) : (
+                            <Text type="secondary">-</Text>
+                          )}
+                        </Space>
                       )
                     },
                     {
