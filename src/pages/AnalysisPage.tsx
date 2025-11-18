@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Layout,
@@ -37,7 +38,8 @@ export default function AnalysisPage() {
   const [loading, setLoading] = useState(false);
   
   // 按学科分组的数据（用于聚合分析）
-  const [subjectGroupedData, setSubjectGroupedData] = useState<Record<string, any[]>>({});
+  const [subjectGroupedMajor, setSubjectGroupedMajor] = useState<Record<string, any[]>>({});
+  const [subjectGroupedMinor, setSubjectGroupedMinor] = useState<Record<string, any[]>>({});
   
   // 分析模式：'aggregate' 聚合分析, 'single' 单视频分析
   const [analysisMode, setAnalysisMode] = useState<'aggregate' | 'single'>('aggregate');
@@ -117,7 +119,8 @@ export default function AnalysisPage() {
       if (analysisMode === 'aggregate') {
         // 聚合分析：按学科分组
         const subjectGroups: Record<string, AnnotationItem[]> = {};
-        const subjectStats: Record<string, any[]> = {};
+        const subjectMajorStats: Record<string, any[]> = {};
+        const subjectMinorStats: Record<string, any[]> = {};
         
         filteredData.forEach(item => {
           const subject = item.subject || '未知';
@@ -127,14 +130,17 @@ export default function AnalysisPage() {
           subjectGroups[subject].push(item);
         });
         
-        // 为每个学科计算统计
+        // 为每个学科计算大类和小类统计
         Object.keys(subjectGroups).forEach(subject => {
           const data = subjectGroups[subject];
-          subjectStats[subject] = calculateStatistics(data, 'majorCategory');
+          subjectMajorStats[subject] = calculateStatistics(data, 'majorCategory');
+          subjectMinorStats[subject] = calculateStatistics(data, 'minorCategory');
         });
         
-        console.log('📊 按学科分组统计:', subjectStats);
-        setSubjectGroupedData(subjectStats);
+        console.log('📊 按学科分组统计（大类）:', subjectMajorStats);
+        console.log('📊 按学科分组统计（小类）:', subjectMinorStats);
+        setSubjectGroupedMajor(subjectMajorStats);
+        setSubjectGroupedMinor(subjectMinorStats);
         
         // 保留全局统计用于表格
         const allSubjects = calculateStatistics(filteredData, 'majorCategory');
@@ -474,15 +480,19 @@ export default function AnalysisPage() {
 
           {/* 图表展示 */}
           {analysisMode === 'aggregate' ? (
-            // 聚合分析：按学科显示多个饼图
+            // 聚合分析：按学科显示多个饼图（大类+小类）
             <>
               <Card title="按学科分类统计" style={{ marginBottom: 24 }}>
                 <Row gutter={[24, 24]}>
-                  {Object.keys(subjectGroupedData).length > 0 ? (
-                    Object.entries(subjectGroupedData).map(([subject, data]) => {
-                      const option = {
+                  {Object.keys(subjectGroupedMajor).length > 0 ? (
+                    Object.keys(subjectGroupedMajor).map((subject) => {
+                      const majorData = subjectGroupedMajor[subject] || [];
+                      const minorData = subjectGroupedMinor[subject] || [];
+                      
+                      // 大类饼图配置
+                      const majorOption = {
                         title: {
-                          text: `${subject} - 问题占比`,
+                          text: `${subject} - 问题大类占比`,
                           left: 'center',
                           top: 20,
                           textStyle: {
@@ -499,10 +509,10 @@ export default function AnalysisPage() {
                           right: 10,
                           top: 'middle',
                           textStyle: {
-                            fontSize: 12
+                            fontSize: 11
                           },
                           formatter: (name: string) => {
-                            const item = data.find((d: any) => d.name === name);
+                            const item = majorData.find((d: any) => d.name === name);
                             return `${name}: ${item?.value || 0}条`;
                           }
                         },
@@ -530,23 +540,92 @@ export default function AnalysisPage() {
                                 fontWeight: 'bold'
                               }
                             },
-                            data: data
+                            data: majorData
                           }
                         ],
                         color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
                       };
 
+                      // 小类饼图配置
+                      const minorOption = {
+                        title: {
+                          text: `${subject} - 问题小类占比`,
+                          left: 'center',
+                          top: 20,
+                          textStyle: {
+                            fontSize: 16,
+                            fontWeight: 'bold'
+                          }
+                        },
+                        tooltip: {
+                          trigger: 'item',
+                          formatter: '{b}: {c}条 ({d}%)'
+                        },
+                        legend: {
+                          orient: 'vertical',
+                          right: 10,
+                          top: 'middle',
+                          textStyle: {
+                            fontSize: 11
+                          },
+                          formatter: (name: string) => {
+                            const item = minorData.find((d: any) => d.name === name);
+                            return `${name}: ${item?.value || 0}条`;
+                          }
+                        },
+                        series: [
+                          {
+                            name: '问题分布',
+                            type: 'pie',
+                            radius: ['40%', '70%'],
+                            center: ['40%', '55%'],
+                            avoidLabelOverlap: false,
+                            itemStyle: {
+                              borderRadius: 10,
+                              borderColor: '#fff',
+                              borderWidth: 2
+                            },
+                            label: {
+                              show: true,
+                              formatter: '{d}%',
+                              fontSize: 12
+                            },
+                            emphasis: {
+                              label: {
+                                show: true,
+                                fontSize: 14,
+                                fontWeight: 'bold'
+                              }
+                            },
+                            data: minorData
+                          }
+                        ],
+                        color: ['#ee6666', '#5470c6', '#91cc75', '#fac858', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
+                      };
+
                       return (
-                        <Col xs={24} lg={12} xl={12} key={subject}>
-                          <Card bordered={false} loading={loading}>
-                            <ReactECharts
-                              option={option}
-                              style={{ height: '400px' }}
-                              notMerge={true}
-                              lazyUpdate={true}
-                            />
-                          </Card>
-                        </Col>
+                        <React.Fragment key={subject}>
+                          <Col xs={24} lg={12} xl={12}>
+                            <Card bordered={false} loading={loading}>
+                              <ReactECharts
+                                option={majorOption}
+                                style={{ height: '400px' }}
+                                notMerge={true}
+                                lazyUpdate={true}
+                              />
+                            </Card>
+                          </Col>
+                          <Col xs={24} lg={12} xl={12}>
+                            <Card bordered={false} loading={loading}>
+                              <ReactECharts
+                                option={minorOption}
+                                style={{ height: '400px' }}
+                                notMerge={true}
+                                lazyUpdate={true}
+                              />
+                            </Card>
+                          </Col>
+                        </React.Fragment>
                       );
                     })
                   ) : (
