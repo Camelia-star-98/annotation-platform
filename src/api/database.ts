@@ -158,6 +158,8 @@ export async function getAllAnnotations(): Promise<AnnotationItem[]> {
       annotator: item.annotator || '',
       isQualified: item.is_qualified,
       inspector: item.inspector || '',
+      reviewer: item.reviewer || '', // 添加复检人
+      reviewStatus: item.review_status, // 添加复检状态
       videoName: item.video_name || '',
       videoUrl: item.video_url || '',
       subject: item.subject || ''
@@ -198,7 +200,9 @@ export async function getAnnotations(videoId: string): Promise<AnnotationItem[]>
     status: item.status,
     annotator: item.annotator,
     isQualified: item.is_qualified,
-    inspector: item.inspector
+    inspector: item.inspector,
+    reviewer: item.reviewer || '', // 添加复检人
+    reviewStatus: item.review_status // 添加复检状态
   }));
 }
 
