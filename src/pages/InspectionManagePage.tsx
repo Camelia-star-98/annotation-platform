@@ -188,18 +188,7 @@ export default function InspectionManagePage() {
       message.warning('请至少选择一条数据进行质检');
       return;
     }
-    setIsModalVisible(true);
-  };
-
-  // 确认开始质检
-  const handleConfirmStart = () => {
-    if (!inspectorName.trim()) {
-      message.warning('请输入质检人姓名');
-      return;
-    }
-
-    // 关闭输入姓名的弹窗，打开批量质检弹窗
-    setIsModalVisible(false);
+    // 直接打开批量质检弹窗（合并了输入姓名和选择结果）
     setIsBatchInspectModalVisible(true);
   };
 
@@ -655,7 +644,7 @@ export default function InspectionManagePage() {
         </div>
       </Modal>
 
-      {/* 批量质检结果选择弹窗 */}
+      {/* 批量质检弹窗（合并了输入姓名和选择结果） */}
       <Modal
         title="批量质检"
         open={isBatchInspectModalVisible}
@@ -667,29 +656,36 @@ export default function InspectionManagePage() {
         okText="确认提交"
         cancelText="取消"
         confirmLoading={loading}
-        width={500}
+        width={520}
       >
         <div style={{ padding: '20px 0' }}>
           <Space direction="vertical" style={{ width: '100%' }} size="large">
-            {/* 质检人信息 */}
-            <div style={{ background: '#f0f2f5', padding: 16, borderRadius: 8 }}>
-              <Space>
-                <UserOutlined style={{ color: '#1890ff' }} />
-                <span><strong>质检人：</strong>{inspectorName}</span>
-              </Space>
+            {/* 质检人姓名输入 */}
+            <div>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 15 }}>
+                质检人姓名 <span style={{ color: '#ff4d4f' }}>*</span>
+              </label>
+              <Input
+                placeholder="请输入质检人姓名"
+                value={inspectorName}
+                onChange={(e) => setInspectorName(e.target.value)}
+                prefix={<UserOutlined style={{ color: '#bfbfbf' }} />}
+                size="large"
+                style={{ fontSize: 15 }}
+              />
             </div>
 
             {/* 统计信息 */}
             <div style={{ background: '#e6f7ff', padding: 16, borderRadius: 8, border: '1px solid #91d5ff' }}>
               <p style={{ margin: 0, color: '#666', fontSize: 14 }}>
-                即将质检 <strong style={{ color: '#1890ff', fontSize: 18 }}>{selectedRows.length}</strong> 条数据
+                即将质检 <strong style={{ color: '#1890ff', fontSize: 20 }}>{selectedRows.length}</strong> 条数据
               </p>
             </div>
 
             {/* 质检结果选择 */}
             <div>
               <label style={{ display: 'block', marginBottom: 12, fontWeight: 500, fontSize: 15 }}>
-                质检结果
+                质检结果 <span style={{ color: '#ff4d4f' }}>*</span>
               </label>
               <Radio.Group
                 value={batchInspectResult}
@@ -697,16 +693,34 @@ export default function InspectionManagePage() {
                 style={{ width: '100%' }}
               >
                 <Space direction="vertical" style={{ width: '100%' }} size="middle">
-                  <Radio value="pass" style={{ width: '100%' }}>
+                  <Radio 
+                    value="pass" 
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px 16px',
+                      border: '1px solid #d9d9d9',
+                      borderRadius: '6px',
+                      marginRight: 0
+                    }}
+                  >
                     <Space>
-                      <CheckOutlined style={{ color: '#52c41a' }} />
-                      <span style={{ fontSize: 15 }}>通过</span>
+                      <CheckOutlined style={{ color: '#52c41a', fontSize: 16 }} />
+                      <span style={{ fontSize: 15, fontWeight: 500 }}>通过</span>
                     </Space>
                   </Radio>
-                  <Radio value="fail" style={{ width: '100%' }}>
+                  <Radio 
+                    value="fail" 
+                    style={{ 
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: '1px solid #d9d9d9',
+                      borderRadius: '6px',
+                      marginRight: 0
+                    }}
+                  >
                     <Space>
-                      <CloseOutlined style={{ color: '#ff4d4f' }} />
-                      <span style={{ fontSize: 15 }}>不通过</span>
+                      <CloseOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
+                      <span style={{ fontSize: 15, fontWeight: 500 }}>不通过</span>
                     </Space>
                   </Radio>
                 </Space>
