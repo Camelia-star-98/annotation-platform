@@ -240,11 +240,18 @@ export async function saveAnnotations(
       minor_category: item.minorCategory || '',
       remark: item.remark || '',
       status: item.status || false,
-      annotator: annotatorName
+      annotator: annotatorName,
+      // 质检相关字段（重新提交时会被清除）
+      is_qualified: item.isQualified ?? null,
+      inspector: item.inspector || null,
+      // 复检相关字段
+      reviewer: item.reviewer || null,
+      review_status: item.reviewStatus ?? null
     }));
 
     console.log('📝 标注人:', annotatorName);
     console.log('📝 生成的ID示例:', data[0]?.id);
+    console.log('📝 质检状态:', data[0]?.is_qualified, '质检人:', data[0]?.inspector);
 
     // 使用upsert（如果存在则更新，不存在则插入）
     const { error } = await supabase
@@ -259,7 +266,6 @@ export async function saveAnnotations(
     console.log('✅ 成功保存到 Supabase:', data.length, '条数据');
     
     // 第3步：记录标注完成状态
-    const annotatorName = annotations[0]?.annotator;
     if (annotatorName && videoId) {
       await recordAnnotationCompletion(videoId, annotatorName, annotations.length);
     }
