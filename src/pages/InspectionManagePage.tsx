@@ -37,10 +37,11 @@ export default function InspectionManagePage() {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // 从上一页传来的质检人姓名和选中的视频ID
+  // 从上一页传来的质检人姓名、选中的视频ID、抽样比例
   const defaultInspectorName = location.state?.inspectorName || '';
   const selectedVideoId = location.state?.selectedVideoId;
   const videoName = location.state?.videoName;
+  const samplePercentage = location.state?.samplePercentage || 100; // 默认100%（全部）
   
   const [allAnnotations, setAllAnnotations] = useState<AnnotationItem[]>([]);
   const [groupedData, setGroupedData] = useState<any[]>([]); // 分组后的数据
@@ -52,6 +53,7 @@ export default function InspectionManagePage() {
   const [inspectorName, setInspectorName] = useState(defaultInspectorName);
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inspected'>('pending');
   const [loading, setLoading] = useState(false);
+  const [sampledCount, setSampledCount] = useState(0); // 抽样数量
 
   // 加载数据
   useEffect(() => {
@@ -73,17 +75,52 @@ export default function InspectionManagePage() {
       // 如果指定了视频ID，只加载该视频的数据
       if (selectedVideoId) {
         console.log('📹 加载视频数据:', selectedVideoId, videoName);
+        console.log('🎲 抽样比例:', samplePercentage + '%');
+        
         annotations = await getAnnotations(selectedVideoId);
         console.log('📊 该视频的标注数据数量:', annotations.length);
         
+        // 过滤出待质检的数据（已标注但未质检）
+        const pendingAnnotations = annotations.filter(
+          item => item.status === true && !item.inspector
+        );
+        
+        console.log('⏳ 待质检数据数量:', pendingAnnotations.length);
+        
+        // 实施抽样（如果不是100%）
+        let sampledAnnotations = pendingAnnotations;
+        if (samplePercentage < 100) {
+          const sampleSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
+          
+          // Fisher-Yates 洗牌算法随机抽样
+          const shuffled = [...pendingAnnotations];
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+          }
+          
+          sampledAnnotations = shuffled.slice(0, sampleSize);
+          console.log('🎯 抽样后数据数量:', sampledAnnotations.length);
+          setSampledCount(sampledAnnotations.length);
+        } else {
+          setSampledCount(pendingAnnotations.length);
+        }
+        
         // 给每条标注添加视频名称
-        const annotationsWithVideoName = annotations.map(item => ({
+        const annotationsWithVideoName = sampledAnnotations.map(item => ({
           ...item,
           videoName: videoName || '未知视频'
         }));
         
         setAllAnnotations(annotationsWithVideoName);
-        message.success(`加载了视频"${videoName}"的 ${annotations.length} 条标注数据`);
+        
+        if (samplePercentage < 100) {
+          message.success(
+            `已按 ${samplePercentage}% 比例抽样，从 ${pendingAnnotations.length} 条中抽取了 ${sampledAnnotations.length} 条数据`
+          );
+        } else {
+          message.success(`加载了视频"${videoName}"的 ${sampledAnnotations.length} 条待质检数据`);
+        }
       } else {
         // 否则加载所有数据（向后兼容）
         const { getAllAnnotations } = await import('../api/database');
@@ -509,6 +546,30 @@ export default function InspectionManagePage() {
 
       <Content className="inspection-manage-content">
         <div className="inspection-manage-container">
+          {/* 抽样信息提示 */}
+          {samplePercentage < 100 && sampledCount > 0 && (
+            <Card 
+              style={{ 
+                marginBottom: 16, 
+                background: '#e6f7ff', 
+                borderColor: '#91d5ff' 
+              }}
+            >
+              <Space direction="vertical" style={{ width: '100%' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>🎲</span>
+                  <span style={{ fontWeight: 500, color: '#0050b3' }}>
+                    抽样质检模式：已按 {samplePercentage}% 比例随机抽取
+                  </span>
+                </div>
+                <div style={{ color: '#096dd9', fontSize: 13 }}>
+                  本次抽样数量：<strong>{sampledCount}</strong> 条 | 
+                  抽样算法：Fisher-Yates 随机洗牌
+                </div>
+              </Space>
+            </Card>
+          )}
+          
           {/* 统计卡片 */}
           <Row gutter={16} style={{ marginBottom: 24 }}>
             <Col span={6}>

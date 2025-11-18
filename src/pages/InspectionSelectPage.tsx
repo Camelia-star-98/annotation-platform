@@ -11,7 +11,10 @@ import {
   Typography,
   Statistic,
   Row,
-  Col
+  Col,
+  Modal,
+  InputNumber,
+  Slider
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -41,6 +44,11 @@ export default function InspectionSelectPage() {
   
   const [loading, setLoading] = useState(false);
   const [videos, setVideos] = useState<VideoInspectionData[]>([]);
+  
+  // 抽样比例设置
+  const [isSampleModalVisible, setIsSampleModalVisible] = useState(false);
+  const [selectedVideo, setSelectedVideo] = useState<VideoInspectionData | null>(null);
+  const [samplePercentage, setSamplePercentage] = useState(20); // 默认20%
 
   useEffect(() => {
     loadVideos();
@@ -87,13 +95,30 @@ export default function InspectionSelectPage() {
   };
 
   const handleStartInspection = (video: VideoInspectionData) => {
+    // 打开抽样比例设置弹窗
+    setSelectedVideo(video);
+    setIsSampleModalVisible(true);
+  };
+
+  const handleConfirmSample = () => {
+    if (!selectedVideo) return;
+    
+    if (samplePercentage <= 0 || samplePercentage > 100) {
+      message.error('抽样比例必须在 1% - 100% 之间');
+      return;
+    }
+    
+    // 跳转到质检管理页面，传递抽样比例
     navigate('/inspection-manage', {
       state: {
         inspectorName,
-        selectedVideoId: video.id,
-        videoName: video.videoName
+        selectedVideoId: selectedVideo.id,
+        videoName: selectedVideo.videoName,
+        samplePercentage // 传递抽样比例
       }
     });
+    
+    setIsSampleModalVisible(false);
   };
 
   const columns = [
@@ -287,6 +312,72 @@ export default function InspectionSelectPage() {
           />
         </Card>
       </Content>
+
+      {/* 抽样比例设置弹窗 */}
+      <Modal
+        title="设置抽样比例"
+        open={isSampleModalVisible}
+        onOk={handleConfirmSample}
+        onCancel={() => setIsSampleModalVisible(false)}
+        width={500}
+        okText="开始质检"
+        cancelText="取消"
+      >
+        <div style={{ padding: '20px 0' }}>
+          <p style={{ marginBottom: 20, fontSize: 14, color: '#666' }}>
+            <strong>视频名称：</strong>{selectedVideo?.videoName}
+          </p>
+          <p style={{ marginBottom: 20, fontSize: 14, color: '#666' }}>
+            <strong>待质检数据：</strong>{selectedVideo?.pendingInspection || 0} 条
+          </p>
+          
+          <div style={{ marginBottom: 30 }}>
+            <div style={{ marginBottom: 10 }}>
+              <span style={{ fontWeight: 500 }}>抽样比例：</span>
+              <InputNumber
+                min={1}
+                max={100}
+                value={samplePercentage}
+                onChange={(value) => setSamplePercentage(value || 20)}
+                formatter={value => `${value}%`}
+                parser={value => Number(value?.replace('%', '') || 0)}
+                style={{ width: 100, marginLeft: 10 }}
+              />
+            </div>
+            
+            <Slider
+              min={1}
+              max={100}
+              value={samplePercentage}
+              onChange={(value) => setSamplePercentage(value)}
+              marks={{
+                10: '10%',
+                20: '20%',
+                30: '30%',
+                50: '50%',
+                100: '100%'
+              }}
+              style={{ marginTop: 20 }}
+            />
+          </div>
+          
+          <div style={{ 
+            padding: '12px 16px', 
+            background: '#f0f5ff', 
+            borderLeft: '3px solid #1890ff',
+            borderRadius: 4 
+          }}>
+            <p style={{ margin: 0, fontSize: 14, color: '#1890ff' }}>
+              <strong>预计抽样：</strong>
+              约 {Math.ceil((selectedVideo?.pendingInspection || 0) * samplePercentage / 100)} 条数据
+            </p>
+          </div>
+          
+          <p style={{ marginTop: 16, fontSize: 12, color: '#999' }}>
+            💡 系统将从待质检数据中随机抽取指定比例的数据进行质检
+          </p>
+        </div>
+      </Modal>
     </Layout>
   );
 }
