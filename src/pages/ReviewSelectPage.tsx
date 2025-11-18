@@ -30,6 +30,7 @@ interface AnnotatorData {
   totalAnnotations: number;
   reviewedCount: number;
   pendingCount: number;
+  unannotatedCount: number; // 未标注数量
   reviewers: string[]; // 复检人列表
 }
 
@@ -68,6 +69,7 @@ export default function ReviewSelectPage() {
         const videoId = annotation.videoId;
         const annotator = annotation.annotator || '未知标注员';
         const reviewer = annotation.reviewer; // 获取复检人
+        const isAnnotated = annotation.status === true; // 是否已标注
         
         if (!videoMap.has(videoId)) {
           const video = videos.find(v => v.id === videoId);
@@ -88,20 +90,28 @@ export default function ReviewSelectPage() {
             totalAnnotations: 0,
             reviewedCount: 0,
             pendingCount: 0,
+            unannotatedCount: 0,
             reviewers: []
           };
           videoData.annotators.push(annotatorData);
         }
 
         annotatorData.totalAnnotations++;
-        if (annotation.reviewStatus === true) {
-          annotatorData.reviewedCount++;
-          // 添加复检人到列表（去重）
-          if (reviewer && !annotatorData.reviewers.includes(reviewer)) {
-            annotatorData.reviewers.push(reviewer);
+        
+        // 只统计已标注的数据
+        if (isAnnotated) {
+          if (annotation.reviewStatus === true) {
+            annotatorData.reviewedCount++;
+            // 添加复检人到列表（去重）
+            if (reviewer && !annotatorData.reviewers.includes(reviewer)) {
+              annotatorData.reviewers.push(reviewer);
+            }
+          } else {
+            annotatorData.pendingCount++;
           }
         } else {
-          annotatorData.pendingCount++;
+          // 未标注的数据
+          annotatorData.unannotatedCount++;
         }
       });
 
@@ -114,6 +124,7 @@ export default function ReviewSelectPage() {
           total: a.totalAnnotations,
           reviewed: a.reviewedCount,
           pending: a.pendingCount,
+          unannotated: a.unannotatedCount,
           reviewers: a.reviewers
         }))
       })));
@@ -123,10 +134,14 @@ export default function ReviewSelectPage() {
       const completed: VideoWithAnnotators[] = [];
       
       result.forEach(video => {
-        // 待复检：有未完成的复检任务
-        const pendingAnnotators = video.annotators.filter(a => a.pendingCount > 0);
-        // 已复检：所有任务都已完成（没有待复检的）
-        const completedAnnotators = video.annotators.filter(a => a.pendingCount === 0 && a.reviewedCount > 0);
+        // 待复检：有已标注但未复检的数据（排除未标注的）
+        const pendingAnnotators = video.annotators.filter(a => 
+          a.pendingCount > 0 && (a.pendingCount + a.reviewedCount) > 0
+        );
+        // 已复检：所有已标注的数据都已复检完成
+        const completedAnnotators = video.annotators.filter(a => 
+          a.pendingCount === 0 && a.reviewedCount > 0
+        );
         
         if (pendingAnnotators.length > 0) {
           pending.push({
@@ -187,9 +202,17 @@ export default function ReviewSelectPage() {
                 <Text strong style={{ minWidth: 250 }}>{video.videoName}</Text>
                 <Tag color="blue">{video.subject}</Tag>
                 <Tag color="purple">{video.annotators.length} 位标注员</Tag>
-                <Tag color="orange">
-                  {video.annotators.reduce((sum, a) => sum + a.totalAnnotations, 0)} 条标注
+                <Tag color="green">
+                  {video.annotators.reduce((sum, a) => sum + a.reviewedCount, 0)} 已复检
                 </Tag>
+                <Tag color="orange">
+                  {video.annotators.reduce((sum, a) => sum + a.pendingCount, 0)} 待复检
+                </Tag>
+                {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0) > 0 && (
+                  <Tag color="red" icon={<ClockCircleOutlined />}>
+                    {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0)} 未标注
+                  </Tag>
+                )}
               </Space>
             }
             key={video.videoId}
@@ -238,6 +261,22 @@ export default function ReviewSelectPage() {
                     <Tag color={count > 0 ? 'orange' : 'default'}>
                       {count} 条
                     </Tag>
+                  )
+                },
+                {
+                  title: '未标注',
+                  dataIndex: 'unannotatedCount',
+                  key: 'unannotatedCount',
+                  width: 120,
+                  align: 'center' as const,
+                  render: (count: number) => (
+                    count > 0 ? (
+                      <Tag color="red" icon={<ClockCircleOutlined />}>
+                        {count} 条
+                      </Tag>
+                    ) : (
+                      <Tag color="default">0 条</Tag>
+                    )
                   )
                 },
                 {
