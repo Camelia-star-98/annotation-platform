@@ -15,13 +15,16 @@ import {
   Select,
   Statistic,
   Row,
-  Col
+  Col,
+  Radio
 } from 'antd';
 import {
   ArrowLeftOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
-  UserOutlined
+  UserOutlined,
+  CheckOutlined,
+  CloseOutlined
 } from '@ant-design/icons';
 import type { AnnotationItem } from '../types';
 import './InspectionManagePage.css';
@@ -45,6 +48,8 @@ export default function InspectionManagePage() {
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
   const [expandedRowKeys, setExpandedRowKeys] = useState<string[]>([]); // 展开的行
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isBatchInspectModalVisible, setIsBatchInspectModalVisible] = useState(false);
+  const [batchInspectResult, setBatchInspectResult] = useState<'pass' | 'fail' | null>(null);
   const [inspectorName, setInspectorName] = useState(defaultInspectorName);
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inspected'>('pending');
   const [loading, setLoading] = useState(false);
@@ -193,17 +198,53 @@ export default function InspectionManagePage() {
       return;
     }
 
-    const selectedData = allAnnotations.filter(item => 
-      selectedRows.includes(item.id)
-    );
+    // 关闭输入姓名的弹窗，打开批量质检弹窗
+    setIsModalVisible(false);
+    setIsBatchInspectModalVisible(true);
+  };
 
-    navigate('/inspection', {
-      state: {
-        userName: inspectorName,
-        inspectionData: selectedData,
-        isFromManagement: true
-      }
-    });
+  // 批量质检确认
+  const handleBatchInspectConfirm = async () => {
+    if (!batchInspectResult) {
+      message.warning('请选择质检结果（通过/不通过）');
+      return;
+    }
+
+    if (!inspectorName.trim()) {
+      message.warning('请输入质检人姓名');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { updateAnnotation } = await import('../api/database');
+      
+      // 批量更新选中的数据
+      const updatePromises = selectedRows.map(id => 
+        updateAnnotation(id, {
+          isQualified: batchInspectResult === 'pass',
+          inspector: inspectorName
+        })
+      );
+
+      await Promise.all(updatePromises);
+
+      message.success(`批量质检完成！共质检 ${selectedRows.length} 条数据`);
+      
+      // 重新加载数据
+      await loadData();
+      
+      // 清空选择
+      setSelectedRows([]);
+      setBatchInspectResult(null);
+      setIsBatchInspectModalVisible(false);
+      
+    } catch (error) {
+      console.error('批量质检失败:', error);
+      message.error('批量质检失败，请重试');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 随机抽样
@@ -608,6 +649,74 @@ export default function InspectionManagePage() {
             <div style={{ background: '#f0f2f5', padding: 12, borderRadius: 4 }}>
               <p style={{ margin: 0, color: '#666' }}>
                 即将质检 <strong style={{ color: '#1890ff' }}>{selectedRows.length}</strong> 条数据
+              </p>
+            </div>
+          </Space>
+        </div>
+      </Modal>
+
+      {/* 批量质检结果选择弹窗 */}
+      <Modal
+        title="批量质检"
+        open={isBatchInspectModalVisible}
+        onOk={handleBatchInspectConfirm}
+        onCancel={() => {
+          setIsBatchInspectModalVisible(false);
+          setBatchInspectResult(null);
+        }}
+        okText="确认提交"
+        cancelText="取消"
+        confirmLoading={loading}
+        width={500}
+      >
+        <div style={{ padding: '20px 0' }}>
+          <Space direction="vertical" style={{ width: '100%' }} size="large">
+            {/* 质检人信息 */}
+            <div style={{ background: '#f0f2f5', padding: 16, borderRadius: 8 }}>
+              <Space>
+                <UserOutlined style={{ color: '#1890ff' }} />
+                <span><strong>质检人：</strong>{inspectorName}</span>
+              </Space>
+            </div>
+
+            {/* 统计信息 */}
+            <div style={{ background: '#e6f7ff', padding: 16, borderRadius: 8, border: '1px solid #91d5ff' }}>
+              <p style={{ margin: 0, color: '#666', fontSize: 14 }}>
+                即将质检 <strong style={{ color: '#1890ff', fontSize: 18 }}>{selectedRows.length}</strong> 条数据
+              </p>
+            </div>
+
+            {/* 质检结果选择 */}
+            <div>
+              <label style={{ display: 'block', marginBottom: 12, fontWeight: 500, fontSize: 15 }}>
+                质检结果
+              </label>
+              <Radio.Group
+                value={batchInspectResult}
+                onChange={(e) => setBatchInspectResult(e.target.value)}
+                style={{ width: '100%' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                  <Radio value="pass" style={{ width: '100%' }}>
+                    <Space>
+                      <CheckOutlined style={{ color: '#52c41a' }} />
+                      <span style={{ fontSize: 15 }}>通过</span>
+                    </Space>
+                  </Radio>
+                  <Radio value="fail" style={{ width: '100%' }}>
+                    <Space>
+                      <CloseOutlined style={{ color: '#ff4d4f' }} />
+                      <span style={{ fontSize: 15 }}>不通过</span>
+                    </Space>
+                  </Radio>
+                </Space>
+              </Radio.Group>
+            </div>
+
+            {/* 提示信息 */}
+            <div style={{ background: '#fffbe6', padding: 12, borderRadius: 4, border: '1px solid #ffe58f' }}>
+              <p style={{ margin: 0, color: '#8c8c8c', fontSize: 13 }}>
+                💡 提示：批量质检将对所有选中的数据应用相同的质检结果
               </p>
             </div>
           </Space>
