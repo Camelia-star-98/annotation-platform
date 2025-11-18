@@ -103,3 +103,16 @@
   }
 }
 
+/* 质检未通过的行标识 */
+.row-failed-inspection {
+  background-color: #fff1f0 !important;
+}
+
+.row-failed-inspection:hover {
+  background-color: #ffe7e5 !important;
+}
+
+.row-failed-inspection td {
+  border-bottom-color: #ffccc7 !important;
+}
+

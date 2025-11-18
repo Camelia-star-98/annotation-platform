@@ -11,7 +11,8 @@ import {
   Space,
   message,
   Typography,
-  Cascader
+  Cascader,
+  Tag
 } from 'antd';
 import { ArrowLeftOutlined } from '@ant-design/icons';
 import ReactPlayer from 'react-player';
@@ -280,6 +281,25 @@ export default function AnnotationPage() {
       }
     },
     {
+      title: '质检状态',
+      dataIndex: 'isQualified',
+      key: 'isQualified',
+      width: 100,
+      align: 'center' as const,
+      render: (isQualified: boolean | undefined, record: AnnotationItem) => {
+        if (isQualified === false) {
+          return <Tag color="red">❌ 未通过</Tag>;
+        } else if (isQualified === true) {
+          return <Tag color="green">✅ 已通过</Tag>;
+        } else if (record.status) {
+          // 已标注但未质检
+          return <Tag color="orange">⏳ 待质检</Tag>;
+        } else {
+          return <Tag color="default">未标注</Tag>;
+        }
+      }
+    },
+    {
       title: '标注状态',
       dataIndex: 'status',
       key: 'status',
@@ -367,6 +387,13 @@ export default function AnnotationPage() {
               rowKey="id"
               size="small"
               scroll={{ x: 1000 }}
+              rowClassName={(record) => {
+                // 质检未通过的数据行用红色背景标识
+                if (record.isQualified === false) {
+                  return 'row-failed-inspection';
+                }
+                return '';
+              }}
               pagination={{
                 current: currentPage,
                 pageSize: pageSize,
