@@ -118,15 +118,15 @@ export default function InspectionManagePage() {
     
     switch (filterStatus) {
       case 'pending':
-        // 已标注完成但未质检的（status为true且is_qualified为null/undefined）
+        // 已标注完成但未质检的（status为true且没有质检人）
         filtered = allAnnotations.filter(item => 
-          item.status === true && (item.isQualified === null || item.isQualified === undefined)
+          item.status === true && !item.inspector
         );
         break;
       case 'inspected':
-        // 已质检的（is_qualified不为null/undefined）
+        // 已质检的（有质检人）
         filtered = allAnnotations.filter(item => 
-          item.isQualified !== undefined && item.isQualified !== null
+          item.inspector && item.inspector.trim() !== ''
         );
         break;
       case 'all':
@@ -367,36 +367,57 @@ export default function InspectionManagePage() {
     {
       title: '质检状态',
       key: 'inspectionStatus',
-      width: 100,
+      width: 120,
       align: 'center' as const,
       render: (_: any, record: any) => {
         if (record.isGroup) return null;
-        if (record.isQualified === true) {
-          return <Tag color="success" icon={<CheckCircleOutlined />}>通过</Tag>;
-        } else if (record.isQualified === false) {
-          return <Tag color="error">不通过</Tag>;
-        } else {
-          return <Tag color="warning" icon={<ClockCircleOutlined />}>待质检</Tag>;
+        if (record.inspector) {
+          // 已质检
+          if (record.isQualified === true) {
+            return <Tag color="success" icon={<CheckCircleOutlined />}>✅ 通过</Tag>;
+          } else if (record.isQualified === false) {
+            return <Tag color="error">❌ 不通过</Tag>;
+          }
         }
+        // 未质检
+        return <Tag color="orange" icon={<ClockCircleOutlined />}>⏳ 待质检</Tag>;
+      }
+    },
+    {
+      title: '质检人',
+      dataIndex: 'inspector',
+      key: 'inspector',
+      width: 120,
+      align: 'center' as const,
+      render: (inspector: string, record: any) => {
+        if (record.isGroup) return null;
+        if (inspector) {
+          return (
+            <Tag color="blue" icon={<UserOutlined />}>
+              {inspector}
+            </Tag>
+          );
+        }
+        return <Tag color="default">未质检</Tag>;
       }
     }
   ];
 
   // 统计数据
   const pendingCount = allAnnotations.filter(item => 
-    item.status && !item.isQualified && item.isQualified !== false
+    item.status === true && !item.inspector
   ).length;
   
   const inspectedCount = allAnnotations.filter(item => 
-    item.isQualified !== undefined
+    item.inspector && item.inspector.trim() !== ''
   ).length;
   
   const passedCount = allAnnotations.filter(item => 
-    item.isQualified === true
+    item.isQualified === true && item.inspector
   ).length;
   
   const failedCount = allAnnotations.filter(item => 
-    item.isQualified === false
+    item.isQualified === false && item.inspector
   ).length;
 
   const rowSelection = {
