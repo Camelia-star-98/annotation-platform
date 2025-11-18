@@ -8,12 +8,15 @@ import {
   Space,
   Tag,
   message,
-  Typography
+  Typography,
+  Tabs
 } from 'antd';
 import {
   ArrowLeftOutlined,
   PlayCircleOutlined,
-  CheckCircleOutlined
+  CheckCircleOutlined,
+  WarningOutlined,
+  UserOutlined
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
@@ -29,6 +32,20 @@ interface AnnotationTask {
   uploadTime: string;
 }
 
+interface RejectedAnnotation {
+  id: string;
+  videoId: string;
+  videoName: string;
+  subject: string;
+  originalText: string;
+  annotatedText: string;
+  majorCategory: string;
+  minorCategory: string;
+  inspector: string; // 质检人（谁打回的）
+  annotator: string; // 标注人（自己）
+  rejectedTime: string;
+}
+
 export default function AnnotationTaskListPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -36,9 +53,12 @@ export default function AnnotationTaskListPage() {
   
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState<AnnotationTask[]>([]);
+  const [rejectedItems, setRejectedItems] = useState<RejectedAnnotation[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('tasks');
 
   useEffect(() => {
     loadTasks();
+    loadRejectedItems();
   }, []);
 
   const loadTasks = async () => {
@@ -70,6 +90,52 @@ export default function AnnotationTaskListPage() {
     }
   };
 
+  const loadRejectedItems = async () => {
+    try {
+      const { getAllAnnotations, getVideos } = await import('../api/database');
+      const [allAnnotations, allVideos] = await Promise.all([
+        getAllAnnotations(),
+        getVideos()
+      ]);
+      
+      // 创建视频ID到视频信息的映射
+      const videoMap = new Map(allVideos.map(v => [v.id, v]));
+      
+      // 筛选出：
+      // 1. 当前标注人的数据
+      // 2. 质检状态为不通过 (isQualified === false)
+      // 3. 已经有质检人的数据
+      const rejected = allAnnotations
+        .filter(item => 
+          item.annotator === annotatorName &&
+          item.isQualified === false &&
+          item.inspector
+        )
+        .map(item => {
+          const video = videoMap.get(item.videoId);
+          return {
+            id: item.id,
+            videoId: item.videoId,
+            videoName: video?.name || '未知视频',
+            subject: video?.subject || '未知',
+            originalText: item.originalText || '',
+            annotatedText: item.annotatedText || '',
+            majorCategory: item.majorCategory || '',
+            minorCategory: item.minorCategory || '',
+            inspector: item.inspector || '未知',
+            annotator: item.annotator || '',
+            rejectedTime: item.updated_at || item.created_at || ''
+          };
+        });
+      
+      setRejectedItems(rejected);
+      console.log(`加载了 ${rejected.length} 条被打回的数据`);
+    } catch (error) {
+      console.error('加载被打回数据失败:', error);
+      message.error('加载被打回数据失败');
+    }
+  };
+
   const handleStartAnnotation = (task: AnnotationTask) => {
     // 跳转到标注页面，并传递视频ID和标注员姓名
     navigate('/annotation', {
@@ -77,6 +143,19 @@ export default function AnnotationTaskListPage() {
         videoId: task.id,
         videoName: task.videoName,
         annotatorName: annotatorName
+      }
+    });
+  };
+
+  const handleReannotate = (item: RejectedAnnotation) => {
+    // 跳转到标注页面，并传递视频ID、标注员姓名，以及标记这是重新标注
+    navigate('/annotation', {
+      state: {
+        videoId: item.videoId,
+        videoName: item.videoName,
+        annotatorName: annotatorName,
+        isReannotation: true, // 标记这是重新标注
+        focusItemId: item.id // 可以聚焦到具体的标注项
       }
     });
   };
@@ -148,6 +227,94 @@ export default function AnnotationTaskListPage() {
     }
   ];
 
+  const rejectedColumns = [
+    {
+      title: '视频名称',
+      dataIndex: 'videoName',
+      key: 'videoName',
+      width: 200
+    },
+    {
+      title: '科目',
+      dataIndex: 'subject',
+      key: 'subject',
+      width: 80,
+      render: (text: string) => <Tag color="blue">{text}</Tag>
+    },
+    {
+      title: '原文',
+      dataIndex: 'originalText',
+      key: 'originalText',
+      width: 200,
+      ellipsis: true
+    },
+    {
+      title: '标注内容',
+      dataIndex: 'annotatedText',
+      key: 'annotatedText',
+      width: 200,
+      ellipsis: true
+    },
+    {
+      title: '问题大类',
+      dataIndex: 'majorCategory',
+      key: 'majorCategory',
+      width: 120,
+      render: (text: string) => {
+        if (!text) return '-';
+        return text.split(',').map((cat, idx) => (
+          <Tag key={idx} color="orange">{cat}</Tag>
+        ));
+      }
+    },
+    {
+      title: '问题小类',
+      dataIndex: 'minorCategory',
+      key: 'minorCategory',
+      width: 120,
+      render: (text: string) => {
+        if (!text) return '-';
+        return text.split(',').map((cat, idx) => (
+          <Tag key={idx} color="gold">{cat}</Tag>
+        ));
+      }
+    },
+    {
+      title: '质检人',
+      dataIndex: 'inspector',
+      key: 'inspector',
+      width: 100,
+      render: (text: string) => (
+        <Tag icon={<UserOutlined />} color="red">
+          {text}
+        </Tag>
+      )
+    },
+    {
+      title: '打回时间',
+      dataIndex: 'rejectedTime',
+      key: 'rejectedTime',
+      width: 150,
+      render: (text: string) => new Date(text).toLocaleString('zh-CN')
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 120,
+      fixed: 'right' as const,
+      render: (_: any, record: RejectedAnnotation) => (
+        <Button
+          type="primary"
+          danger
+          icon={<WarningOutlined />}
+          onClick={() => handleReannotate(record)}
+        >
+          重新标注
+        </Button>
+      )
+    }
+  ];
+
   return (
     <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
       <Header style={{ 
@@ -176,26 +343,60 @@ export default function AnnotationTaskListPage() {
       </Header>
 
       <Content style={{ padding: '24px' }}>
-        <Card
-          title={
-            <Space>
-              <PlayCircleOutlined style={{ color: '#1890ff' }} />
-              <span>待标注任务</span>
-              <Tag color="blue">{tasks.length} 个任务</Tag>
-            </Space>
-          }
-        >
-          <Table
-            columns={columns}
-            dataSource={tasks}
-            rowKey="id"
-            loading={loading}
-            pagination={{
-              pageSize: 10,
-              showSizeChanger: true,
-              showTotal: (total) => `共 ${total} 个任务`
-            }}
-            scroll={{ x: 1000 }}
+        <Card>
+          <Tabs 
+            activeKey={activeTab} 
+            onChange={setActiveTab}
+            items={[
+              {
+                key: 'tasks',
+                label: (
+                  <Space>
+                    <PlayCircleOutlined />
+                    <span>待标注任务</span>
+                    <Tag color="blue">{tasks.length}</Tag>
+                  </Space>
+                ),
+                children: (
+                  <Table
+                    columns={columns}
+                    dataSource={tasks}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{
+                      pageSize: 10,
+                      showSizeChanger: true,
+                      showTotal: (total) => `共 ${total} 个任务`
+                    }}
+                    scroll={{ x: 1000 }}
+                  />
+                )
+              },
+              {
+                key: 'rejected',
+                label: (
+                  <Space>
+                    <WarningOutlined />
+                    <span>被打回重标</span>
+                    <Tag color="red">{rejectedItems.length}</Tag>
+                  </Space>
+                ),
+                children: (
+                  <Table
+                    columns={rejectedColumns}
+                    dataSource={rejectedItems}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{
+                      pageSize: 20,
+                      showSizeChanger: true,
+                      showTotal: (total) => `共 ${total} 条待重标数据`
+                    }}
+                    scroll={{ x: 1400 }}
+                  />
+                )
+              }
+            ]}
           />
         </Card>
       </Content>

@@ -29,15 +29,18 @@ export default function AnnotationPage() {
   const navigate = useNavigate();
   const playerRef = useRef<ReactPlayer>(null);
   
-  // 支持两种模式：
+  // 支持三种模式：
   // 1. 旧模式：从主页传入 videos 数组
   // 2. 新模式：从任务列表传入 videoId、videoName、annotatorName
+  // 3. 重标模式：isReannotation=true, focusItemId 指定要重新标注的项
   const userName = location.state?.annotatorName || location.state?.userName || '未知用户';
   const videos = location.state?.videos || [];
   const videoId = location.state?.videoId;
   const videoName = location.state?.videoName;
   const uploadedAnnotations = location.state?.annotations || null;
   const isUploadMode = location.state?.isUploadMode || false;
+  const isReannotation = location.state?.isReannotation || false;
+  const focusItemId = location.state?.focusItemId || null;
   
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const [annotations, setAnnotations] = useState<AnnotationItem[]>([]);
@@ -388,6 +391,10 @@ export default function AnnotationPage() {
               size="small"
               scroll={{ x: 1000 }}
               rowClassName={(record) => {
+                // 重标模式：如果是当前要重新标注的项，用橙色背景
+                if (isReannotation && record.id === focusItemId) {
+                  return 'row-reannotation-focus';
+                }
                 // 质检未通过的数据行用红色背景标识
                 if (record.isQualified === false) {
                   return 'row-failed-inspection';

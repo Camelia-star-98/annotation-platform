@@ -116,3 +116,28 @@
   border-bottom-color: #ffccc7 !important;
 }
 
+/* 重标聚焦行标识（橙色） */
+.row-reannotation-focus {
+  background-color: #fff7e6 !important;
+  animation: highlight-pulse 2s ease-in-out infinite;
+}
+
+.row-reannotation-focus:hover {
+  background-color: #ffe7ba !important;
+}
+
+.row-reannotation-focus td {
+  border-bottom-color: #ffd591 !important;
+  border-left: 3px solid #fa8c16 !important;
+}
+
+/* 脉动动画 */
+@keyframes highlight-pulse {
+  0%, 100% {
+    background-color: #fff7e6;
+  }
+  50% {
+    background-color: #ffe7ba;
+  }
+}
+
