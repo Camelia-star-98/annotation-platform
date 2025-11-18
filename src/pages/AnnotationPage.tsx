@@ -284,6 +284,21 @@ export default function AnnotationPage() {
       }
     },
     {
+      title: '备注',
+      dataIndex: 'remark',
+      key: 'remark',
+      width: 200,
+      render: (text: string, record: AnnotationItem) => (
+        <TextArea
+          value={text || ''}
+          onChange={(e) => updateAnnotation(record.id, 'remark', e.target.value)}
+          autoSize={{ minRows: 1, maxRows: 4 }}
+          placeholder="添加备注..."
+          style={{ fontSize: '13px' }}
+        />
+      )
+    },
+    {
       title: '质检状态',
       dataIndex: 'isQualified',
       key: 'isQualified',
