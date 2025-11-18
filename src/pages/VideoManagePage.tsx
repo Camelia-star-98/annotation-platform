@@ -19,7 +19,8 @@ import {
   UploadOutlined,
   DeleteOutlined,
   EyeOutlined,
-  CheckOutlined
+  CheckOutlined,
+  RollbackOutlined
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
 import * as XLSX from 'xlsx';
@@ -531,6 +532,32 @@ export default function VideoManagePage() {
   };
 
   // 更新视频或Excel
+  // 撤回已发布的任务
+  const handleWithdraw = async (record: VideoData) => {
+    setLoading(true);
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      // 将视频的 is_published 设置为 false
+      const { error } = await supabase
+        .from('videos')
+        .update({ is_published: false })
+        .eq('id', record.id);
+      
+      if (error) {
+        throw error;
+      }
+      
+      message.success(`已撤回任务"${record.videoName}"`);
+      loadVideoList(); // 重新加载列表
+    } catch (error) {
+      console.error('撤回任务失败:', error);
+      message.error('撤回任务失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleUpdate = (record: VideoData) => {
     setCurrentEditRecord(record);
     setIsUpdateModalVisible(true);
@@ -794,6 +821,24 @@ export default function VideoManagePage() {
       align: 'center' as const,
       render: (_: any, record: VideoData) => (
         <Space>
+          {record.isPublished && (
+            <Popconfirm
+              title="确认撤回？"
+              description="撤回后，该任务将从任务列表中移除，标注员将无法访问"
+              onConfirm={() => handleWithdraw(record)}
+              okText="确认撤回"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+            >
+              <Button
+                size="small"
+                danger
+                icon={<RollbackOutlined />}
+              >
+                撤回
+              </Button>
+            </Popconfirm>
+          )}
           <Button
             size="small"
             icon={<UploadOutlined />}
