@@ -181,14 +181,27 @@ export default function InspectionManagePage() {
     return result;
   };
 
-  // 开始质检
+  // 开始质检 - 跳转到质检页面
   const handleStartInspection = () => {
     if (selectedRows.length === 0) {
       message.warning('请至少选择一条数据进行质检');
       return;
     }
-    // 直接打开批量质检弹窗（合并了输入姓名和选择结果）
-    setIsBatchInspectModalVisible(true);
+
+    const selectedData = allAnnotations.filter(item => 
+      selectedRows.includes(item.id)
+    );
+
+    navigate('/inspection', {
+      state: {
+        userName: inspectorName || '质检员',
+        inspectionData: selectedData,
+        isFromManagement: true,
+        returnToManagement: true, // 标记从管理页面来，返回时需要显示提交弹窗
+        selectedVideoId,
+        videoName
+      }
+    });
   };
 
   // 批量质检确认

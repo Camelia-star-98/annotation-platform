@@ -9,12 +9,15 @@ import {
   message,
   Typography,
   Tag,
-  Radio
+  Radio,
+  Modal,
+  Input
 } from 'antd';
 import {
   ArrowLeftOutlined,
   CheckOutlined,
-  CloseOutlined
+  CloseOutlined,
+  UserOutlined
 } from '@ant-design/icons';
 import ReactPlayer from 'react-player';
 import { MOCK_ANNOTATED_DATA } from '../mock/data';
@@ -32,9 +35,16 @@ export default function InspectionPage() {
   const userName = location.state?.userName || '未知用户';
   const inspectionDataFromManage = location.state?.inspectionData || null;
   const isFromManagement = location.state?.isFromManagement || false;
+  const returnToManagement = location.state?.returnToManagement || false;
+  const selectedVideoId = location.state?.selectedVideoId;
+  const videoName = location.state?.videoName;
   
   const [inspectionData, setInspectionData] = useState<AnnotationItem[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [isSubmitModalVisible, setIsSubmitModalVisible] = useState(false);
+  const [inspectorName, setInspectorName] = useState(userName);
+  const [batchInspectResult, setBatchInspectResult] = useState<'pass' | 'fail' | null>(null);
+  const [loading, setLoading] = useState(false);
   const pageSize = 20;
 
   // 初始化质检数据
@@ -73,8 +83,8 @@ export default function InspectionPage() {
     );
   };
 
-  // 提交质检
-  const handleSubmit = async () => {
+  // 提交质检 - 打开弹窗
+  const handleSubmit = () => {
     const checkedItems = inspectionData.filter(item => item.isQualified !== undefined);
     
     if (checkedItems.length < inspectionData.length) {
@@ -82,33 +92,57 @@ export default function InspectionPage() {
       return;
     }
 
-    // 计算错误率
-    const failedCount = inspectionData.filter(item => !item.isQualified).length;
-    const errorRate = (failedCount / inspectionData.length) * 100;
+    // 打开提交弹窗
+    setIsSubmitModalVisible(true);
+  };
 
-    // 保存质检结果到后端
+  // 确认提交质检
+  const handleConfirmSubmit = async () => {
+    if (!inspectorName.trim()) {
+      message.warning('请输入质检人姓名');
+      return;
+    }
+
+    if (!batchInspectResult) {
+      message.warning('请选择质检结果（通过/不通过）');
+      return;
+    }
+
+    setLoading(true);
+
     try {
       const { updateAnnotation } = await import('../api/database');
       
+      // 根据选择的质检结果，批量更新所有数据
+      const isQualified = batchInspectResult === 'pass';
+      
       for (const item of inspectionData) {
         await updateAnnotation(item.id, {
-          isQualified: item.isQualified,
-          inspector: userName
+          isQualified: isQualified,
+          inspector: inspectorName
         });
       }
 
-      if (errorRate > 2) {
-        message.error(`错误率 ${errorRate.toFixed(1)}% 超过 2%，标注将被打回重新标注`);
-      } else {
-        message.success(`质检通过！错误率 ${errorRate.toFixed(1)}%`);
-      }
+      message.success(`批量质检完成！共质检 ${inspectionData.length} 条数据`);
 
       setTimeout(() => {
-        navigate('/inspection-manage');
-      }, 2000);
+        if (returnToManagement) {
+          navigate('/inspection-manage', {
+            state: {
+              inspectorName,
+              selectedVideoId,
+              videoName
+            }
+          });
+        } else {
+          navigate('/inspection-select');
+        }
+      }, 1500);
     } catch (error) {
       message.error('保存质检结果失败');
       console.error(error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -305,6 +339,99 @@ export default function InspectionPage() {
           </Card>
         </div>
       </Content>
+
+      {/* 批量质检提交弹窗 */}
+      <Modal
+        title="提交质检结果"
+        open={isSubmitModalVisible}
+        onOk={handleConfirmSubmit}
+        onCancel={() => {
+          setIsSubmitModalVisible(false);
+          setBatchInspectResult(null);
+        }}
+        okText="确认提交"
+        cancelText="取消"
+        confirmLoading={loading}
+        width={520}
+      >
+        <div style={{ padding: '20px 0' }}>
+          <Space direction="vertical" style={{ width: '100%' }} size="large">
+            {/* 质检人姓名输入 */}
+            <div>
+              <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, fontSize: 15 }}>
+                质检人姓名 <span style={{ color: '#ff4d4f' }}>*</span>
+              </label>
+              <Input
+                placeholder="请输入质检人姓名"
+                value={inspectorName}
+                onChange={(e) => setInspectorName(e.target.value)}
+                prefix={<UserOutlined style={{ color: '#bfbfbf' }} />}
+                size="large"
+                style={{ fontSize: 15 }}
+              />
+            </div>
+
+            {/* 统计信息 */}
+            <div style={{ background: '#e6f7ff', padding: 16, borderRadius: 8, border: '1px solid #91d5ff' }}>
+              <p style={{ margin: 0, color: '#666', fontSize: 14 }}>
+                即将提交 <strong style={{ color: '#1890ff', fontSize: 20 }}>{inspectionData.length}</strong> 条质检结果
+              </p>
+            </div>
+
+            {/* 质检结果选择 */}
+            <div>
+              <label style={{ display: 'block', marginBottom: 12, fontWeight: 500, fontSize: 15 }}>
+                整体质检结果 <span style={{ color: '#ff4d4f' }}>*</span>
+              </label>
+              <Radio.Group
+                value={batchInspectResult}
+                onChange={(e) => setBatchInspectResult(e.target.value)}
+                style={{ width: '100%' }}
+              >
+                <Space direction="vertical" style={{ width: '100%' }} size="middle">
+                  <Radio 
+                    value="pass" 
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px 16px',
+                      border: '1px solid #d9d9d9',
+                      borderRadius: '6px',
+                      marginRight: 0
+                    }}
+                  >
+                    <Space>
+                      <CheckOutlined style={{ color: '#52c41a', fontSize: 16 }} />
+                      <span style={{ fontSize: 15, fontWeight: 500 }}>通过</span>
+                    </Space>
+                  </Radio>
+                  <Radio 
+                    value="fail" 
+                    style={{ 
+                      width: '100%',
+                      padding: '12px 16px',
+                      border: '1px solid #d9d9d9',
+                      borderRadius: '6px',
+                      marginRight: 0
+                    }}
+                  >
+                    <Space>
+                      <CloseOutlined style={{ color: '#ff4d4f', fontSize: 16 }} />
+                      <span style={{ fontSize: 15, fontWeight: 500 }}>不通过</span>
+                    </Space>
+                  </Radio>
+                </Space>
+              </Radio.Group>
+            </div>
+
+            {/* 提示信息 */}
+            <div style={{ background: '#fffbe6', padding: 12, borderRadius: 4, border: '1px solid #ffe58f' }}>
+              <p style={{ margin: 0, color: '#8c8c8c', fontSize: 13 }}>
+                💡 提示：选择的质检结果将应用到所有质检数据
+              </p>
+            </div>
+          </Space>
+        </div>
+      </Modal>
     </Layout>
   );
 }
