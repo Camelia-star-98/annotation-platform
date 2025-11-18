@@ -821,7 +821,8 @@ export default function VideoManagePage() {
       align: 'center' as const,
       render: (_: any, record: VideoData) => (
         <Space>
-          {record.isPublished && (
+          {record.isPublished ? (
+            // 已发布：只显示撤回按钮
             <Popconfirm
               title="确认撤回？"
               description="撤回后，该任务将从任务列表中移除，标注员将无法访问"
@@ -838,26 +839,30 @@ export default function VideoManagePage() {
                 撤回
               </Button>
             </Popconfirm>
+          ) : (
+            // 未发布：显示更新和删除按钮
+            <>
+              <Button
+                size="small"
+                icon={<UploadOutlined />}
+                onClick={() => handleUpdate(record)}
+              >
+                更新
+              </Button>
+              <Popconfirm
+                title="确定要删除吗？"
+                description="删除后数据将无法恢复，包括视频文件和所有标注数据"
+                onConfirm={() => handleDelete(record)}
+                okText="确定"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />}>
+                  删除
+                </Button>
+              </Popconfirm>
+            </>
           )}
-          <Button
-            size="small"
-            icon={<UploadOutlined />}
-            onClick={() => handleUpdate(record)}
-          >
-            更新
-          </Button>
-          <Popconfirm
-            title="确定要删除吗？"
-            description="删除后数据将无法恢复，包括视频文件和所有标注数据"
-            onConfirm={() => handleDelete(record)}
-            okText="确定"
-            cancelText="取消"
-            okButtonProps={{ danger: true }}
-          >
-            <Button size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
         </Space>
       )
     }
