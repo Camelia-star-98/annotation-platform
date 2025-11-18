@@ -36,6 +36,9 @@ export default function AnalysisPage() {
   const [detailData, setDetailData] = useState<AnnotationItem[]>([]);
   const [loading, setLoading] = useState(false);
   
+  // 按学科分组的数据（用于聚合分析）
+  const [subjectGroupedData, setSubjectGroupedData] = useState<Record<string, any[]>>({});
+  
   // 分析模式：'aggregate' 聚合分析, 'single' 单视频分析
   const [analysisMode, setAnalysisMode] = useState<'aggregate' | 'single'>('aggregate');
   // 单视频分析时选中的视频
@@ -87,11 +90,39 @@ export default function AnalysisPage() {
       console.log('📊 筛选后数据量:', filteredData.length);
       
       // 计算统计数据
-      const allSubjects = calculateStatistics(filteredData, 'majorCategory');
-      const singleSubject = calculateStatistics(filteredData, 'minorCategory');
-
-      setAllSubjectsData(allSubjects);
-      setSingleSubjectData(singleSubject);
+      if (analysisMode === 'aggregate') {
+        // 聚合分析：按学科分组
+        const subjectGroups: Record<string, AnnotationItem[]> = {};
+        const subjectStats: Record<string, any[]> = {};
+        
+        filteredData.forEach(item => {
+          const subject = item.subject || '未知';
+          if (!subjectGroups[subject]) {
+            subjectGroups[subject] = [];
+          }
+          subjectGroups[subject].push(item);
+        });
+        
+        // 为每个学科计算统计
+        Object.keys(subjectGroups).forEach(subject => {
+          const data = subjectGroups[subject];
+          subjectStats[subject] = calculateStatistics(data, 'majorCategory');
+        });
+        
+        console.log('📊 按学科分组统计:', subjectStats);
+        setSubjectGroupedData(subjectStats);
+        
+        // 保留全局统计用于表格
+        const allSubjects = calculateStatistics(filteredData, 'majorCategory');
+        setAllSubjectsData(allSubjects);
+      } else {
+        // 单视频分析：原有逻辑
+        const allSubjects = calculateStatistics(filteredData, 'majorCategory');
+        const singleSubject = calculateStatistics(filteredData, 'minorCategory');
+        setAllSubjectsData(allSubjects);
+        setSingleSubjectData(singleSubject);
+      }
+      
       setDetailData(filteredData);
       
       message.success(`加载了 ${filteredData.length} 条标注数据`);
@@ -411,28 +442,117 @@ export default function AnalysisPage() {
           </Card>
 
           {/* 图表展示 */}
-          <Row gutter={24} style={{ marginBottom: 24 }}>
-            <Col xs={24} lg={12}>
-              <Card loading={loading}>
-                <ReactECharts
-                  option={allSubjectsOption}
-                  style={{ height: '400px' }}
-                  notMerge={true}
-                  lazyUpdate={true}
-                />
+          {analysisMode === 'aggregate' ? (
+            // 聚合分析：按学科显示多个饼图
+            <>
+              <Card title="按学科分类统计" style={{ marginBottom: 24 }}>
+                <Row gutter={[24, 24]}>
+                  {Object.keys(subjectGroupedData).length > 0 ? (
+                    Object.entries(subjectGroupedData).map(([subject, data]) => {
+                      const option = {
+                        title: {
+                          text: `${subject} - 问题占比`,
+                          left: 'center',
+                          top: 20,
+                          textStyle: {
+                            fontSize: 16,
+                            fontWeight: 'bold'
+                          }
+                        },
+                        tooltip: {
+                          trigger: 'item',
+                          formatter: '{b}: {c}条 ({d}%)'
+                        },
+                        legend: {
+                          orient: 'vertical',
+                          right: 10,
+                          top: 'middle',
+                          textStyle: {
+                            fontSize: 12
+                          },
+                          formatter: (name: string) => {
+                            const item = data.find((d: any) => d.name === name);
+                            return `${name}: ${item?.value || 0}条`;
+                          }
+                        },
+                        series: [
+                          {
+                            name: '问题分布',
+                            type: 'pie',
+                            radius: ['40%', '70%'],
+                            center: ['40%', '55%'],
+                            avoidLabelOverlap: false,
+                            itemStyle: {
+                              borderRadius: 10,
+                              borderColor: '#fff',
+                              borderWidth: 2
+                            },
+                            label: {
+                              show: true,
+                              formatter: '{d}%',
+                              fontSize: 12
+                            },
+                            emphasis: {
+                              label: {
+                                show: true,
+                                fontSize: 14,
+                                fontWeight: 'bold'
+                              }
+                            },
+                            data: data
+                          }
+                        ],
+                        color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
+                      };
+
+                      return (
+                        <Col xs={24} lg={12} xl={12} key={subject}>
+                          <Card bordered={false} loading={loading}>
+                            <ReactECharts
+                              option={option}
+                              style={{ height: '400px' }}
+                              notMerge={true}
+                              lazyUpdate={true}
+                            />
+                          </Card>
+                        </Col>
+                      );
+                    })
+                  ) : (
+                    <Col span={24}>
+                      <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
+                        暂无数据
+                      </div>
+                    </Col>
+                  )}
+                </Row>
               </Card>
-            </Col>
-            <Col xs={24} lg={12}>
-              <Card loading={loading}>
-                <ReactECharts
-                  option={singleSubjectOption}
-                  style={{ height: '400px' }}
-                  notMerge={true}
-                  lazyUpdate={true}
-                />
-              </Card>
-            </Col>
-          </Row>
+            </>
+          ) : (
+            // 单视频分析：显示两个饼图
+            <Row gutter={24} style={{ marginBottom: 24 }}>
+              <Col xs={24} lg={12}>
+                <Card loading={loading}>
+                  <ReactECharts
+                    option={allSubjectsOption}
+                    style={{ height: '400px' }}
+                    notMerge={true}
+                    lazyUpdate={true}
+                  />
+                </Card>
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card loading={loading}>
+                  <ReactECharts
+                    option={singleSubjectOption}
+                    style={{ height: '400px' }}
+                    notMerge={true}
+                    lazyUpdate={true}
+                  />
+                </Card>
+              </Col>
+            </Row>
+          )}
 
           {/* 详细问题汇总 */}
           <Card title="各大类问题汇总" loading={loading}>
