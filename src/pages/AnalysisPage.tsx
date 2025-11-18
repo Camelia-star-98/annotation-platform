@@ -64,10 +64,18 @@ export default function AnalysisPage() {
       const selectedVids = allVideos.filter(v => selectedVideoIds.includes(v.id));
       setVideos(selectedVids);
       
+      console.log('📹 选中的视频:', selectedVids);
+      console.log('📹 视频科目信息:');
+      selectedVids.forEach(v => {
+        console.log(`  - ${v.name}: subject = "${v.subject}"`);
+      });
+      
       // 创建视频ID到科目的映射
       const videoSubjectMap = new Map<string, string>();
       selectedVids.forEach(v => {
-        videoSubjectMap.set(v.id, v.subject || '未知');
+        const subject = v.subject || '未知';
+        videoSubjectMap.set(v.id, subject);
+        console.log(`📋 映射: ${v.id} -> ${subject}`);
       });
       
       // 加载所有标注数据
@@ -100,6 +108,10 @@ export default function AnalysisPage() {
       
       console.log('📊 分析模式:', analysisMode);
       console.log('📊 筛选后数据量:', filteredData.length);
+      console.log('📊 前5条数据的科目:');
+      filteredData.slice(0, 5).forEach(item => {
+        console.log(`  - ID: ${item.id}, VideoID: ${item.videoId}, Subject: "${item.subject}"`);
+      });
       
       // 计算统计数据
       if (analysisMode === 'aggregate') {
