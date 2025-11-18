@@ -209,19 +209,26 @@ export default function ReviewPage() {
         reviewedIds
       });
 
-      // 2. 批量更新复检状态（一次请求）
-      const { error: updateError } = await supabase
-        .from('annotations')
-        .update({
-          reviewer: reviewerName,
-          review_status: true,
-          status: true
-        })
-        .in('id', reviewedIds);
+      // 2. 批量更新复检状态和备注
+      // 使用循环来保存每条数据的备注（因为备注可能不同）
+      const updatePromises = reviewedItems.map(item => 
+        supabase
+          .from('annotations')
+          .update({
+            reviewer: reviewerName,
+            review_status: true,
+            status: true,
+            remark: item.remark || '' // 保存备注
+          })
+          .eq('id', item.id)
+      );
 
-      if (updateError) {
-        console.error('❌ 批量更新失败:', updateError);
-        throw updateError;
+      const results = await Promise.all(updatePromises);
+      const errors = results.filter(r => r.error);
+      
+      if (errors.length > 0) {
+        console.error('❌ 部分更新失败:', errors);
+        throw new Error('部分数据更新失败');
       }
 
       console.log('✅ 批量更新成功，共更新', reviewedIds.length, '条数据');
@@ -339,10 +346,21 @@ export default function ReviewPage() {
       }
     },
     {
-      title: '教研备注',
+      title: '备注',
       dataIndex: 'remark',
       key: 'remark',
-      width: 180
+      width: 200,
+      render: (text: string, record: AnnotationItem) => {
+        return (
+          <Input.TextArea
+            value={text || ''}
+            onChange={(e) => updateReview(record.id, 'remark', e.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder="添加备注..."
+            style={{ fontSize: '13px' }}
+          />
+        );
+      }
     },
     {
       title: '复检状态',

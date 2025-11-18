@@ -119,7 +119,8 @@ export default function InspectionPage() {
       for (const item of inspectionData) {
         await updateAnnotation(item.id, {
           isQualified: isQualified,
-          inspector: inspectorName
+          inspector: inspectorName,
+          remark: item.remark || '' // 保存备注
         });
       }
 
@@ -224,10 +225,30 @@ export default function InspectionPage() {
       }
     },
     {
-      title: '教研备注',
+      title: '备注',
       dataIndex: 'remark',
       key: 'remark',
-      width: 180
+      width: 200,
+      render: (text: string, record: AnnotationItem) => {
+        // 更新备注的函数
+        const updateRemark = (id: string, value: string) => {
+          setInspectionData(prev =>
+            prev.map(item =>
+              item.id === id ? { ...item, remark: value } : item
+            )
+          );
+        };
+
+        return (
+          <Input.TextArea
+            value={text || ''}
+            onChange={(e) => updateRemark(record.id, e.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder="添加备注..."
+            style={{ fontSize: '13px' }}
+          />
+        );
+      }
     },
     {
       title: '标注人',
