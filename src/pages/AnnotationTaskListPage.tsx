@@ -102,19 +102,45 @@ export default function AnnotationTaskListPage() {
         getVideos()
       ]);
       
+      console.log('🔍 调试信息 - 当前标注人:', annotatorName);
+      console.log('📊 所有标注数据数量:', allAnnotations.length);
+      
       // 创建视频ID到视频信息的映射
       const videoMap = new Map(allVideos.map(v => [v.id, v]));
+      
+      // 调试：查看所有质检不通过的数据
+      const failedInspections = allAnnotations.filter(item => item.isQualified === false);
+      console.log('❌ 质检不通过的数据数量:', failedInspections.length);
+      console.log('❌ 质检不通过的数据详情:', failedInspections.map(item => ({
+        id: item.id,
+        annotator: item.annotator,
+        inspector: item.inspector,
+        isQualified: item.isQualified,
+        originalText: item.originalText?.substring(0, 20)
+      })));
       
       // 筛选出：
       // 1. 当前标注人的数据
       // 2. 质检状态为不通过 (isQualified === false)
       // 3. 已经有质检人的数据
       const rejected = allAnnotations
-        .filter(item => 
-          item.annotator === annotatorName &&
-          item.isQualified === false &&
-          item.inspector
-        )
+        .filter(item => {
+          const match = item.annotator === annotatorName &&
+                       item.isQualified === false &&
+                       item.inspector;
+          
+          if (item.isQualified === false) {
+            console.log(`🔍 质检不通过的数据 ${item.id}:`, {
+              annotator: item.annotator,
+              匹配标注人: item.annotator === annotatorName,
+              isQualified: item.isQualified,
+              inspector: item.inspector,
+              是否匹配: match
+            });
+          }
+          
+          return match;
+        })
         .map(item => {
           const video = videoMap.get(item.videoId);
           return {
@@ -133,7 +159,7 @@ export default function AnnotationTaskListPage() {
         });
       
       setRejectedItems(rejected);
-      console.log(`加载了 ${rejected.length} 条被打回的数据`);
+      console.log(`✅ 加载了 ${rejected.length} 条被打回的数据`);
     } catch (error) {
       console.error('加载被打回数据失败:', error);
       message.error('加载被打回数据失败');
