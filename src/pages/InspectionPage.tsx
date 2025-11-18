@@ -158,14 +158,36 @@ export default function InspectionPage() {
       dataIndex: 'majorCategory',
       key: 'majorCategory',
       width: 150,
-      render: (text: string) => <Tag color="blue">{text}</Tag>
+      render: (text: string) => {
+        if (!text) return '-';
+        // 支持多个分类（逗号分隔）
+        const categories = text.split(',').filter(Boolean);
+        return (
+          <Space size={[0, 4]} wrap>
+            {categories.map((cat, index) => (
+              <Tag key={index} color="blue">{cat}</Tag>
+            ))}
+          </Space>
+        );
+      }
     },
     {
       title: '问题小类',
       dataIndex: 'minorCategory',
       key: 'minorCategory',
       width: 150,
-      render: (text: string) => <Tag color="cyan">{text}</Tag>
+      render: (text: string) => {
+        if (!text) return '-';
+        // 支持多个分类（逗号分隔）
+        const categories = text.split(',').filter(Boolean);
+        return (
+          <Space size={[0, 4]} wrap>
+            {categories.map((cat, index) => (
+              <Tag key={index} color="cyan">{cat}</Tag>
+            ))}
+          </Space>
+        );
+      }
     },
     {
       title: '教研备注',

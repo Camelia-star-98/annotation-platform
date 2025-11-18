@@ -108,11 +108,16 @@ export default function ReviewPage() {
     );
   };
 
-  // 处理问题分类选择
-  const handleCategoryChange = (id: string, value: [string, string] | null) => {
-    if (value) {
-      updateReview(id, 'majorCategory', value[0]);
-      updateReview(id, 'minorCategory', value[1]);
+  // 处理问题分类选择（支持多选）
+  const handleCategoryChange = (id: string, value: [string, string][] | null) => {
+    if (value && value.length > 0) {
+      // 提取所有选中的大类和小类
+      const majorCategories = value.map(v => v[0]);
+      const minorCategories = value.map(v => v[1]);
+      
+      // 使用逗号分隔存储多个分类
+      updateReview(id, 'majorCategory', [...new Set(majorCategories)].join(','));
+      updateReview(id, 'minorCategory', minorCategories.join(','));
     } else {
       updateReview(id, 'majorCategory', '');
       updateReview(id, 'minorCategory', '');
@@ -299,20 +304,37 @@ export default function ReviewPage() {
       title: '问题分类',
       key: 'category',
       width: 250,
-      render: (_: any, record: AnnotationItem) => (
-        <Cascader
-          options={categoryOptions}
-          onChange={(value) => handleCategoryChange(record.id, value as [string, string] | null)}
-          value={
-            record.majorCategory && record.minorCategory
-              ? [record.majorCategory, record.minorCategory]
-              : undefined
-          }
-          placeholder="选择问题大类和小类"
-          style={{ width: '100%' }}
-          showSearch
-        />
-      )
+      render: (_: any, record: AnnotationItem) => {
+        // 将存储的逗号分隔字符串转换为数组格式
+        let currentValue: [string, string][] | undefined;
+        if (record.majorCategory && record.minorCategory) {
+          const majors = record.majorCategory.split(',').filter(Boolean);
+          const minors = record.minorCategory.split(',').filter(Boolean);
+          
+          // 组合成 [[大类1, 小类1], [大类2, 小类2], ...] 格式
+          currentValue = minors.map((minor, index) => {
+            // 找到该小类对应的大类
+            const matchedCategory = categories.find(cat => 
+              cat.minorCategories.includes(minor)
+            );
+            return [matchedCategory?.majorCategory || majors[0] || '', minor];
+          });
+        }
+        
+        return (
+          <Cascader
+            options={categoryOptions}
+            onChange={(value) => handleCategoryChange(record.id, value as [string, string][] | null)}
+            value={currentValue}
+            placeholder="选择问题大类和小类（可多选）"
+            style={{ width: '100%' }}
+            showSearch
+            multiple
+            maxTagCount="responsive"
+            size="small"
+          />
+        );
+      }
     },
     {
       title: '教研备注',
