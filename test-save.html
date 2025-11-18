@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Supabase 保存测试</title>
+    <style>
+        body { font-family: Arial; padding: 20px; max-width: 800px; margin: 0 auto; }
+        button { padding: 10px 20px; margin: 10px 5px; font-size: 16px; cursor: pointer; }
+        .result { margin: 20px 0; padding: 15px; border-radius: 5px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; }
+        pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Supabase 保存功能测试</h1>
+    
+    <button onclick="testConnection()">1. 测试连接</button>
+    <button onclick="testInsert()">2. 测试插入单条</button>
+    <button onclick="testBatchInsert()">3. 测试批量插入</button>
+    <button onclick="testQuery()">4. 查询所有数据</button>
+    <button onclick="clearTestData()">5. 清理测试数据</button>
+    
+    <div id="results"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+
+        function log(message, type = 'info') {
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong><br>${message}`;
+            document.getElementById('results').appendChild(div);
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        async function testConnection() {
+            log('🔍 测试连接...');
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/annotations?select=count`, {
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Prefer': 'count=exact'
+                    }
+                });
+                
+                if (response.ok) {
+                    const count = response.headers.get('content-range');
+                    log(`✅ 连接成功！annotations 表当前有 ${count} 条数据`, 'success');
+                } else {
+                    const error = await response.json();
+                    log(`❌ 连接失败：<pre>${JSON.stringify(error, null, 2)}</pre>`, 'error');
+                }
+            } catch (err) {
+                log(`❌ 连接异常：${err.message}`, 'error');
+            }
+        }
+
+        async function testInsert() {
+            log('🔍 测试插入单条数据...');
+            
+            const testData = {
+                id: 'test_single_' + Date.now(),
+                video_id: 'test_video',
+                sentence_no: 1,
+                time_range: '00:00-00:05',
+                original_text: '测试原文',
+                ai_rewritten_text: '测试AI改写',
+                human_annotated_text: '测试人工标注',
+                status: true,
+                annotator: '测试用户'
+            };
+
+            log(`📦 准备插入数据：<pre>${JSON.stringify(testData, null, 2)}</pre>`);
+
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/annotations`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify(testData)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`✅ 插入成功！<pre>${JSON.stringify(result, null, 2)}</pre>`, 'success');
+                } else {
+                    const error = await response.json();
+                    log(`❌ 插入失败 (${response.status})：<pre>${JSON.stringify(error, null, 2)}</pre>`, 'error');
+                }
+            } catch (err) {
+                log(`❌ 插入异常：${err.message}`, 'error');
+            }
+        }
+
+        async function testBatchInsert() {
+            log('🔍 测试批量插入（模拟前端提交）...');
+            
+            const batchData = [
+                {
+                    id: 'batch_' + Date.now() + '_1',
+                    video_id: 'video_batch',
+                    sentence_no: 1,
+                    time_range: '00:00-00:05',
+                    original_text: '批量测试原文1',
+                    ai_rewritten_text: '批量测试AI改写1',
+                    human_annotated_text: '批量测试人工标注1',
+                    major_category: '大模型改写问题',
+                    minor_category: '多加字',
+                    status: true,
+                    annotator: '张三'
+                },
+                {
+                    id: 'batch_' + Date.now() + '_2',
+                    video_id: 'video_batch',
+                    sentence_no: 2,
+                    time_range: '00:05-00:10',
+                    original_text: '批量测试原文2',
+                    ai_rewritten_text: '批量测试AI改写2',
+                    human_annotated_text: '批量测试人工标注2',
+                    major_category: 'asr识别问题',
+                    minor_category: '同音字识别错',
+                    status: true,
+                    annotator: '张三'
+                }
+            ];
+
+            log(`📦 准备批量插入 ${batchData.length} 条数据`);
+
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/annotations`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    },
+                    body: JSON.stringify(batchData)
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    log(`✅ 批量插入成功！插入了 ${result.length} 条数据<pre>${JSON.stringify(result, null, 2)}</pre>`, 'success');
+                } else {
+                    const error = await response.json();
+                    log(`❌ 批量插入失败 (${response.status})：<pre>${JSON.stringify(error, null, 2)}</pre>`, 'error');
+                }
+            } catch (err) {
+                log(`❌ 批量插入异常：${err.message}`, 'error');
+            }
+        }
+
+        async function testQuery() {
+            log('🔍 查询所有数据...');
+            try {
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/annotations?select=*&order=created_at.desc`, {
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ 查询成功！共 ${data.length} 条数据<pre>${JSON.stringify(data, null, 2)}</pre>`, 'success');
+                } else {
+                    const error = await response.json();
+                    log(`❌ 查询失败：<pre>${JSON.stringify(error, null, 2)}</pre>`, 'error');
+                }
+            } catch (err) {
+                log(`❌ 查询异常：${err.message}`, 'error');
+            }
+        }
+
+        async function clearTestData() {
+            log('🧹 清理所有测试数据...');
+            try {
+                // 删除所有 id 以 test_ 或 batch_ 开头的数据
+                const response = await fetch(`${SUPABASE_URL}/rest/v1/annotations?id=like.test_*,batch_*`, {
+                    method: 'DELETE',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`
+                    }
+                });
+
+                if (response.ok) {
+                    log(`✅ 测试数据已清理`, 'success');
+                    await testQuery();
+                } else {
+                    log(`⚠️ 清理可能未完全成功，请手动检查`, 'error');
+                }
+            } catch (err) {
+                log(`❌ 清理异常：${err.message}`, 'error');
+            }
+        }
+
+        // 页面加载时自动测试连接
+        window.onload = testConnection;
+    </script>
+</body>
+</html>
+

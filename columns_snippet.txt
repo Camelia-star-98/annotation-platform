@@ -1,0 +1,18 @@
+// 这是columns的render函数修改
+// 第一列：视频名称/句子编号
+{
+  title: '视频名称 / 句子编号',
+  dataIndex: 'videoName',
+  key: 'videoName',
+  width: 250,
+  render: (text: string, record: any) => {
+    if (record.isGroup) {
+      return (
+        <strong style={{ fontSize: '14px' }}>
+          📹 {text} <Tag color="blue">{record.itemCount} 条</Tag>
+        </strong>
+      );
+    }
+    return `句子 ${record.sentenceNo}`;
+  }
+},

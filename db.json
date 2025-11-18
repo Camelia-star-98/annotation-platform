@@ -1,0 +1,71 @@
+{
+  "videos": [
+    {
+      "id": "video_1",
+      "name": "数学课程_01.mp4",
+      "url": "https://www.w3schools.com/html/mov_bbb.mp4",
+      "subject": "数学",
+      "duration": 300
+    },
+    {
+      "id": "video_2",
+      "name": "英语课程_01.mp4",
+      "url": "https://www.w3schools.com/html/mov_bbb.mp4",
+      "subject": "英语",
+      "duration": 420
+    },
+    {
+      "id": "video_3",
+      "name": "物理课程_01.mp4",
+      "url": "https://www.w3schools.com/html/mov_bbb.mp4",
+      "subject": "物理",
+      "duration": 360
+    }
+  ],
+  "annotations": [
+    {
+      "id": "anno_1",
+      "videoId": "video_1",
+      "sentenceNo": 1,
+      "timeRange": "00:15 - 00:30",
+      "startTime": 15,
+      "endTime": 30,
+      "originalText": "OK 的给老孟示一个 OK",
+      "aiRewrittenText": "好的给你示一个 OK",
+      "humanAnnotatedText": "好的",
+      "majorCategory": "大班课话术改写问题",
+      "minorCategory": "出现评论区话术",
+      "remark": "出现了"给老孟示一个"这种评论区互动话术",
+      "status": true,
+      "videoName": "数学课程_01.mp4",
+      "subject": "数学",
+      "annotator": "张三"
+    },
+    {
+      "id": "anno_2",
+      "videoId": "video_1",
+      "sentenceNo": 5,
+      "timeRange": "01:20 - 01:35",
+      "startTime": 80,
+      "endTime": 95,
+      "originalText": "刚刚绝大部分同学选的是这个啊",
+      "aiRewrittenText": "刚刚你选的是这个啊",
+      "humanAnnotatedText": "你选的是这个",
+      "majorCategory": "大班课话术改写问题",
+      "minorCategory": "出现互动话术",
+      "remark": "出现了"绝大部分同学"互动话术",
+      "status": true,
+      "videoName": "数学课程_01.mp4",
+      "subject": "数学",
+      "annotator": "张三"
+    }
+  ],
+  "users": [
+    {
+      "id": "user_1",
+      "name": "张三",
+      "role": "annotator"
+    }
+  ]
+}
+

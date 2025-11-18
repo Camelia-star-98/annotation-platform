@@ -1,0 +1,33 @@
+.review-layout {
+  min-height: 100vh;
+}
+
+.review-header {
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  padding: 0 50px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.review-content {
+  padding: 24px;
+  background: #f0f2f5;
+}
+
+.review-container {
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .review-content {
+    padding: 12px;
+  }
+
+  .review-header {
+    padding: 0 20px;
+  }
+}
+

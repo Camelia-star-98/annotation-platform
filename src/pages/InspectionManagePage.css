@@ -1,0 +1,44 @@
+.inspection-manage-layout {
+  min-height: 100vh;
+}
+
+.inspection-manage-header {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  padding: 0 50px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.inspection-manage-content {
+  padding: 24px;
+  background: #f0f2f5;
+}
+
+.inspection-manage-container {
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+/* 统计卡片样式 */
+.ant-statistic-title {
+  font-size: 14px;
+  color: #666;
+}
+
+.ant-statistic-content {
+  font-size: 24px;
+  font-weight: 500;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .inspection-manage-content {
+    padding: 12px;
+  }
+
+  .inspection-manage-header {
+    padding: 0 20px;
+  }
+}
+

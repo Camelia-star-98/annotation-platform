@@ -1,0 +1,50 @@
+# 🎉 JSON Server 后端已配置完成！
+
+## ✅ 完成状态
+
+- ✅ 安装了 `json-server`
+- ✅ 创建了 `db.json` 数据文件
+- ✅ 创建了API接口代码
+- ✅ 添加了启动脚本
+
+---
+
+## 🚀 立即启动（只需2步）
+
+### 步骤1：启动后端
+打开**第一个终端**：
+```bash
+cd /Users/ailian/Downloads/annotation-platform
+npm run server
+```
+
+### 步骤2：启动前端  
+打开**第二个终端**：
+```bash
+cd /Users/ailian/Downloads/annotation-platform
+npm run dev
+```
+
+### 步骤3：打开浏览器
+访问：http://localhost:3000
+
+---
+
+## 📊 数据说明
+
+- 数据文件：`db.json`
+- 后端API：http://localhost:3001
+- 前端页面：http://localhost:3000
+
+所有标注数据都会自动保存到 `db.json` 文件！
+
+---
+
+## 📖 详细文档
+
+查看完整说明：`JSON_SERVER_GUIDE.md`
+
+---
+
+**现在就可以开始验证了！** 🎊
+

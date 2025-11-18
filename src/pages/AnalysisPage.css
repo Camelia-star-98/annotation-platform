@@ -1,0 +1,44 @@
+.analysis-layout {
+  min-height: 100vh;
+}
+
+.analysis-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 0 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.analysis-content {
+  padding: 24px;
+  background: #f0f2f5;
+}
+
+.analysis-container {
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+.video-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .analysis-content {
+    padding: 12px;
+  }
+
+  .analysis-header {
+    padding: 0 20px;
+    flex-direction: column;
+    gap: 12px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+}
+

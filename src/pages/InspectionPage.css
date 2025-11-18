@@ -1,0 +1,49 @@
+.inspection-layout {
+  min-height: 100vh;
+}
+
+.inspection-header {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  padding: 0 50px;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.inspection-content {
+  padding: 24px;
+  background: #f0f2f5;
+}
+
+.inspection-container {
+  max-width: 1800px;
+  margin: 0 auto;
+}
+
+.video-card {
+  margin-bottom: 24px;
+}
+
+.video-wrapper {
+  position: relative;
+  padding-top: 56.25%; /* 16:9 宽高比 */
+  background: #000;
+}
+
+.video-wrapper > div {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .inspection-content {
+    padding: 12px;
+  }
+
+  .inspection-header {
+    padding: 0 20px;
+  }
+}
+
