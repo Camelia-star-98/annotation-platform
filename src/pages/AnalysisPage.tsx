@@ -10,7 +10,10 @@ import {
   Row,
   Col,
   Tag,
-  message
+  message,
+  Radio,
+  Select,
+  Divider
 } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
@@ -26,21 +29,79 @@ export default function AnalysisPage() {
   const location = useLocation();
   const navigate = useNavigate();
   
-  const selectedVideos = location.state?.selectedVideos || [];
+  const selectedVideoIds = location.state?.selectedVideos || [];
+  const [videos, setVideos] = useState<any[]>([]);
   const [allSubjectsData, setAllSubjectsData] = useState<any[]>([]);
   const [singleSubjectData, setSingleSubjectData] = useState<any[]>([]);
   const [detailData, setDetailData] = useState<AnnotationItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  
+  // 分析模式：'aggregate' 聚合分析, 'single' 单视频分析
+  const [analysisMode, setAnalysisMode] = useState<'aggregate' | 'single'>('aggregate');
+  // 单视频分析时选中的视频
+  const [selectedSingleVideo, setSelectedSingleVideo] = useState<string>('');
 
-  // 初始化数据
+  // 加载视频列表和标注数据
   useEffect(() => {
-    // 使用实际数据计算统计
-    const allSubjects = calculateStatistics(MOCK_ANNOTATED_DATA, 'majorCategory');
-    const singleSubject = calculateStatistics(MOCK_ANNOTATED_DATA, 'minorCategory');
+    loadData();
+  }, [selectedVideoIds, analysisMode, selectedSingleVideo]);
 
-    setAllSubjectsData(allSubjects);
-    setSingleSubjectData(singleSubject);
-    setDetailData(MOCK_ANNOTATED_DATA);
-  }, [selectedVideos]);
+  const loadData = async () => {
+    if (selectedVideoIds.length === 0) {
+      message.warning('请先选择视频');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { getVideos, getAllAnnotations } = await import('../api/database');
+      
+      // 加载视频信息
+      const allVideos = await getVideos();
+      const selectedVids = allVideos.filter(v => selectedVideoIds.includes(v.id));
+      setVideos(selectedVids);
+      
+      // 加载所有标注数据
+      const allAnnotations = await getAllAnnotations();
+      
+      // 根据分析模式筛选数据
+      let filteredData: AnnotationItem[] = [];
+      
+      if (analysisMode === 'aggregate') {
+        // 聚合分析：所有选中视频的数据
+        filteredData = allAnnotations.filter(item => 
+          selectedVideoIds.includes(item.videoId) && item.reviewStatus === true
+        );
+      } else {
+        // 单视频分析
+        const targetVideoId = selectedSingleVideo || selectedVideoIds[0];
+        filteredData = allAnnotations.filter(item => 
+          item.videoId === targetVideoId && item.reviewStatus === true
+        );
+        if (!selectedSingleVideo) {
+          setSelectedSingleVideo(targetVideoId);
+        }
+      }
+      
+      console.log('📊 分析模式:', analysisMode);
+      console.log('📊 筛选后数据量:', filteredData.length);
+      
+      // 计算统计数据
+      const allSubjects = calculateStatistics(filteredData, 'majorCategory');
+      const singleSubject = calculateStatistics(filteredData, 'minorCategory');
+
+      setAllSubjectsData(allSubjects);
+      setSingleSubjectData(singleSubject);
+      setDetailData(filteredData);
+      
+      message.success(`加载了 ${filteredData.length} 条标注数据`);
+    } catch (error) {
+      console.error('加载数据失败:', error);
+      message.error('加载数据失败');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // 全学科问题占比饼图配置
   const allSubjectsOption = {
@@ -241,9 +302,17 @@ export default function AnalysisPage() {
   ];
 
   // 获取选中的视频名称
-  const selectedVideoNames = MOCK_VIDEOS
-    .filter(v => selectedVideos.includes(v.id))
-    .map(v => v.name);
+  const selectedVideoNames = videos.map(v => v.name);
+  
+  // 获取当前分析的视频名称
+  const getAnalysisTitle = () => {
+    if (analysisMode === 'aggregate') {
+      return `聚合分析 (${videos.length} 个视频)`;
+    } else {
+      const video = videos.find(v => v.id === selectedSingleVideo);
+      return `单视频分析: ${video?.name || ''}`;
+    }
+  };
 
   return (
     <Layout className="analysis-layout">
@@ -258,7 +327,7 @@ export default function AnalysisPage() {
             返回
           </Button>
           <Title level={3} style={{ color: 'white', margin: 0 }}>
-            结果分析
+            结果分析 - {getAnalysisTitle()}
           </Title>
         </Space>
         <Button
@@ -274,25 +343,77 @@ export default function AnalysisPage() {
 
       <Content className="analysis-content">
         <div className="analysis-container">
-          {/* 数据来源 */}
-          <Card title="数据来源" style={{ marginBottom: 24 }}>
-            <div className="video-sources">
-              {selectedVideoNames.length > 0 ? (
-                selectedVideoNames.map((name, index) => (
-                  <Tag key={index} color="blue" style={{ marginBottom: 8 }}>
-                    {name}
-                  </Tag>
-                ))
-              ) : (
-                <Text type="secondary">暂无选中的视频</Text>
+          {/* 分析模式选择 */}
+          <Card title="分析设置" style={{ marginBottom: 24 }}>
+            <Space direction="vertical" style={{ width: '100%' }} size="large">
+              <div>
+                <Text strong style={{ marginRight: 16 }}>分析模式：</Text>
+                <Radio.Group
+                  value={analysisMode}
+                  onChange={(e) => setAnalysisMode(e.target.value)}
+                  buttonStyle="solid"
+                >
+                  <Radio.Button value="aggregate">聚合分析（所有视频）</Radio.Button>
+                  <Radio.Button value="single">单视频分析</Radio.Button>
+                </Radio.Group>
+              </div>
+              
+              {analysisMode === 'single' && videos.length > 1 && (
+                <div>
+                  <Text strong style={{ marginRight: 16 }}>选择视频：</Text>
+                  <Select
+                    style={{ width: 300 }}
+                    value={selectedSingleVideo}
+                    onChange={setSelectedSingleVideo}
+                    options={videos.map(v => ({
+                      label: v.name,
+                      value: v.id
+                    }))}
+                  />
+                </div>
               )}
+            </Space>
+          </Card>
+
+          {/* 数据来源 */}
+          <Card title="数据来源" style={{ marginBottom: 24 }} loading={loading}>
+            <div className="video-sources">
+              {analysisMode === 'aggregate' ? (
+                <>
+                  <Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>
+                    包含以下 {videos.length} 个视频的所有标注数据：
+                  </Text>
+                  {selectedVideoNames.length > 0 ? (
+                    selectedVideoNames.map((name, index) => (
+                      <Tag key={index} color="blue" style={{ marginBottom: 8, marginRight: 8 }}>
+                        {name}
+                      </Tag>
+                    ))
+                  ) : (
+                    <Text type="secondary">暂无选中的视频</Text>
+                  )}
+                </>
+              ) : (
+                <>
+                  <Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>
+                    单视频分析：
+                  </Text>
+                  <Tag color="green" style={{ fontSize: 14, padding: '4px 12px' }}>
+                    {videos.find(v => v.id === selectedSingleVideo)?.name || ''}
+                  </Tag>
+                </>
+              )}
+              <Divider />
+              <Text type="secondary">
+                共 {detailData.length} 条已复检数据
+              </Text>
             </div>
           </Card>
 
           {/* 图表展示 */}
           <Row gutter={24} style={{ marginBottom: 24 }}>
             <Col xs={24} lg={12}>
-              <Card>
+              <Card loading={loading}>
                 <ReactECharts
                   option={allSubjectsOption}
                   style={{ height: '400px' }}
@@ -302,7 +423,7 @@ export default function AnalysisPage() {
               </Card>
             </Col>
             <Col xs={24} lg={12}>
-              <Card>
+              <Card loading={loading}>
                 <ReactECharts
                   option={singleSubjectOption}
                   style={{ height: '400px' }}
@@ -314,7 +435,7 @@ export default function AnalysisPage() {
           </Row>
 
           {/* 详细问题汇总 */}
-          <Card title="各大类问题汇总">
+          <Card title="各大类问题汇总" loading={loading}>
             <Table
               columns={columns}
               dataSource={detailData}
