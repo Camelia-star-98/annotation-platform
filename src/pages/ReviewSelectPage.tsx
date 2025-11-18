@@ -107,12 +107,25 @@ export default function ReviewSelectPage() {
 
       const result = Array.from(videoMap.values()).filter(v => v.annotators.length > 0);
       
+      console.log('📊 视频和标注人统计:', result.map(v => ({
+        videoName: v.videoName,
+        annotators: v.annotators.map(a => ({
+          name: a.annotatorName,
+          total: a.totalAnnotations,
+          reviewed: a.reviewedCount,
+          pending: a.pendingCount,
+          reviewers: a.reviewers
+        }))
+      })));
+      
       // 分离待复检和已复检
       const pending: VideoWithAnnotators[] = [];
       const completed: VideoWithAnnotators[] = [];
       
       result.forEach(video => {
+        // 待复检：有未完成的复检任务
         const pendingAnnotators = video.annotators.filter(a => a.pendingCount > 0);
+        // 已复检：所有任务都已完成（没有待复检的）
         const completedAnnotators = video.annotators.filter(a => a.pendingCount === 0 && a.reviewedCount > 0);
         
         if (pendingAnnotators.length > 0) {
@@ -129,6 +142,9 @@ export default function ReviewSelectPage() {
           });
         }
       });
+      
+      console.log('⏳ 待复检列表:', pending);
+      console.log('✅ 已复检列表:', completed);
       
       setPendingList(pending);
       setCompletedList(completed);
