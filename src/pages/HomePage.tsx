@@ -12,7 +12,8 @@ import {
   Space,
   message,
   Divider,
-  Tag
+  Tag,
+  Select
 } from 'antd';
 import {
   EditOutlined,
@@ -71,6 +72,36 @@ export default function HomePage() {
     }
   };
 
+  // 更新视频科目
+  const handleSubjectChange = async (videoId: string, newSubject: string) => {
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      const { error } = await supabase
+        .from('videos')
+        .update({ subject: newSubject })
+        .eq('id', videoId);
+
+      if (error) {
+        console.error('更新科目失败:', error);
+        message.error('更新科目失败');
+        return;
+      }
+
+      // 更新本地状态
+      setCompletedVideos(prev =>
+        prev.map(video =>
+          video.id === videoId ? { ...video, subject: newSubject } : video
+        )
+      );
+
+      message.success('科目更新成功');
+    } catch (error) {
+      console.error('更新科目失败:', error);
+      message.error('更新科目失败');
+    }
+  };
+
   // 表格列定义
   const columns = [
     {
@@ -101,8 +132,21 @@ export default function HomePage() {
       title: '科目',
       dataIndex: 'subject',
       key: 'subject',
-      width: 100,
-      render: (text: string) => <Tag color="blue">{text || '未知'}</Tag>
+      width: 150,
+      render: (text: string, record: VideoInfo) => (
+        <Select
+          value={text || '未知'}
+          style={{ width: 120 }}
+          onChange={(value) => handleSubjectChange(record.id, value)}
+          options={[
+            { label: '物理', value: '物理' },
+            { label: '英语', value: '英语' },
+            { label: '数学', value: '数学' },
+            { label: '语文', value: '语文' },
+            { label: '化学', value: '化学' }
+          ]}
+        />
+      )
     },
     {
       title: '时长',
