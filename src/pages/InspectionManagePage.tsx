@@ -495,21 +495,21 @@ export default function InspectionManagePage() {
     }
   ];
 
-  // 统计数据
-  const pendingCount = allAnnotations.filter(item => 
-    item.status === true && !item.inspector
+  // 统计数据 - 基于当前筛选后的数据（抽样后的数据）
+  const pendingCount = filteredData.filter(item => 
+    !item.isGroup && item.status === true && !item.inspector
   ).length;
   
-  const inspectedCount = allAnnotations.filter(item => 
-    item.inspector && item.inspector.trim() !== ''
+  const inspectedCount = filteredData.filter(item => 
+    !item.isGroup && item.inspector && item.inspector.trim() !== ''
   ).length;
   
-  const passedCount = allAnnotations.filter(item => 
-    item.isQualified === true && item.inspector
+  const passedCount = filteredData.filter(item => 
+    !item.isGroup && item.isQualified === true && item.inspector
   ).length;
   
-  const failedCount = allAnnotations.filter(item => 
-    item.isQualified === false && item.inspector
+  const failedCount = filteredData.filter(item => 
+    !item.isGroup && item.isQualified === false && item.inspector
   ).length;
 
   const rowSelection = {
@@ -579,6 +579,9 @@ export default function InspectionManagePage() {
                   本次抽样数量：<strong>{sampledCount}</strong> 条 | 
                   抽样算法：Fisher-Yates 随机洗牌
                 </div>
+                <div style={{ color: '#fa8c16', fontSize: 12, marginTop: 4 }}>
+                  ⚠️ 注意：只有被抽到的数据会被质检，其余数据仍为"待质检"状态，需要后续再次抽样质检
+                </div>
               </Space>
             </Card>
           )}
@@ -588,7 +591,7 @@ export default function InspectionManagePage() {
             <Col span={6}>
               <Card>
                 <Statistic
-                  title="待质检数据"
+                  title={samplePercentage < 100 ? "本次抽样-待质检" : "待质检数据"}
                   value={pendingCount}
                   suffix="条"
                   valueStyle={{ color: '#faad14' }}
@@ -599,7 +602,7 @@ export default function InspectionManagePage() {
             <Col span={6}>
               <Card>
                 <Statistic
-                  title="已质检数据"
+                  title={samplePercentage < 100 ? "本次抽样-已质检" : "已质检数据"}
                   value={inspectedCount}
                   suffix="条"
                   valueStyle={{ color: '#1890ff' }}
@@ -609,7 +612,7 @@ export default function InspectionManagePage() {
             <Col span={6}>
               <Card>
                 <Statistic
-                  title="质检通过"
+                  title={samplePercentage < 100 ? "本次抽样-通过" : "质检通过"}
                   value={passedCount}
                   suffix="条"
                   valueStyle={{ color: '#52c41a' }}
@@ -620,7 +623,7 @@ export default function InspectionManagePage() {
             <Col span={6}>
               <Card>
                 <Statistic
-                  title="质检不通过"
+                  title={samplePercentage < 100 ? "本次抽样-不通过" : "质检不通过"}
                   value={failedCount}
                   suffix="条"
                   valueStyle={{ color: '#ff4d4f' }}
