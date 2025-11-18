@@ -34,6 +34,7 @@ interface AnnotatorData {
   pendingCount: number;
   unannotatedCount: number; // 未标注数量
   reviewers: string[]; // 复检人列表
+  inspectors: string[]; // 质检人列表
 }
 
 interface VideoWithAnnotators {
@@ -71,6 +72,7 @@ export default function ReviewSelectPage() {
         const videoId = annotation.videoId;
         const annotator = annotation.annotator || '未知标注员';
         const reviewer = annotation.reviewer; // 获取复检人
+        const inspector = annotation.inspector; // 获取质检人
         const isAnnotated = annotation.status === true; // 是否已标注
         
         if (!videoMap.has(videoId)) {
@@ -93,7 +95,8 @@ export default function ReviewSelectPage() {
             reviewedCount: 0,
             pendingCount: 0,
             unannotatedCount: 0,
-            reviewers: []
+            reviewers: [],
+            inspectors: []
           };
           videoData.annotators.push(annotatorData);
         }
@@ -114,6 +117,11 @@ export default function ReviewSelectPage() {
         } else {
           // 未标注的数据
           annotatorData.unannotatedCount++;
+        }
+        
+        // 添加质检人到列表（去重）
+        if (inspector && !annotatorData.inspectors.includes(inspector)) {
+          annotatorData.inspectors.push(inspector);
         }
       });
 
@@ -313,6 +321,25 @@ export default function ReviewSelectPage() {
                     ) : (
                       <Tag color="default">0 条</Tag>
                     )
+                  )
+                },
+                {
+                  title: '质检人',
+                  dataIndex: 'inspectors',
+                  key: 'inspectors',
+                  width: 200,
+                  render: (inspectors: string[]) => (
+                    <Space wrap>
+                      {inspectors.length > 0 ? (
+                        inspectors.map(inspector => (
+                          <Tag key={inspector} color="blue" icon={<UserOutlined />}>
+                            {inspector}
+                          </Tag>
+                        ))
+                      ) : (
+                        <Text type="secondary">-</Text>
+                      )}
+                    </Space>
                   )
                 },
                 {
