@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Layout,
@@ -16,6 +16,7 @@ import {
   Tag
 } from 'antd';
 import { ArrowLeftOutlined, PlusOutlined } from '@ant-design/icons';
+import ReactPlayer from 'react-player';
 import { PROBLEM_CATEGORIES } from '../mock/data';
 import type { AnnotationItem, ProblemCategory } from '../types';
 import './ReviewPage.css';
@@ -27,6 +28,7 @@ const { Option } = Select;
 export default function ReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const playerRef = useRef<ReactPlayer>(null);
   
   // 从路由获取视频ID、视频名称和标注人姓名
   const videoId = location.state?.videoId;
@@ -379,44 +381,59 @@ export default function ReviewPage() {
 
       <Content className="review-content">
         <div className="review-container">
-          {/* 筛选和操作栏 */}
-          <Card style={{ marginBottom: 24 }}>
-            <Space size="large">
-              <span>问题大类筛选：</span>
-              <Select
-                value={selectedMajorCategory}
-                onChange={setSelectedMajorCategory}
-                style={{ width: 200 }}
-              >
-                <Option value="all">全部</Option>
-                {categories.map(cat => (
-                  <Option key={cat.majorCategory} value={cat.majorCategory}>
-                    {cat.majorCategory}
-                  </Option>
-                ))}
-              </Select>
-              <Button
-                type="dashed"
-                icon={<PlusOutlined />}
-                onClick={openNewCategoryModal}
-              >
-                新建类别
-              </Button>
-            </Space>
+          {/* 视频播放器 */}
+          <Card title="原视频" className="video-card">
+            <div className="video-wrapper">
+              <ReactPlayer
+                ref={playerRef}
+                url={reviewData[0]?.videoUrl}
+                controls
+                width="100%"
+                height="100%"
+              />
+            </div>
           </Card>
 
-          {/* 复检表格 */}
-          <Card
-            title={`复检内容 - ${selectedMajorCategory === 'all' ? '全部' : selectedMajorCategory}`}
-            extra={
-              <Space>
-                <span>已复检：{reviewedCount} / {filteredData.length}</span>
-                <Button type="primary" onClick={handleSubmit}>
-                  提交复检
+          {/* 右侧：筛选和表格 */}
+          <div className="review-table-card" style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+            {/* 筛选和操作栏 */}
+            <Card>
+              <Space size="large">
+                <span>问题大类筛选：</span>
+                <Select
+                  value={selectedMajorCategory}
+                  onChange={setSelectedMajorCategory}
+                  style={{ width: 200 }}
+                >
+                  <Option value="all">全部</Option>
+                  {categories.map(cat => (
+                    <Option key={cat.majorCategory} value={cat.majorCategory}>
+                      {cat.majorCategory}
+                    </Option>
+                  ))}
+                </Select>
+                <Button
+                  type="dashed"
+                  icon={<PlusOutlined />}
+                  onClick={openNewCategoryModal}
+                >
+                  新建类别
                 </Button>
               </Space>
-            }
-          >
+            </Card>
+
+            {/* 复检表格 */}
+            <Card
+              title={`复检内容 - ${selectedMajorCategory === 'all' ? '全部' : selectedMajorCategory}`}
+              extra={
+                <Space>
+                  <span>已复检：{reviewedCount} / {filteredData.length}</span>
+                  <Button type="primary" onClick={handleSubmit}>
+                    提交复检
+                  </Button>
+                </Space>
+              }
+            >
             <Table
               columns={columns}
               dataSource={filteredData}
@@ -434,6 +451,7 @@ export default function ReviewPage() {
               }}
             />
           </Card>
+          </div>
         </div>
       </Content>
 

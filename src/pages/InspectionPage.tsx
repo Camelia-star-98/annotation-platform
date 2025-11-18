@@ -35,7 +35,7 @@ export default function InspectionPage() {
   
   const [inspectionData, setInspectionData] = useState<AnnotationItem[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 10;
+  const pageSize = 20;
 
   // 初始化质检数据
   useEffect(() => {
@@ -264,6 +264,7 @@ export default function InspectionPage() {
           {/* 质检表格 */}
           <Card
             title="质检内容"
+            className="inspection-table-card"
             extra={
               <Space size="large">
                 <span>已检查：{checkedCount} / {inspectionData.length}</span>
@@ -286,7 +287,6 @@ export default function InspectionPage() {
                 </Button>
               </Space>
             }
-            style={{ marginTop: 24 }}
           >
             <Table
               columns={columns}

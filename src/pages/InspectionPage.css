@@ -18,10 +18,15 @@
 .inspection-container {
   max-width: 1800px;
   margin: 0 auto;
+  display: flex;
+  gap: 24px;
 }
 
 .video-card {
-  margin-bottom: 24px;
+  flex: 0 0 360px; /* 固定宽度 360px，约为原来的 1/4 */
+  height: fit-content;
+  position: sticky;
+  top: 24px;
 }
 
 .video-wrapper {
@@ -36,7 +41,49 @@
   left: 0;
 }
 
+.inspection-table-card {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 表格样式优化 */
+.inspection-table-card .ant-table-tbody > tr > td {
+  padding: 8px 12px !important;
+  vertical-align: top;
+}
+
+.inspection-table-card .ant-table-thead > tr > th {
+  padding: 10px 12px !important;
+  font-weight: 600;
+  background: #fafafa;
+}
+
+.inspection-table-card .ant-table-wrapper {
+  font-size: 13px;
+}
+
+.inspection-table-card .ant-table-cell {
+  line-height: 1.4;
+}
+
 /* 响应式设计 */
+@media (max-width: 1200px) {
+  .inspection-container {
+    flex-direction: column;
+  }
+
+  .video-card {
+    flex: none;
+    width: 100%;
+    position: relative;
+    top: 0;
+  }
+
+  .inspection-table-card {
+    width: 100%;
+  }
+}
+
 @media (max-width: 768px) {
   .inspection-content {
     padding: 12px;
@@ -46,4 +93,3 @@
     padding: 0 20px;
   }
 }
-
