@@ -251,6 +251,13 @@ export async function saveAnnotations(
     }
 
     console.log('✅ 成功保存到 Supabase:', data.length, '条数据');
+    
+    // 第3步：记录标注完成状态
+    const annotatorName = annotations[0]?.annotator;
+    if (annotatorName && videoId) {
+      await recordAnnotationCompletion(videoId, annotatorName, annotations.length);
+    }
+    
     return true;
   } catch (error) {
     console.error('保存标注数据异常:', error);
@@ -366,5 +373,100 @@ export async function getAnnotationStats(videoId?: string) {
     withCategory,
     completionRate: total > 0 ? (completed / total * 100).toFixed(1) : 0
   };
+}
+
+// ========== 标注完成跟踪 ==========
+
+// 记录标注完成状态
+export async function recordAnnotationCompletion(
+  videoId: string,
+  annotatorName: string,
+  annotationCount: number
+): Promise<boolean> {
+  try {
+    console.log('🔵 recordAnnotationCompletion 被调用');
+    console.log('📦 videoId:', videoId);
+    console.log('📦 annotatorName:', annotatorName);
+    console.log('📦 annotationCount:', annotationCount);
+    
+    // 使用 upsert 更新或插入完成记录
+    const { error } = await supabase
+      .from('annotation_completions')
+      .upsert({
+        video_id: videoId,
+        annotator_name: annotatorName,
+        annotation_count: annotationCount,
+        completed_at: new Date().toISOString()
+      }, { 
+        onConflict: 'video_id,annotator_name' 
+      });
+
+    if (error) {
+      console.error('❌ 记录完成状态失败:', error);
+      return false;
+    }
+
+    console.log('✅ 记录完成状态成功');
+    return true;
+  } catch (error) {
+    console.error('记录完成状态失败:', error);
+    return false;
+  }
+}
+
+// 获取视频的已完成标注人数
+export async function getCompletedAnnotatorsCount(videoId: string): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('annotation_completions')
+      .select('annotator_name')
+      .eq('video_id', videoId);
+
+    if (error) {
+      console.error('获取完成人数失败:', error);
+      return 0;
+    }
+
+    return data?.length || 0;
+  } catch (error) {
+    console.error('获取完成人数失败:', error);
+    return 0;
+  }
+}
+
+// 批量获取多个视频的完成人数
+export async function getBatchCompletedAnnotatorsCount(
+  videoIds: string[]
+): Promise<Record<string, number>> {
+  if (videoIds.length === 0) return {};
+  
+  try {
+    const { data, error } = await supabase
+      .from('annotation_completions')
+      .select('video_id, annotator_name')
+      .in('video_id', videoIds);
+
+    if (error) {
+      console.error('批量获取完成人数失败:', error);
+      return {};
+    }
+
+    // 统计每个视频的完成人数
+    const countMap: Record<string, number> = {};
+    videoIds.forEach(id => {
+      countMap[id] = 0;
+    });
+
+    data?.forEach(item => {
+      if (item.video_id) {
+        countMap[item.video_id] = (countMap[item.video_id] || 0) + 1;
+      }
+    });
+
+    return countMap;
+  } catch (error) {
+    console.error('批量获取完成人数失败:', error);
+    return {};
+  }
 }
 

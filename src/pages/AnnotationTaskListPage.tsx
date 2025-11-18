@@ -64,21 +64,25 @@ export default function AnnotationTaskListPage() {
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const { getVideos } = await import('../api/database');
+      const { getVideos, getBatchCompletedAnnotatorsCount } = await import('../api/database');
       const videos = await getVideos();
       
       // 只显示已发布的视频
-      const publishedTasks = videos
-        .filter(video => video.is_published)
-        .map(video => ({
-          id: video.id,
-          videoName: video.name || '未命名视频',
-          subject: video.subject || '未知',
-          duration: video.duration || 0,
-          requiredAnnotators: video.required_annotators || 1,
-          completedAnnotators: 0, // TODO: 计算已完成人数
-          uploadTime: video.created_at || ''
-        }));
+      const publishedVideos = videos.filter(video => video.is_published);
+      
+      // 批量获取完成人数
+      const videoIds = publishedVideos.map(v => v.id);
+      const completedCountMap = await getBatchCompletedAnnotatorsCount(videoIds);
+      
+      const publishedTasks = publishedVideos.map(video => ({
+        id: video.id,
+        videoName: video.name || '未命名视频',
+        subject: video.subject || '未知',
+        duration: video.duration || 0,
+        requiredAnnotators: video.required_annotators || 1,
+        completedAnnotators: completedCountMap[video.id] || 0, // 使用实际完成人数
+        uploadTime: video.created_at || ''
+      }));
       
       setTasks(publishedTasks);
       message.success(`加载了 ${publishedTasks.length} 个待标注任务`);
