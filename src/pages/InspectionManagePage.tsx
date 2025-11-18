@@ -77,6 +77,13 @@ export default function InspectionManagePage() {
         console.log('📹 加载视频数据:', selectedVideoId, videoName);
         console.log('🎲 抽样比例:', samplePercentage + '%');
         
+        // 获取视频信息（包括URL）
+        const allVideos = await getVideos();
+        const currentVideo = allVideos.find(v => v.id === selectedVideoId);
+        const videoUrl = currentVideo?.url || '';
+        
+        console.log('🎬 视频URL:', videoUrl);
+        
         annotations = await getAnnotations(selectedVideoId);
         console.log('📊 该视频的标注数据数量:', annotations.length);
         
@@ -108,10 +115,11 @@ export default function InspectionManagePage() {
           setSampledCount(pendingAnnotations.length);
         }
         
-        // 给每条标注添加视频名称
+        // 给每条标注添加视频名称和视频URL
         const annotationsWithVideoName = sampledAnnotations.map(item => ({
           ...item,
-          videoName: videoName || '未知视频'
+          videoName: videoName || '未知视频',
+          videoUrl: videoUrl // 添加视频URL
         }));
         
         setAllAnnotations(annotationsWithVideoName);
@@ -134,15 +142,18 @@ export default function InspectionManagePage() {
         console.log('📊 加载的标注数据数量:', allAnnotations.length);
         console.log('🎬 加载的视频数据数量:', videos.length);
         
-        // 创建视频 ID 到视频名称的映射
-        const videoMap = new Map(videos.map(v => [v.id, v.name]));
+        // 创建视频 ID 到视频信息的映射
+        const videoMap = new Map(videos.map(v => [v.id, { name: v.name, url: v.url }]));
         
-        // 给每条标注数据添加视频名称
+        // 给每条标注数据添加视频名称和URL
         const annotationsWithVideoName = allAnnotations.map(item => {
-          const videoName = videoMap.get(item.videoId) || item.videoId || '未知视频';
+          const videoInfo = videoMap.get(item.videoId);
+          const videoName = videoInfo?.name || item.videoId || '未知视频';
+          const videoUrl = videoInfo?.url || '';
           return {
             ...item,
-            videoName
+            videoName,
+            videoUrl
           };
         });
         
