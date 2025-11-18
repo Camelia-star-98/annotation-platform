@@ -38,6 +38,8 @@ export default function ReviewPage() {
   const [selectedMajorCategory, setSelectedMajorCategory] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isReviewerModalVisible, setIsReviewerModalVisible] = useState(false);
+  const [reviewerName, setReviewerName] = useState('');
   const [newCategoryType, setNewCategoryType] = useState<'major' | 'minor'>('major');
   const [newCategoryName, setNewCategoryName] = useState('');
   const [selectedMajorForMinor, setSelectedMajorForMinor] = useState('');
@@ -164,13 +166,90 @@ export default function ReviewPage() {
     setIsModalVisible(false);
   };
 
-  // 提交复检
+  // 提交复检 - 第一步：打开复检人姓名输入弹窗
   const handleSubmit = () => {
-    const reviewedCount = filteredData.filter(item => item.status).length;
-    message.success(`复检完成！共复检 ${reviewedCount} 条数据`);
-    setTimeout(() => {
-      navigate('/');
-    }, 1500);
+    const reviewedCount = reviewData.filter(item => item.status).length;
+    
+    if (reviewedCount === 0) {
+      message.warning('请至少复检一条数据');
+      return;
+    }
+    
+    setIsReviewerModalVisible(true);
+  };
+
+  // 提交复检 - 第二步：确认提交并保存到数据库
+  const confirmSubmit = async () => {
+    if (!reviewerName.trim()) {
+      message.warning('请输入复检人姓名');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      // 1. 更新所有已复检的数据
+      const reviewedItems = reviewData.filter(item => item.status);
+      
+      console.log('📝 准备保存复检结果:', {
+        videoId,
+        videoName,
+        annotatorName,
+        reviewerName,
+        reviewedCount: reviewedItems.length
+      });
+
+      // 批量更新复检状态
+      for (const item of reviewedItems) {
+        const { error } = await supabase
+          .from('annotations')
+          .update({
+            reviewer: reviewerName,
+            review_status: true, // 假设复检通过
+            status: true
+          })
+          .eq('id', item.id);
+
+        if (error) {
+          console.error('更新标注失败:', item.id, error);
+        }
+      }
+
+      // 2. 检查该视频的该标注人是否所有数据都复检完成
+      const allReviewed = reviewData.every(item => item.status);
+      
+      if (allReviewed) {
+        console.log('✅ 该标注人的所有数据已复检完成，标记视频为完成状态');
+        
+        // 标记视频为已完成
+        const { error: videoError } = await supabase
+          .from('videos')
+          .update({
+            is_completed: true,
+            review_completed_at: new Date().toISOString()
+          })
+          .eq('id', videoId);
+
+        if (videoError) {
+          console.error('更新视频状态失败:', videoError);
+        } else {
+          console.log('✅ 视频已标记为完成');
+        }
+      }
+
+      message.success(`复检完成！共复检 ${reviewedItems.length} 条数据，复检人：${reviewerName}`);
+      setIsReviewerModalVisible(false);
+      
+      setTimeout(() => {
+        navigate('/review-select');
+      }, 1500);
+    } catch (error) {
+      console.error('提交复检失败:', error);
+      message.error('提交复检失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 表格列定义
@@ -382,6 +461,35 @@ export default function ReviewPage() {
             />
           </div>
         </Space>
+      </Modal>
+
+      {/* 复检人姓名输入弹窗 */}
+      <Modal
+        title="提交复检"
+        open={isReviewerModalVisible}
+        onOk={confirmSubmit}
+        onCancel={() => setIsReviewerModalVisible(false)}
+        okText="确认提交"
+        cancelText="取消"
+        confirmLoading={loading}
+      >
+        <div style={{ padding: '20px 0' }}>
+          <label style={{ display: 'block', marginBottom: 8 }}>
+            复检人姓名 <span style={{ color: 'red' }}>*</span>
+          </label>
+          <Input
+            placeholder="请输入复检人姓名"
+            value={reviewerName}
+            onChange={(e) => setReviewerName(e.target.value)}
+            onPressEnter={confirmSubmit}
+            size="large"
+          />
+          <div style={{ marginTop: 16, color: '#666', fontSize: '14px' }}>
+            <p>即将提交 <strong>{reviewData.filter(item => item.status).length}</strong> 条复检数据</p>
+            <p>视频：{videoName}</p>
+            <p>标注人：{annotatorName}</p>
+          </div>
+        </div>
       </Modal>
     </Layout>
   );
