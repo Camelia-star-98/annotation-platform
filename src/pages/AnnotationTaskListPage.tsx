@@ -16,7 +16,8 @@ import {
   PlayCircleOutlined,
   CheckCircleOutlined,
   WarningOutlined,
-  UserOutlined
+  UserOutlined,
+  CloseOutlined
 } from '@ant-design/icons';
 
 const { Header, Content } = Layout;
@@ -317,6 +318,18 @@ export default function AnnotationTaskListPage() {
       render: (text: string) => (
         <Tag icon={<UserOutlined />} color="red">
           {text}
+        </Tag>
+      )
+    },
+    {
+      title: '质检状态',
+      dataIndex: 'isQualified',
+      key: 'isQualified',
+      width: 100,
+      align: 'center' as const,
+      render: (isQualified: boolean) => (
+        <Tag color="red" icon={<CloseOutlined />}>
+          未通过
         </Tag>
       )
     },
