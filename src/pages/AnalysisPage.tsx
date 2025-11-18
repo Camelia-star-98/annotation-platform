@@ -8,23 +8,33 @@ import {
   Space,
   Typography,
   Table,
-  Row,
-  Col,
-  Tag,
   message,
-  Radio,
-  Select,
   Divider
 } from 'antd';
-import { ArrowLeftOutlined, DownloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, DownloadOutlined, BarChartOutlined, PieChartOutlined, TableOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { MOCK_ANNOTATED_DATA, MOCK_VIDEOS } from '../mock/data';
-import { exportToCSV, calculateStatistics } from '../utils/helpers';
 import type { AnnotationItem } from '../types';
 import './AnalysisPage.css';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
+
+interface MajorCategoryStats {
+  majorCategory: string;
+  count: number;
+}
+
+interface MinorCategoryStats {
+  minorCategory: string;
+  majorCategory: string;
+  count: number;
+}
+
+interface SubjectDetailStats {
+  majorCategory: string;
+  minorCategory: string;
+  [subject: string]: string | number; // 动态的科目列数据
+}
 
 export default function AnalysisPage() {
   const location = useLocation();
@@ -32,24 +42,18 @@ export default function AnalysisPage() {
   
   const selectedVideoIds = location.state?.selectedVideos || [];
   const [videos, setVideos] = useState<any[]>([]);
-  const [allSubjectsData, setAllSubjectsData] = useState<any[]>([]);
-  const [singleSubjectData, setSingleSubjectData] = useState<any[]>([]);
-  const [detailData, setDetailData] = useState<AnnotationItem[]>([]);
   const [loading, setLoading] = useState(false);
   
-  // 按学科分组的数据（用于聚合分析）
-  const [subjectGroupedMajor, setSubjectGroupedMajor] = useState<Record<string, any[]>>({});
-  const [subjectGroupedMinor, setSubjectGroupedMinor] = useState<Record<string, any[]>>({});
-  
-  // 分析模式：'aggregate' 聚合分析, 'single' 单视频分析
-  const [analysisMode, setAnalysisMode] = useState<'aggregate' | 'single'>('aggregate');
-  // 单视频分析时选中的视频
-  const [selectedSingleVideo, setSelectedSingleVideo] = useState<string>('');
+  // 统计数据
+  const [majorCategoryStats, setMajorCategoryStats] = useState<MajorCategoryStats[]>([]);
+  const [minorCategoryStats, setMinorCategoryStats] = useState<MinorCategoryStats[]>([]);
+  const [subjectDetailStats, setSubjectDetailStats] = useState<SubjectDetailStats[]>([]);
+  const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
 
-  // 加载视频列表和标注数据
+  // 加载数据
   useEffect(() => {
     loadData();
-  }, [selectedVideoIds, analysisMode, selectedSingleVideo]);
+  }, [selectedVideoIds]);
 
   const loadData = async () => {
     if (selectedVideoIds.length === 0) {
@@ -67,95 +71,38 @@ export default function AnalysisPage() {
       setVideos(selectedVids);
       
       console.log('📹 选中的视频:', selectedVids);
-      console.log('📹 视频科目信息:');
-      selectedVids.forEach(v => {
-        console.log(`  - ${v.name}: subject = "${v.subject}"`);
-      });
       
       // 创建视频ID到科目的映射
       const videoSubjectMap = new Map<string, string>();
       selectedVids.forEach(v => {
         const subject = v.subject || '未知';
         videoSubjectMap.set(v.id, subject);
-        console.log(`📋 映射: ${v.id} -> ${subject}`);
       });
       
-      // 加载所有标注数据
+      // 加载所有标注数据（只统计已复检完成的数据）
       const allAnnotations = await getAllAnnotations();
+      const filteredData = allAnnotations.filter(item => 
+        selectedVideoIds.includes(item.videoId) && 
+        item.reviewStatus === true &&
+        item.majorCategory && 
+        item.minorCategory
+      ).map(item => ({
+        ...item,
+        subject: videoSubjectMap.get(item.videoId) || '未知'
+      }));
       
-      // 根据分析模式筛选数据
-      let filteredData: AnnotationItem[] = [];
+      console.log('📊 已复检数据数量:', filteredData.length);
       
-      if (analysisMode === 'aggregate') {
-        // 聚合分析：所有选中视频的数据
-        filteredData = allAnnotations.filter(item => 
-          selectedVideoIds.includes(item.videoId) && item.reviewStatus === true
-        ).map(item => ({
-          ...item,
-          subject: videoSubjectMap.get(item.videoId) || '未知' // 从视频映射中获取科目
-        }));
-      } else {
-        // 单视频分析
-        const targetVideoId = selectedSingleVideo || selectedVideoIds[0];
-        filteredData = allAnnotations.filter(item => 
-          item.videoId === targetVideoId && item.reviewStatus === true
-        ).map(item => ({
-          ...item,
-          subject: videoSubjectMap.get(item.videoId) || '未知'
-        }));
-        if (!selectedSingleVideo) {
-          setSelectedSingleVideo(targetVideoId);
-        }
+      if (filteredData.length === 0) {
+        message.warning('所选视频暂无已复检完成的数据');
+        setLoading(false);
+        return;
       }
       
-      console.log('📊 分析模式:', analysisMode);
-      console.log('📊 筛选后数据量:', filteredData.length);
-      console.log('📊 前5条数据的科目:');
-      filteredData.slice(0, 5).forEach(item => {
-        console.log(`  - ID: ${item.id}, VideoID: ${item.videoId}, Subject: "${item.subject}"`);
-      });
+      // 统计数据
+      calculateStatistics(filteredData);
       
-      // 计算统计数据
-      if (analysisMode === 'aggregate') {
-        // 聚合分析：按学科分组
-        const subjectGroups: Record<string, AnnotationItem[]> = {};
-        const subjectMajorStats: Record<string, any[]> = {};
-        const subjectMinorStats: Record<string, any[]> = {};
-        
-        filteredData.forEach(item => {
-          const subject = item.subject || '未知';
-          if (!subjectGroups[subject]) {
-            subjectGroups[subject] = [];
-          }
-          subjectGroups[subject].push(item);
-        });
-        
-        // 为每个学科计算大类和小类统计
-        Object.keys(subjectGroups).forEach(subject => {
-          const data = subjectGroups[subject];
-          subjectMajorStats[subject] = calculateStatistics(data, 'majorCategory');
-          subjectMinorStats[subject] = calculateStatistics(data, 'minorCategory');
-        });
-        
-        console.log('📊 按学科分组统计（大类）:', subjectMajorStats);
-        console.log('📊 按学科分组统计（小类）:', subjectMinorStats);
-        setSubjectGroupedMajor(subjectMajorStats);
-        setSubjectGroupedMinor(subjectMinorStats);
-        
-        // 保留全局统计用于表格
-        const allSubjects = calculateStatistics(filteredData, 'majorCategory');
-        setAllSubjectsData(allSubjects);
-      } else {
-        // 单视频分析：原有逻辑
-        const allSubjects = calculateStatistics(filteredData, 'majorCategory');
-        const singleSubject = calculateStatistics(filteredData, 'minorCategory');
-        setAllSubjectsData(allSubjects);
-        setSingleSubjectData(singleSubject);
-      }
-      
-      setDetailData(filteredData);
-      
-      message.success(`加载了 ${filteredData.length} 条标注数据`);
+      message.success(`加载了 ${filteredData.length} 条已复检数据`);
     } catch (error) {
       console.error('加载数据失败:', error);
       message.error('加载数据失败');
@@ -164,215 +111,296 @@ export default function AnalysisPage() {
     }
   };
 
-  // 全学科问题占比饼图配置
-  const allSubjectsOption = {
-    title: {
-      text: '全学科问题占比',
-      left: 'center',
-      top: 20,
-      textStyle: {
-        fontSize: 16,
-        fontWeight: 'bold'
-      }
-    },
-    tooltip: {
-      trigger: 'item',
-      formatter: '{b}: {c}条 ({d}%)'
-    },
-    legend: {
-      orient: 'vertical',
-      right: 20,
-      top: 'middle',
-      formatter: (name: string) => {
-        const item = allSubjectsData.find(d => d.name === name);
-        return `${name}: ${item?.value || 0}条`;
-      }
-    },
-    series: [
-      {
-        name: '问题分布',
-        type: 'pie',
-        radius: ['40%', '70%'],
-        center: ['40%', '55%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 10,
-          borderColor: '#fff',
-          borderWidth: 2
-        },
-        label: {
-          show: true,
-          formatter: '{d}%'
-        },
-        emphasis: {
+  const calculateStatistics = (data: AnnotationItem[]) => {
+    // 1. 统计全学科问题大类
+    const majorMap = new Map<string, number>();
+    data.forEach(item => {
+      const majors = item.majorCategory.split(',').map(m => m.trim()).filter(m => m);
+      majors.forEach(major => {
+        majorMap.set(major, (majorMap.get(major) || 0) + 1);
+      });
+    });
+    
+    const majorStats: MajorCategoryStats[] = Array.from(majorMap.entries()).map(([majorCategory, count]) => ({
+      majorCategory,
+      count
+    })).sort((a, b) => b.count - a.count);
+    
+    setMajorCategoryStats(majorStats);
+    
+    // 2. 统计全学科问题小类（包含所属大类）
+    const minorMap = new Map<string, { majorCategory: string; count: number }>();
+    data.forEach(item => {
+      const majors = item.majorCategory.split(',').map(m => m.trim()).filter(m => m);
+      const minors = item.minorCategory.split(',').map(m => m.trim()).filter(m => m);
+      
+      // 假设大类和小类按顺序对应
+      minors.forEach((minor, index) => {
+        const major = majors[index] || majors[0] || '未知';
+        const key = `${major}|${minor}`;
+        
+        if (!minorMap.has(key)) {
+          minorMap.set(key, { majorCategory: major, count: 0 });
+        }
+        minorMap.set(key, {
+          majorCategory: major,
+          count: minorMap.get(key)!.count + 1
+        });
+      });
+    });
+    
+    const minorStats: MinorCategoryStats[] = Array.from(minorMap.entries()).map(([key, value]) => ({
+      minorCategory: key.split('|')[1],
+      majorCategory: value.majorCategory,
+      count: value.count
+    })).sort((a, b) => b.count - a.count);
+    
+    setMinorCategoryStats(minorStats);
+    
+    // 3. 统计每个科目的问题明细
+    const subjects = Array.from(new Set(data.map(item => item.subject).filter(s => s && s !== '未知')));
+    setAvailableSubjects(subjects);
+    
+    // 创建问题类别结构
+    const categoryStructure = new Map<string, Set<string>>(); // major -> Set of minors
+    data.forEach(item => {
+      const majors = item.majorCategory.split(',').map(m => m.trim()).filter(m => m);
+      const minors = item.minorCategory.split(',').map(m => m.trim()).filter(m => m);
+      
+      minors.forEach((minor, index) => {
+        const major = majors[index] || majors[0] || '未知';
+        if (!categoryStructure.has(major)) {
+          categoryStructure.set(major, new Set());
+        }
+        categoryStructure.get(major)!.add(minor);
+      });
+    });
+    
+    // 统计每个科目的每个小类问题数量
+    const detailStatsMap = new Map<string, SubjectDetailStats>();
+    
+    categoryStructure.forEach((minors, major) => {
+      minors.forEach(minor => {
+        const key = `${major}|${minor}`;
+        
+        if (!detailStatsMap.has(key)) {
+          const row: SubjectDetailStats = {
+            majorCategory: major,
+            minorCategory: minor
+          };
+          
+          subjects.forEach(subject => {
+            row[subject] = 0;
+          });
+          
+          detailStatsMap.set(key, row);
+        }
+        
+        // 统计每个科目的问题数
+        data.forEach(item => {
+          if (!item.subject || item.subject === '未知') return;
+          
+          const itemMajors = item.majorCategory.split(',').map(m => m.trim());
+          const itemMinors = item.minorCategory.split(',').map(m => m.trim());
+          
+          itemMinors.forEach((itemMinor, index) => {
+            const itemMajor = itemMajors[index] || itemMajors[0];
+            if (itemMajor === major && itemMinor === minor) {
+              const row = detailStatsMap.get(key)!;
+              row[item.subject] = (row[item.subject] as number) + 1;
+            }
+          });
+        });
+      });
+    });
+    
+    const detailStats = Array.from(detailStatsMap.values());
+    setSubjectDetailStats(detailStats);
+    
+    console.log('📊 大类统计:', majorStats);
+    console.log('📊 小类统计:', minorStats);
+    console.log('📊 科目明细:', detailStats);
+  };
+
+  // 全学科大类问题饼状图配置
+  const getMajorCategoryPieOption = () => {
+    return {
+      title: {
+        text: '全学科问题大类占比',
+        left: 'center',
+        top: 20,
+        textStyle: {
+          fontSize: 18,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'item',
+        formatter: '{b}: {c}条 ({d}%)'
+      },
+      legend: {
+        orient: 'vertical',
+        right: 20,
+        top: 'middle',
+        data: majorCategoryStats.map(item => item.majorCategory)
+      },
+      series: [
+        {
+          name: '问题大类',
+          type: 'pie',
+          radius: ['40%', '70%'],
+          center: ['40%', '55%'],
+          avoidLabelOverlap: false,
+          itemStyle: {
+            borderRadius: 10,
+            borderColor: '#fff',
+            borderWidth: 2
+          },
           label: {
             show: true,
-            fontSize: 16,
-            fontWeight: 'bold'
-          }
-        },
-        data: allSubjectsData
-      }
-    ],
-    color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452']
+            formatter: '{b}: {c}条'
+          },
+          emphasis: {
+            label: {
+              show: true,
+              fontSize: 16,
+              fontWeight: 'bold'
+            }
+          },
+          data: majorCategoryStats.map(item => ({
+            value: item.count,
+            name: item.majorCategory
+          }))
+        }
+      ]
+    };
   };
 
-  // 单科问题占比饼图配置
-  const singleSubjectOption = {
-    title: {
-      text: '大模型改写单科问题占比',
-      left: 'center',
-      top: 20,
-      textStyle: {
-        fontSize: 16,
-        fontWeight: 'bold'
-      }
-    },
-    tooltip: {
-      trigger: 'item',
-      formatter: '{b}: {c}条 ({d}%)'
-    },
-    legend: {
-      orient: 'vertical',
-      right: 20,
-      top: 'middle',
-      formatter: (name: string) => {
-        const item = singleSubjectData.find(d => d.name === name);
-        return `${name}: ${item?.value || 0}条`;
-      }
-    },
-    series: [
-      {
-        name: '问题分布',
-        type: 'pie',
-        radius: ['40%', '70%'],
-        center: ['40%', '55%'],
-        avoidLabelOverlap: false,
-        itemStyle: {
-          borderRadius: 10,
-          borderColor: '#fff',
-          borderWidth: 2
+  // 全学科小类问题柱状图配置
+  const getMinorCategoryBarOption = () => {
+    return {
+      title: {
+        text: '全学科问题小类占比',
+        left: 'center',
+        top: 20,
+        textStyle: {
+          fontSize: 18,
+          fontWeight: 'bold'
+        }
+      },
+      tooltip: {
+        trigger: 'axis',
+        axisPointer: {
+          type: 'shadow'
         },
-        label: {
-          show: true,
-          formatter: '{d}%'
-        },
-        emphasis: {
+        formatter: (params: any) => {
+          const item = params[0];
+          const stat = minorCategoryStats[item.dataIndex];
+          return `${stat.minorCategory}<br/>所属大类: ${stat.majorCategory}<br/>数量: ${item.value}条`;
+        }
+      },
+      grid: {
+        left: '3%',
+        right: '4%',
+        bottom: '15%',
+        top: '15%',
+        containLabel: true
+      },
+      xAxis: {
+        type: 'category',
+        data: minorCategoryStats.map(item => item.minorCategory),
+        axisLabel: {
+          interval: 0,
+          rotate: 45,
+          fontSize: 11
+        }
+      },
+      yAxis: {
+        type: 'value',
+        name: '问题数量（条）',
+        minInterval: 1
+      },
+      series: [
+        {
+          name: '问题数量',
+          type: 'bar',
+          data: minorCategoryStats.map(item => item.count),
+          itemStyle: {
+            color: '#5470c6'
+          },
           label: {
             show: true,
-            fontSize: 16,
-            fontWeight: 'bold'
+            position: 'top',
+            formatter: '{c}'
           }
-        },
-        data: singleSubjectData
+        }
+      ]
+    };
+  };
+
+  // 单科问题占比表格列配置
+  const getSubjectTableColumns = () => {
+    const columns = [
+      {
+        title: '问题大类',
+        dataIndex: 'majorCategory',
+        key: 'majorCategory',
+        width: 150,
+        fixed: 'left' as const
+      },
+      {
+        title: '问题小类',
+        dataIndex: 'minorCategory',
+        key: 'minorCategory',
+        width: 200,
+        fixed: 'left' as const
       }
-    ],
-    color: ['#ee6666', '#5470c6', '#91cc75', '#fac858', '#73c0de', '#3ba272', '#fc8452']
+    ];
+    
+    // 动态添加科目列
+    availableSubjects.forEach(subject => {
+      columns.push({
+        title: subject,
+        dataIndex: subject,
+        key: subject,
+        width: 100,
+        render: (value: number) => value > 0 ? <span style={{ fontWeight: 500 }}>{value}</span> : <span style={{ color: '#ccc' }}>0</span>
+      } as any);
+    });
+    
+    return columns;
   };
 
-  // 下载分析结果
-  const handleDownload = () => {
-    try {
-      // 准备导出数据
-      const exportData = detailData.map(item => ({
-        '句子编号': item.sentenceNo,
-        '科目': item.subject,
-        '视频名称': item.videoName,
-        '时间范围': item.timeRange,
-        '原文文本': item.originalText,
-        '大模型改写文本': item.aiRewrittenText,
-        '人工标注文本': item.humanAnnotatedText,
-        '问题大类': item.majorCategory,
-        '问题小类': item.minorCategory,
-        '教研备注': item.remark
-      }));
-
-      exportToCSV(exportData, `标注分析报告_${new Date().toLocaleDateString()}`);
-      message.success('分析报告已导出');
-    } catch (error) {
-      message.error('导出失败，请重试');
-    }
-  };
-
-  // 详情表格列定义
-  const columns = [
-    {
-      title: '句子编号',
-      dataIndex: 'sentenceNo',
-      key: 'sentenceNo',
-      width: 100,
-      align: 'center' as const
-    },
-    {
-      title: '科目',
-      dataIndex: 'subject',
-      key: 'subject',
-      width: 80,
-      render: (text: string) => <Tag color="purple">{text}</Tag>
-    },
-    {
-      title: '视频名称',
-      dataIndex: 'videoName',
-      key: 'videoName',
-      width: 150
-    },
-    {
-      title: '时间范围',
-      dataIndex: 'timeRange',
-      key: 'timeRange',
-      width: 120
-    },
-    {
-      title: '原文文本',
-      dataIndex: 'originalText',
-      key: 'originalText',
-      width: 200
-    },
-    {
-      title: '大模型改写文本',
-      dataIndex: 'aiRewrittenText',
-      key: 'aiRewrittenText',
-      width: 200
-    },
-    {
-      title: '人工标注文本',
-      dataIndex: 'humanAnnotatedText',
-      key: 'humanAnnotatedText',
-      width: 200
-    },
-    {
-      title: '问题大类',
-      dataIndex: 'majorCategory',
-      key: 'majorCategory',
-      width: 150,
-      render: (text: string) => <Tag color="blue">{text}</Tag>
-    },
-    {
-      title: '问题小类',
-      dataIndex: 'minorCategory',
-      key: 'minorCategory',
-      width: 150,
-      render: (text: string) => <Tag color="cyan">{text}</Tag>
-    },
-    {
-      title: '教研备注',
-      dataIndex: 'remark',
-      key: 'remark',
-      width: 200
-    }
-  ];
-
-  // 获取选中的视频名称
-  const selectedVideoNames = videos.map(v => v.name);
-  
-  // 获取当前分析的视频名称
-  const getAnalysisTitle = () => {
-    if (analysisMode === 'aggregate') {
-      return `聚合分析 (${videos.length} 个视频)`;
-    } else {
-      const video = videos.find(v => v.id === selectedSingleVideo);
-      return `单视频分析: ${video?.name || ''}`;
-    }
+  // 导出CSV
+  const handleExport = () => {
+    // 构建CSV数据
+    const csvData: any[] = [];
+    
+    // 添加表头
+    const headers = ['问题大类', '问题小类', ...availableSubjects];
+    csvData.push(headers);
+    
+    // 添加数据行
+    subjectDetailStats.forEach(row => {
+      const dataRow = [
+        row.majorCategory,
+        row.minorCategory,
+        ...availableSubjects.map(subject => row[subject] || 0)
+      ];
+      csvData.push(dataRow);
+    });
+    
+    // 转换为CSV字符串
+    const csvContent = csvData.map(row => row.join(',')).join('\n');
+    
+    // 下载文件
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `问题统计分析_${new Date().toLocaleDateString()}.csv`;
+    link.click();
+    
+    message.success('导出成功！');
   };
 
   return (
@@ -388,294 +416,117 @@ export default function AnalysisPage() {
             返回
           </Button>
           <Title level={3} style={{ color: 'white', margin: 0 }}>
-            结果分析 - {getAnalysisTitle()}
+            数据分析
           </Title>
         </Space>
-        <Button
-          type="primary"
-          icon={<DownloadOutlined />}
-          onClick={handleDownload}
-          size="large"
-          style={{ background: 'white', color: '#667eea' }}
-        >
-          下载分析报告
-        </Button>
       </Header>
 
       <Content className="analysis-content">
-        <div className="analysis-container">
-          {/* 分析模式选择 */}
-          <Card title="分析设置" style={{ marginBottom: 24 }}>
-            <Space direction="vertical" style={{ width: '100%' }} size="large">
-              <div>
-                <Text strong style={{ marginRight: 16 }}>分析模式：</Text>
-                <Radio.Group
-                  value={analysisMode}
-                  onChange={(e) => setAnalysisMode(e.target.value)}
-                  buttonStyle="solid"
-                >
-                  <Radio.Button value="aggregate">聚合分析（所有视频）</Radio.Button>
-                  <Radio.Button value="single">单视频分析</Radio.Button>
-                </Radio.Group>
-              </div>
-              
-              {analysisMode === 'single' && videos.length > 1 && (
-                <div>
-                  <Text strong style={{ marginRight: 16 }}>选择视频：</Text>
-                  <Select
-                    style={{ width: 300 }}
-                    value={selectedSingleVideo}
-                    onChange={setSelectedSingleVideo}
-                    options={videos.map(v => ({
-                      label: v.name,
-                      value: v.id
-                    }))}
-                  />
-                </div>
-              )}
+        <div style={{ maxWidth: 1600, margin: '0 auto', padding: '24px' }}>
+          {/* 数据来源 */}
+          <Card 
+            title={
+              <Space>
+                <BarChartOutlined />
+                <span>数据来源</span>
+              </Space>
+            }
+            style={{ marginBottom: 24 }}
+            loading={loading}
+          >
+            <Space wrap>
+              <Text strong>已选择视频：</Text>
+              {videos.map(video => (
+                <Space key={video.id}>
+                  <Text>{video.name}</Text>
+                  {video.subject ? (
+                    <Tag color="green">{video.subject}</Tag>
+                  ) : (
+                    <Tag color="red">未设置科目</Tag>
+                  )}
+                </Space>
+              ))}
             </Space>
           </Card>
 
-          {/* 数据来源 */}
-          <Card title="数据来源" style={{ marginBottom: 24 }} loading={loading}>
-            <div className="video-sources">
-              {analysisMode === 'aggregate' ? (
-                <>
-                  <Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>
-                    包含以下 {videos.length} 个视频的所有标注数据：
-                  </Text>
-                  {selectedVideoNames.length > 0 ? (
-                    <div style={{ marginBottom: 16 }}>
-                      {videos.map((video, index) => (
-                        <div key={index} style={{ marginBottom: 8 }}>
-                          <Tag color="blue" style={{ marginRight: 8 }}>
-                            {video.name}
-                          </Tag>
-                          <Tag color={video.subject && video.subject !== '未知' ? 'green' : 'red'}>
-                            科目: {video.subject || '未设置'}
-                          </Tag>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <Text type="secondary">暂无选中的视频</Text>
-                  )}
-                </>
-              ) : (
-                <>
-                  <Text type="secondary" style={{ marginBottom: 12, display: 'block' }}>
-                    单视频分析：
-                  </Text>
-                  <Tag color="green" style={{ fontSize: 14, padding: '4px 12px' }}>
-                    {videos.find(v => v.id === selectedSingleVideo)?.name || ''}
-                  </Tag>
-                </>
-              )}
-              <Divider />
-              <Text type="secondary">
-                共 {detailData.length} 条已复检数据
-              </Text>
-            </div>
+          {/* 1. 全学科问题大类占比（饼状图） */}
+          <Card 
+            title={
+              <Space>
+                <PieChartOutlined />
+                <span>全学科问题大类占比</span>
+              </Space>
+            }
+            style={{ marginBottom: 24 }}
+            loading={loading}
+          >
+            {majorCategoryStats.length > 0 ? (
+              <ReactECharts 
+                option={getMajorCategoryPieOption()} 
+                style={{ height: '500px' }}
+              />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: '#999' }}>
+                暂无数据
+              </div>
+            )}
           </Card>
 
-          {/* 图表展示 */}
-          {analysisMode === 'aggregate' ? (
-            // 聚合分析：按学科显示多个饼图（大类+小类）
-            <>
-              <Card title="按学科分类统计" style={{ marginBottom: 24 }}>
-                <Row gutter={[24, 24]}>
-                  {Object.keys(subjectGroupedMajor).length > 0 ? (
-                    Object.keys(subjectGroupedMajor).map((subject) => {
-                      const majorData = subjectGroupedMajor[subject] || [];
-                      const minorData = subjectGroupedMinor[subject] || [];
-                      
-                      // 大类饼图配置
-                      const majorOption = {
-                        title: {
-                          text: `${subject} - 问题大类占比`,
-                          left: 'center',
-                          top: 20,
-                          textStyle: {
-                            fontSize: 16,
-                            fontWeight: 'bold'
-                          }
-                        },
-                        tooltip: {
-                          trigger: 'item',
-                          formatter: '{b}: {c}条 ({d}%)'
-                        },
-                        legend: {
-                          orient: 'vertical',
-                          right: 10,
-                          top: 'middle',
-                          textStyle: {
-                            fontSize: 11
-                          },
-                          formatter: (name: string) => {
-                            const item = majorData.find((d: any) => d.name === name);
-                            return `${name}: ${item?.value || 0}条`;
-                          }
-                        },
-                        series: [
-                          {
-                            name: '问题分布',
-                            type: 'pie',
-                            radius: ['40%', '70%'],
-                            center: ['40%', '55%'],
-                            avoidLabelOverlap: false,
-                            itemStyle: {
-                              borderRadius: 10,
-                              borderColor: '#fff',
-                              borderWidth: 2
-                            },
-                            label: {
-                              show: true,
-                              formatter: '{d}%',
-                              fontSize: 12
-                            },
-                            emphasis: {
-                              label: {
-                                show: true,
-                                fontSize: 14,
-                                fontWeight: 'bold'
-                              }
-                            },
-                            data: majorData
-                          }
-                        ],
-                        color: ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
-                      };
+          {/* 2. 全学科问题小类占比（柱状图） */}
+          <Card 
+            title={
+              <Space>
+                <BarChartOutlined />
+                <span>全学科问题小类占比</span>
+              </Space>
+            }
+            style={{ marginBottom: 24 }}
+            loading={loading}
+          >
+            {minorCategoryStats.length > 0 ? (
+              <ReactECharts 
+                option={getMinorCategoryBarOption()} 
+                style={{ height: '500px' }}
+              />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '60px 0', color: '#999' }}>
+                暂无数据
+              </div>
+            )}
+          </Card>
 
-                      // 小类饼图配置
-                      const minorOption = {
-                        title: {
-                          text: `${subject} - 问题小类占比`,
-                          left: 'center',
-                          top: 20,
-                          textStyle: {
-                            fontSize: 16,
-                            fontWeight: 'bold'
-                          }
-                        },
-                        tooltip: {
-                          trigger: 'item',
-                          formatter: '{b}: {c}条 ({d}%)'
-                        },
-                        legend: {
-                          orient: 'vertical',
-                          right: 10,
-                          top: 'middle',
-                          textStyle: {
-                            fontSize: 11
-                          },
-                          formatter: (name: string) => {
-                            const item = minorData.find((d: any) => d.name === name);
-                            return `${name}: ${item?.value || 0}条`;
-                          }
-                        },
-                        series: [
-                          {
-                            name: '问题分布',
-                            type: 'pie',
-                            radius: ['40%', '70%'],
-                            center: ['40%', '55%'],
-                            avoidLabelOverlap: false,
-                            itemStyle: {
-                              borderRadius: 10,
-                              borderColor: '#fff',
-                              borderWidth: 2
-                            },
-                            label: {
-                              show: true,
-                              formatter: '{d}%',
-                              fontSize: 12
-                            },
-                            emphasis: {
-                              label: {
-                                show: true,
-                                fontSize: 14,
-                                fontWeight: 'bold'
-                              }
-                            },
-                            data: minorData
-                          }
-                        ],
-                        color: ['#ee6666', '#5470c6', '#91cc75', '#fac858', '#73c0de', '#3ba272', '#fc8452', '#9a60b4', '#ea7ccc']
-                      };
-
-                      return (
-                        <React.Fragment key={subject}>
-                          <Col xs={24} lg={12} xl={12}>
-                            <Card bordered={false} loading={loading}>
-                              <ReactECharts
-                                option={majorOption}
-                                style={{ height: '400px' }}
-                                notMerge={true}
-                                lazyUpdate={true}
-                              />
-                            </Card>
-                          </Col>
-                          <Col xs={24} lg={12} xl={12}>
-                            <Card bordered={false} loading={loading}>
-                              <ReactECharts
-                                option={minorOption}
-                                style={{ height: '400px' }}
-                                notMerge={true}
-                                lazyUpdate={true}
-                              />
-                            </Card>
-                          </Col>
-                        </React.Fragment>
-                      );
-                    })
-                  ) : (
-                    <Col span={24}>
-                      <div style={{ textAlign: 'center', padding: '40px', color: '#999' }}>
-                        暂无数据
-                      </div>
-                    </Col>
-                  )}
-                </Row>
-              </Card>
-            </>
-          ) : (
-            // 单视频分析：显示两个饼图
-            <Row gutter={24} style={{ marginBottom: 24 }}>
-              <Col xs={24} lg={12}>
-                <Card loading={loading}>
-                  <ReactECharts
-                    option={allSubjectsOption}
-                    style={{ height: '400px' }}
-                    notMerge={true}
-                    lazyUpdate={true}
-                  />
-                </Card>
-              </Col>
-              <Col xs={24} lg={12}>
-                <Card loading={loading}>
-                  <ReactECharts
-                    option={singleSubjectOption}
-                    style={{ height: '400px' }}
-                    notMerge={true}
-                    lazyUpdate={true}
-                  />
-                </Card>
-              </Col>
-            </Row>
-          )}
-
-          {/* 详细问题汇总 */}
-          <Card title="各大类问题汇总" loading={loading}>
+          {/* 3. 单科问题占比（表格） */}
+          <Card 
+            title={
+              <Space>
+                <TableOutlined />
+                <span>单科问题明细统计</span>
+              </Space>
+            }
+            extra={
+              <Button 
+                type="primary" 
+                icon={<DownloadOutlined />}
+                onClick={handleExport}
+                disabled={subjectDetailStats.length === 0}
+              >
+                导出CSV
+              </Button>
+            }
+            loading={loading}
+          >
             <Table
-              columns={columns}
-              dataSource={detailData}
-              rowKey="id"
-              scroll={{ x: 1800 }}
+              columns={getSubjectTableColumns()}
+              dataSource={subjectDetailStats}
+              rowKey={(record) => `${record.majorCategory}_${record.minorCategory}`}
               pagination={{
                 pageSize: 20,
                 showSizeChanger: true,
-                showTotal: (total) => `共 ${total} 条问题`
+                showTotal: (total) => `共 ${total} 项`
               }}
+              scroll={{ x: 'max-content' }}
+              bordered
+              size="middle"
             />
           </Card>
         </div>
@@ -683,4 +534,3 @@ export default function AnalysisPage() {
     </Layout>
   );
 }
-
