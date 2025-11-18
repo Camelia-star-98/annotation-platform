@@ -47,11 +47,22 @@ export default function HomePage() {
       const { getVideos } = await import('../api/database');
       const allVideos = await getVideos();
       
+      console.log('🎬 所有视频数量:', allVideos.length);
+      console.log('🎬 所有视频列表:', allVideos);
+      console.log('🎬 每个视频的 is_completed 状态:');
+      allVideos.forEach(v => {
+        console.log(`  - ${v.name}: is_completed =`, v.is_completed, typeof v.is_completed);
+      });
+      
       // 只显示已完成所有流程的视频
       const completed = allVideos.filter(video => video.is_completed === true);
       
+      console.log('✅ 筛选后的已完成视频:', completed);
       setCompletedVideos(completed);
-      console.log('📋 已完成视频列表:', completed);
+      
+      if (completed.length === 0) {
+        console.warn('⚠️ 没有找到 is_completed = true 的视频');
+      }
     } catch (error) {
       console.error('加载视频列表失败:', error);
       message.error('加载视频列表失败');

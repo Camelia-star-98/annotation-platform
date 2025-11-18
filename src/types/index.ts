@@ -19,6 +19,8 @@ export interface AnnotationItem {
   isQualified?: boolean; // 质检用：是否通过
   annotator?: string; // 标注人
   inspector?: string; // 质检人
+  reviewer?: string; // 复检人
+  reviewStatus?: boolean | null; // 复检状态：true=通过，false=不通过，null=待复检
 }
 
 export interface VideoInfo {
