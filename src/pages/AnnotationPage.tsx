@@ -430,23 +430,25 @@ export default function AnnotationPage() {
       dataIndex: 'humanAnnotatedText',
       key: 'humanAnnotatedText',
       width: 180,
+      ellipsis: false,
       render: (text: string, record: AnnotationItem) => {
         // 对比大模型改写文本和人工标注文本
-        const isIdentical = text && record.aiRewrittenText && text.trim() === record.aiRewrittenText.trim();
         const isDifferent = text && record.aiRewrittenText && text.trim() !== record.aiRewrittenText.trim();
         
         return (
-          <TextArea
-            value={text}
-            onChange={(e) => updateAnnotation(record.id, 'humanAnnotatedText', e.target.value)}
-            autoSize={{ minRows: 1, maxRows: 6 }}
-            placeholder="双击编辑"
-            style={{ 
-              fontSize: '13px',
-              backgroundColor: isDifferent ? '#fff1f0' : undefined, // 不一致时浅红色背景
-              borderColor: isDifferent ? '#ff4d4f' : undefined, // 不一致时红色边框
-            }}
-          />
+          <div style={{ 
+            whiteSpace: 'pre-wrap', 
+            wordBreak: 'break-word',
+            lineHeight: '1.4',
+            fontSize: '13px',
+            padding: '4px 8px',
+            backgroundColor: isDifferent ? '#fff1f0' : undefined, // 不一致时浅红色背景
+            border: isDifferent ? '1px solid #ff4d4f' : '1px solid #d9d9d9', // 不一致时红色边框
+            borderRadius: '2px',
+            minHeight: '32px'
+          }}>
+            {text || '-'}
+          </div>
         );
       }
     },
