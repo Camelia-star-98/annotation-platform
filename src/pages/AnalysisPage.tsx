@@ -235,11 +235,34 @@ export default function AnalysisPage() {
 
   // 全学科大类问题饼状图配置
   const getMajorCategoryPieOption = () => {
-    const total = majorCategoryStats.reduce((sum, item) => sum + item.count, 0);
+    // 计算总数据条数（包括无问题的）
+    const totalDataCount = rawData.length;
+    
+    // 计算有问题的数据条数
+    const problemDataCount = majorCategoryStats.reduce((sum, item) => sum + item.count, 0);
+    
+    // 计算无问题的数据条数
+    const noProblemCount = totalDataCount - problemDataCount;
+    
+    // 构建饼图数据（包括无问题类别）
+    const pieData = [
+      ...majorCategoryStats.map(item => ({
+        name: item.majorCategory,
+        value: item.count
+      })),
+      {
+        name: '无问题',
+        value: noProblemCount,
+        itemStyle: {
+          color: '#52c41a' // 绿色表示无问题
+        }
+      }
+    ];
     
     return {
       title: {
         text: '全学科问题大类占比',
+        subtext: `总计 ${totalDataCount} 条数据`,
         left: 'center',
         top: 20,
         textStyle: {
@@ -250,7 +273,7 @@ export default function AnalysisPage() {
       tooltip: {
         trigger: 'item',
         formatter: (params: any) => {
-          const percentage = ((params.value / total) * 100).toFixed(2);
+          const percentage = ((params.value / totalDataCount) * 100).toFixed(2);
           return `${params.name}<br/>数量: ${params.value}条<br/>占比: ${percentage}%`;
         }
       },
@@ -258,7 +281,7 @@ export default function AnalysisPage() {
         orient: 'vertical',
         right: 20,
         top: 'middle',
-        data: majorCategoryStats.map(item => item.majorCategory)
+        data: pieData.map(item => item.name)
       },
       series: [
         {
@@ -275,7 +298,7 @@ export default function AnalysisPage() {
           label: {
             show: true,
             formatter: (params: any) => {
-              const percentage = ((params.value / total) * 100).toFixed(1);
+              const percentage = ((params.value / totalDataCount) * 100).toFixed(1);
               return `${params.name}\n${params.value}条 (${percentage}%)`;
             }
           },
@@ -286,10 +309,7 @@ export default function AnalysisPage() {
               fontWeight: 'bold'
             }
           },
-          data: majorCategoryStats.map(item => ({
-            value: item.count,
-            name: item.majorCategory
-          }))
+          data: pieData
         }
       ]
     };
