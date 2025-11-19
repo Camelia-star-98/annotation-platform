@@ -100,10 +100,10 @@ export default function ReviewPage() {
   };
 
   // 构建级联选择器选项
-  const categoryOptions = categories.map(cat => ({
+  const categoryOptions = (categories || []).map(cat => ({
     value: cat.majorCategory,
     label: cat.majorCategory,
-    children: cat.minorCategories.map(sub => ({
+    children: (cat.minorCategories || []).map(sub => ({
       value: sub,
       label: sub
     }))
