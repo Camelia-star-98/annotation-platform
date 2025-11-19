@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>测试Supabase查询</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial; padding: 20px; }
+    button { padding: 10px 20px; font-size: 16px; }
+    #result { margin-top: 20px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h2>测试Supabase是否能查询到那6个视频的数据</h2>
+  <button onclick="testQuery()">点击测试</button>
+  <div id="result"></div>
+  
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+    
+    const supabaseUrl = 'https://dcqwxvekgxgjujurpipg.supabase.co'
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw'
+    
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    
+    window.testQuery = async function() {
+      const resultEl = document.getElementById('result')
+      resultEl.textContent = '正在查询...'
+      
+      const targetIds = [
+        'upload_1763540297842',
+        'upload_1763540015960',
+        'upload_1763539635739',
+        'upload_1763539359554',
+        'upload_1763538826122',
+        'upload_1763538054288'
+      ]
+      
+      try {
+        // 查询1：使用 .in() 过滤
+        const { data: data1, error: error1 } = await supabase
+          .from('annotations')
+          .select('video_id, annotator, review_status')
+          .in('video_id', targetIds)
+        
+        let result = '=== 查询结果 ===\n\n'
+        
+        if (error1) {
+          result += '错误: ' + JSON.stringify(error1) + '\n'
+        } else {
+          result += `找到 ${data1.length} 条数据\n\n`
+          
+          // 按 video_id 分组统计
+          const stats = {}
+          data1.forEach(item => {
+            if (!stats[item.video_id]) {
+              stats[item.video_id] = { total: 0, reviewTrue: 0 }
+            }
+            stats[item.video_id].total++
+            if (item.review_status === true) {
+              stats[item.video_id].reviewTrue++
+            }
+          })
+          
+          result += '各视频统计:\n'
+          Object.entries(stats).forEach(([id, s]) => {
+            result += `${id}: 总计${s.total}条, review_status=true: ${s.reviewTrue}条\n`
+          })
+        }
+        
+        resultEl.textContent = result
+        
+      } catch (err) {
+        resultEl.textContent = '异常: ' + err.message
+      }
+    }
+  </script>
+</body>
+</html>

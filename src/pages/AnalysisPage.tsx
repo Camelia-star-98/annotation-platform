@@ -85,6 +85,13 @@ export default function AnalysisPage() {
       
       // 加载所有标注数据（只统计已复检完成的数据）
       const allAnnotations = await getAllAnnotations();
+      console.log('📊 getAllAnnotations 返回的总数据量:', allAnnotations.length);
+      console.log('📊 前5条数据:', allAnnotations.slice(0, 5).map(a => ({
+        videoId: a.videoId,
+        annotator: a.annotator,
+        reviewStatus: a.reviewStatus
+      })));
+      
       const filteredData = allAnnotations.filter(item => 
         selectedVideoIds.includes(item.videoId) && 
         item.reviewStatus === true
@@ -96,6 +103,13 @@ export default function AnalysisPage() {
           subject: videoInfo?.subject || '未知',
           videoName: videoInfo?.name || '未知视频'
         };
+      });
+      
+      console.log('📊 过滤后的数据量:', filteredData.length);
+      console.log('📊 selectedVideoIds:', selectedVideoIds);
+      console.log('📊 过滤条件测试 - 前10条allAnnotations的videoId:');
+      allAnnotations.slice(0, 10).forEach((item, idx) => {
+        console.log(`  ${idx}: videoId=${item.videoId}, reviewStatus=${item.reviewStatus}, included=${selectedVideoIds.includes(item.videoId)}`);
       });
       
       console.log('📊 已复检数据数量:', filteredData.length);

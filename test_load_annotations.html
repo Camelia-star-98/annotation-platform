@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>测试加载标注数据</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <h2>测试getAllAnnotations是否加载了那7个视频的数据</h2>
+  <button onclick="testLoad()">开始测试</button>
+  <div id="result"></div>
+  
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+    
+    const supabaseUrl = 'https://dcqwxvekgxgjujurpipg.supabase.co'
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw'
+    
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    
+    const targetVideoIds = [
+      'upload_1763542691629',  // 1104-语文-1.mp4
+      'upload_1763540297842',  // 1104-英语-1.mp4
+      'upload_1763540015960',  // 1104-英语-2.mp4
+      'upload_1763539635739',  // 1104-数学-2.mp4
+      'upload_1763539359554',  // 1104-数学-1.mp4
+      'upload_1763538826122',  // 1104-物理-2.mp4
+      'upload_1763538054288'   // 1104-物理-1.mp4
+    ]
+    
+    window.testLoad = async function() {
+      const resultEl = document.getElementById('result')
+      resultEl.innerHTML = '<p>正在测试...</p>'
+      
+      try {
+        // 模拟 getAllAnnotations
+        const { data, error } = await supabase
+          .from('annotations')
+          .select('*')
+          .order('created_at', { ascending: false })
+        
+        if (error) {
+          resultEl.innerHTML = `<p style="color:red">错误: ${JSON.stringify(error)}</p>`
+          return
+        }
+        
+        console.log('总标注数:', data.length)
+        
+        // 统计每个目标视频的数据
+        const stats = {}
+        targetVideoIds.forEach(id => {
+          stats[id] = {
+            total: 0,
+            reviewStatusTrue: 0,
+            reviewStatusFalse: 0,
+            reviewStatusNull: 0
+          }
+        })
+        
+        data.forEach(item => {
+          if (targetVideoIds.includes(item.video_id)) {
+            const s = stats[item.video_id]
+            s.total++
+            if (item.review_status === true) s.reviewStatusTrue++
+            else if (item.review_status === false) s.reviewStatusFalse++
+            else s.reviewStatusNull++
+          }
+        })
+        
+        let html = '<h3>结果：</h3><table border="1"><tr><th>video_id</th><th>总数</th><th>review_status=true</th><th>review_status=false</th><th>review_status=null</th></tr>'
+        
+        targetVideoIds.forEach(id => {
+          const s = stats[id]
+          html += `<tr><td>${id.substring(7, 25)}...</td><td>${s.total}</td><td style="background: ${s.reviewStatusTrue > 0 ? '#d4edda' : '#fff'}">${s.reviewStatusTrue}</td><td>${s.reviewStatusFalse}</td><td>${s.reviewStatusNull}</td></tr>`
+        })
+        
+        html += '</table>'
+        
+        resultEl.innerHTML = html
+        
+      } catch (err) {
+        resultEl.innerHTML = `<p style="color:red">异常: ${err.message}</p>`
+      }
+    }
+  </script>
+</body>
+</html>
