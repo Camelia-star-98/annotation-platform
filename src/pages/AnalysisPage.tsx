@@ -49,6 +49,7 @@ export default function AnalysisPage() {
   const [minorCategoryStats, setMinorCategoryStats] = useState<MinorCategoryStats[]>([]);
   const [subjectDetailStats, setSubjectDetailStats] = useState<SubjectDetailStats[]>([]);
   const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
+  const [rawData, setRawData] = useState<AnnotationItem[]>([]); // 添加原始数据状态
 
   // 加载数据
   useEffect(() => {
@@ -98,6 +99,9 @@ export default function AnalysisPage() {
         setLoading(false);
         return;
       }
+      
+      // 保存原始数据（包含科目信息）
+      setRawData(filteredData);
       
       // 统计数据
       calculateStatistics(filteredData);
@@ -527,6 +531,131 @@ export default function AnalysisPage() {
               scroll={{ x: 'max-content' }}
               bordered
               size="middle"
+            />
+          </Card>
+
+          {/* 4. 原始数据明细（新增） */}
+          <Card 
+            title={
+              <Space>
+                <TableOutlined />
+                <span>原始数据明细</span>
+                <Tag color="blue">{rawData.length} 条</Tag>
+              </Space>
+            }
+            loading={loading}
+          >
+            <Table
+              columns={[
+                {
+                  title: '句子编号',
+                  dataIndex: 'sentenceNo',
+                  key: 'sentenceNo',
+                  width: 100,
+                  sorter: (a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0)
+                },
+                {
+                  title: '科目',
+                  dataIndex: 'subject',
+                  key: 'subject',
+                  width: 100,
+                  render: (subject: string) => (
+                    <Tag color={subject === '未知' ? 'red' : 'green'}>
+                      {subject}
+                    </Tag>
+                  ),
+                  filters: availableSubjects.map(s => ({ text: s, value: s })),
+                  onFilter: (value, record) => record.subject === value
+                },
+                {
+                  title: '视频名称',
+                  dataIndex: 'videoName',
+                  key: 'videoName',
+                  width: 200,
+                  ellipsis: true
+                },
+                {
+                  title: '时间范围',
+                  dataIndex: 'timeRange',
+                  key: 'timeRange',
+                  width: 120
+                },
+                {
+                  title: '原文文本',
+                  dataIndex: 'originalText',
+                  key: 'originalText',
+                  width: 250,
+                  ellipsis: true
+                },
+                {
+                  title: '大模型改写文本',
+                  dataIndex: 'aiRewrittenText',
+                  key: 'aiRewrittenText',
+                  width: 250,
+                  ellipsis: true
+                },
+                {
+                  title: '人工标注文本',
+                  dataIndex: 'humanAnnotatedText',
+                  key: 'humanAnnotatedText',
+                  width: 250,
+                  ellipsis: true
+                },
+                {
+                  title: '问题大类',
+                  dataIndex: 'majorCategory',
+                  key: 'majorCategory',
+                  width: 150,
+                  render: (text: string) => (
+                    <Space direction="vertical" size={2}>
+                      {text.split(',').map((cat, idx) => (
+                        <Tag key={idx} color="blue">{cat}</Tag>
+                      ))}
+                    </Space>
+                  )
+                },
+                {
+                  title: '问题小类',
+                  dataIndex: 'minorCategory',
+                  key: 'minorCategory',
+                  width: 150,
+                  render: (text: string) => (
+                    <Space direction="vertical" size={2}>
+                      {text.split(',').map((cat, idx) => (
+                        <Tag key={idx} color="cyan">{cat}</Tag>
+                      ))}
+                    </Space>
+                  )
+                },
+                {
+                  title: '标注人',
+                  dataIndex: 'annotator',
+                  key: 'annotator',
+                  width: 100
+                },
+                {
+                  title: '质检人',
+                  dataIndex: 'inspector',
+                  key: 'inspector',
+                  width: 100
+                },
+                {
+                  title: '复检人',
+                  dataIndex: 'reviewer',
+                  key: 'reviewer',
+                  width: 100
+                }
+              ]}
+              dataSource={rawData}
+              rowKey="id"
+              pagination={{
+                pageSize: 20,
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 条`
+              }}
+              scroll={{ x: 'max-content' }}
+              bordered
+              size="small"
             />
           </Card>
         </div>
