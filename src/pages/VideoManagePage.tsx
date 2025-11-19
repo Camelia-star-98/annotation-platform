@@ -412,8 +412,13 @@ export default function VideoManagePage() {
       const annotationsWithVideoName = excelData.map(item => ({
         ...item,
         videoName: videoName,
-        videoId: videoId
+        videoId: videoId,
+        annotator: '' // 上传时设置为空，标注人标注时会填入自己的名字
       }));
+      
+      console.log('🚀 准备调用 saveAnnotations');
+      console.log('🚀 第一条数据 humanAnnotatedText:', annotationsWithVideoName[0]?.humanAnnotatedText);
+      console.log('🚀 第一条数据 annotator:', annotationsWithVideoName[0]?.annotator);
       
       await saveAnnotations(videoId, annotationsWithVideoName);
       
@@ -515,6 +520,9 @@ export default function VideoManagePage() {
             
             if (index === 0) {
               console.log('🔍 第一条标注数据:', annotation);
+              console.log('🔍 humanAnnotatedText 值:', annotation.humanAnnotatedText);
+              console.log('🔍 原始 row 数据:', row);
+              console.log('🔍 row["人工改写文本"]:', row['人工改写文本']);
             }
             
             return annotation;

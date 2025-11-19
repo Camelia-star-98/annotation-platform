@@ -145,26 +145,42 @@ export default function AnnotationPage() {
         console.log('🆕 第一次标注，加载原始数据模板');
         console.log('🔍 查询模板数据 - video_id:', id);
         
-        // 获取任意一份标注数据作为模板（获取原文、AI改写等基础数据）
+        // 优先获取没有标注人（annotator为空）的原始数据作为模板
+        // 如果没有，则获取最早上传的数据作为模板
         const { data: templateData, error: templateError } = await supabase
           .from('annotations')
           .select('*')
           .eq('video_id', id)
-          .order('sentence_no', { ascending: true })
+          .or('annotator.is.null,annotator.eq.')  // 优先选择没有标注人的原始数据
+          .order('created_at', { ascending: true })  // 按创建时间升序，取最早的
           .limit(200);
+
+        // 如果没有原始数据，则使用任意标注人的数据作为模板
+        let finalTemplateData = templateData;
+        if (!templateData || templateData.length === 0) {
+          console.log('⚠️ 没有找到原始模板数据，使用第一个标注人的数据');
+          const { data: fallbackData } = await supabase
+            .from('annotations')
+            .select('*')
+            .eq('video_id', id)
+            .order('created_at', { ascending: true })
+            .limit(200);
+          finalTemplateData = fallbackData;
+        }
 
         if (templateError) {
           console.error('❌ 查询模板数据失败:', templateError);
         }
         
-        console.log('📦 模板数据返回:', templateData?.length || 0, '条');
-        if (templateData && templateData.length > 0) {
-          console.log('📝 模板数据第一条:', templateData[0]);
+        console.log('📦 模板数据返回:', finalTemplateData?.length || 0, '条');
+        if (finalTemplateData && finalTemplateData.length > 0) {
+          console.log('📝 模板数据第一条:', finalTemplateData[0]);
+          console.log('📝 human_annotated_text:', finalTemplateData[0].human_annotated_text);
         }
 
-        if (templateData && templateData.length > 0) {
+        if (finalTemplateData && finalTemplateData.length > 0) {
           // 使用模板数据，保留所有字段（包括 human_annotated_text）
-          const newAnnotations = templateData.map((item, index) => ({
+          const newAnnotations = finalTemplateData.map((item, index) => ({
             id: `${id}_${item.sentence_no || index + 1}_${userName}`, // 新ID包含当前标注人
             videoId: id,
             sentenceNo: item.sentence_no,
@@ -184,6 +200,9 @@ export default function AnnotationPage() {
             reviewer: '',
             reviewStatus: undefined
           }));
+          
+          console.log('📋 格式化后的第一条数据:', newAnnotations[0]);
+          console.log('📋 humanAnnotatedText 值:', newAnnotations[0]?.humanAnnotatedText);
           
           setAnnotations(newAnnotations);
           message.info(`首次标注：加载了 ${newAnnotations.length} 条待标注数据（含参考答案）`);

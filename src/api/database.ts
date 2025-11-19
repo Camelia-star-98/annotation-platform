@@ -252,6 +252,9 @@ export async function saveAnnotations(
     console.log('📝 标注人:', annotatorName);
     console.log('📝 生成的ID示例:', data[0]?.id);
     console.log('📝 质检状态:', data[0]?.is_qualified, '质检人:', data[0]?.inspector);
+    console.log('📝 第一条数据的 human_annotated_text:', data[0]?.human_annotated_text);
+    console.log('📝 原始 annotations[0].humanAnnotatedText:', annotations[0]?.humanAnnotatedText);
+    console.log('📝 完整的第一条 data:', JSON.stringify(data[0], null, 2));
 
     // 使用upsert（如果存在则更新，不存在则插入）
     const { error } = await supabase
