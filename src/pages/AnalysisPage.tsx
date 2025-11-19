@@ -74,11 +74,13 @@ export default function AnalysisPage() {
       
       console.log('📹 选中的视频:', selectedVids);
       
-      // 创建视频ID到科目的映射
-      const videoSubjectMap = new Map<string, string>();
+      // 创建视频ID到科目和名称的映射
+      const videoInfoMap = new Map<string, { subject: string; name: string }>();
       selectedVids.forEach(v => {
-        const subject = v.subject || '未知';
-        videoSubjectMap.set(v.id, subject);
+        videoInfoMap.set(v.id, {
+          subject: v.subject || '未知',
+          name: v.name || '未知视频'
+        });
       });
       
       // 加载所有标注数据（只统计已复检完成的数据）
@@ -88,10 +90,14 @@ export default function AnalysisPage() {
         item.reviewStatus === true &&
         item.majorCategory && 
         item.minorCategory
-      ).map(item => ({
-        ...item,
-        subject: videoSubjectMap.get(item.videoId) || '未知'
-      }));
+      ).map(item => {
+        const videoInfo = videoInfoMap.get(item.videoId);
+        return {
+          ...item,
+          subject: videoInfo?.subject || '未知',
+          videoName: videoInfo?.name || '未知视频'
+        };
+      });
       
       console.log('📊 已复检数据数量:', filteredData.length);
       
