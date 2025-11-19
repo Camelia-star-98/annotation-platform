@@ -523,10 +523,25 @@ export default function AnnotationPage() {
       }
     },
     {
-      title: '标注状态',
+      title: () => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+          <span>标注状态</span>
+          <Button 
+            type="link" 
+            size="small" 
+            onClick={() => {
+              const allChecked = annotations.every(item => item.status);
+              setAnnotations(annotations.map(item => ({ ...item, status: !allChecked })));
+            }}
+            style={{ padding: 0, height: 'auto' }}
+          >
+            {annotations.every(item => item.status) ? '取消全选' : '全选'}
+          </Button>
+        </div>
+      ),
       dataIndex: 'status',
       key: 'status',
-      width: 80,
+      width: 120,
       align: 'center' as const,
       fixed: 'right' as const,
       render: (checked: boolean, record: AnnotationItem) => (
