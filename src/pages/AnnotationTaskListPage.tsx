@@ -19,6 +19,8 @@ import {
   UserOutlined,
   CloseOutlined
 } from '@ant-design/icons';
+import type { AnnotationItem } from '../types';
+import { getVideos, getBatchCompletedAnnotatorsCount, getAllAnnotations } from '../api/database';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -65,7 +67,6 @@ export default function AnnotationTaskListPage() {
   const loadTasks = async () => {
     setLoading(true);
     try {
-      const { getVideos, getBatchCompletedAnnotatorsCount } = await import('../api/database');
       const videos = await getVideos();
       
       // 只显示已发布的视频
@@ -97,7 +98,6 @@ export default function AnnotationTaskListPage() {
 
   const loadRejectedItems = async () => {
     try {
-      const { getAllAnnotations, getVideos } = await import('../api/database');
       const [allAnnotations, allVideos] = await Promise.all([
         getAllAnnotations(),
         getVideos()
