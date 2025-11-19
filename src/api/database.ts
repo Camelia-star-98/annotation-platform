@@ -135,7 +135,8 @@ export async function getAllAnnotations(): Promise<AnnotationItem[]> {
     const { data, error } = await supabase
       .from('annotations')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(10000); // 增加查询限制，确保能获取所有数据
 
     if (error) {
       console.error('获取所有标注数据失败:', error);
