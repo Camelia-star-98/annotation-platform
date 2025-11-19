@@ -173,6 +173,59 @@ export async function getAllAnnotations(): Promise<AnnotationItem[]> {
   }
 }
 
+// 获取已复检的标注数据（用于数据分析）
+export async function getReviewedAnnotations(videoIds?: string[]): Promise<AnnotationItem[]> {
+  try {
+    let query = supabase
+      .from('annotations')
+      .select('*')
+      .eq('review_status', true) // 只查询已复检的数据
+      .order('created_at', { ascending: false });
+
+    // 如果指定了视频ID，则只查询这些视频的数据
+    if (videoIds && videoIds.length > 0) {
+      query = query.in('video_id', videoIds);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('获取已复检标注数据失败:', error);
+      return [];
+    }
+
+    console.log('📊 getReviewedAnnotations 返回数据量:', data?.length || 0);
+
+    // 转换数据格式
+    return (data || []).map(item => ({
+      id: item.id || '',
+      videoId: item.video_id || '',
+      sentenceNo: item.sentence_no || 0,
+      timeRange: item.time_range || '',
+      startTime: item.start_time,
+      endTime: item.end_time,
+      originalText: item.original_text || '',
+      aiRewrittenText: item.ai_rewritten_text || '',
+      humanAnnotatedText: item.human_annotated_text || '',
+      majorCategory: item.major_category || '',
+      minorCategory: item.minor_category || '',
+      remark: item.remark || '',
+      status: item.status || false,
+      annotator: item.annotator || '',
+      isQualified: item.is_qualified,
+      inspector: item.inspector || '',
+      reviewer: item.reviewer || '',
+      reviewStatus: item.review_status,
+      videoName: item.video_name || '',
+      videoUrl: item.video_url || '',
+      subject: item.subject || ''
+    }));
+  } catch (error) {
+    console.error('获取已复检标注数据异常:', error);
+    return [];
+  }
+}
+
 // 获取指定视频的标注数据
 export async function getAnnotations(videoId: string): Promise<AnnotationItem[]> {
   const { data, error } = await supabase

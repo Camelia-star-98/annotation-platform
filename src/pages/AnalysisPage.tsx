@@ -65,7 +65,7 @@ export default function AnalysisPage() {
 
     setLoading(true);
     try {
-      const { getVideos, getAllAnnotations } = await import('../api/database');
+      const { getVideos, getReviewedAnnotations } = await import('../api/database');
       
       // 加载视频信息
       const allVideos = await getVideos();
@@ -83,33 +83,23 @@ export default function AnalysisPage() {
         });
       });
       
-      // 加载所有标注数据（只统计已复检完成的数据）
-      const allAnnotations = await getAllAnnotations();
-      console.log('📊 getAllAnnotations 返回的总数据量:', allAnnotations.length);
-      console.log('📊 前5条数据:', allAnnotations.slice(0, 5).map(a => ({
+      // 加载已复检的标注数据（直接在数据库层面过滤，避免1000条限制）
+      const reviewedAnnotations = await getReviewedAnnotations(selectedVideoIds);
+      console.log('📊 getReviewedAnnotations 返回的总数据量:', reviewedAnnotations.length);
+      console.log('📊 selectedVideoIds:', selectedVideoIds);
+      console.log('📊 前5条数据:', reviewedAnnotations.slice(0, 5).map(a => ({
         videoId: a.videoId,
         annotator: a.annotator,
         reviewStatus: a.reviewStatus
       })));
       
-      const filteredData = allAnnotations.filter(item => 
-        selectedVideoIds.includes(item.videoId) && 
-        item.reviewStatus === true
-        // 移除 majorCategory 和 minorCategory 的过滤，以包含无问题的数据
-      ).map(item => {
+      const filteredData = reviewedAnnotations.map(item => {
         const videoInfo = videoInfoMap.get(item.videoId);
         return {
           ...item,
           subject: videoInfo?.subject || '未知',
           videoName: videoInfo?.name || '未知视频'
         };
-      });
-      
-      console.log('📊 过滤后的数据量:', filteredData.length);
-      console.log('📊 selectedVideoIds:', selectedVideoIds);
-      console.log('📊 过滤条件测试 - 前10条allAnnotations的videoId:');
-      allAnnotations.slice(0, 10).forEach((item, idx) => {
-        console.log(`  ${idx}: videoId=${item.videoId}, reviewStatus=${item.reviewStatus}, included=${selectedVideoIds.includes(item.videoId)}`);
       });
       
       console.log('📊 已复检数据数量:', filteredData.length);
