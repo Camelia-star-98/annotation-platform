@@ -100,6 +100,24 @@ export default function AnalysisPage() {
       
       console.log('📊 已复检数据数量:', filteredData.length);
       
+      // 按视频分组统计数据
+      const videoDataCount = new Map<string, number>();
+      filteredData.forEach(item => {
+        const videoName = item.videoName || item.videoId;
+        videoDataCount.set(videoName, (videoDataCount.get(videoName) || 0) + 1);
+      });
+      
+      console.log('📹 各视频数据分布:');
+      videoDataCount.forEach((count, videoName) => {
+        console.log(`  - ${videoName}: ${count} 条`);
+      });
+      
+      // 检查哪些视频没有已复检数据
+      const videosWithoutData = selectedVids.filter(v => !videoDataCount.has(v.name));
+      if (videosWithoutData.length > 0) {
+        console.warn('⚠️ 以下视频暂无已复检数据:', videosWithoutData.map(v => v.name));
+      }
+      
       if (filteredData.length === 0) {
         message.warning('所选视频暂无已复检完成的数据');
         setLoading(false);
