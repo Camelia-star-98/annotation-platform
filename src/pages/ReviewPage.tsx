@@ -123,27 +123,49 @@ export default function ReviewPage() {
     );
   };
 
-  // 处理问题分类选择（支持多选，但"老师说话句意不通"互斥）
+  // 处理问题分类选择（支持多选，但有互斥规则）
   const handleCategoryChange = (id: string, value: [string, string][] | null) => {
     if (value && value.length > 0) {
-      const EXCLUSIVE_CATEGORY = '老师说话句意不通'; // 互斥的特殊分类
+      const EXCLUSIVE_MINOR = '老师说话句意不通'; // 完全互斥的小类
+      const EXCLUSIVE_MAJORS = ['人工个性化改写', '需要删除']; // 内部互斥的大类列表
       
-      // 检查是否包含互斥分类
-      const hasExclusive = value.some(v => v[1] === EXCLUSIVE_CATEGORY);
+      // 检查是否包含"老师说话句意不通"
+      const hasExclusiveMinor = value.some(v => v[1] === EXCLUSIVE_MINOR);
       
       let finalValue = value;
+      let warningMessage = '';
       
-      if (hasExclusive) {
-        // 如果选择了"老师说话句意不通"，只保留这一项
-        finalValue = value.filter(v => v[1] === EXCLUSIVE_CATEGORY);
+      // 规则1：如果选择了"老师说话句意不通"，只保留这一项
+      if (hasExclusiveMinor) {
+        finalValue = value.filter(v => v[1] === EXCLUSIVE_MINOR);
         
-        // 如果之前有其他选项，提示用户
         if (value.length > 1) {
-          message.warning('「老师说话句意不通」不能与其他问题分类同时选择，已自动清除其他选项');
+          warningMessage = '「老师说话句意不通」不能与其他问题分类同时选择，已自动清除其他选项';
         }
       } else {
-        // 如果选择了其他分类，移除"老师说话句意不通"（如果存在）
-        finalValue = value.filter(v => v[1] !== EXCLUSIVE_CATEGORY);
+        // 规则2：检查每个互斥大类，如果该大类有多个小类被选中，只保留最新的
+        EXCLUSIVE_MAJORS.forEach(majorCategory => {
+          const itemsOfThisMajor = value.filter(v => v[0] === majorCategory);
+          
+          if (itemsOfThisMajor.length > 1) {
+            // 保留最新选择的小类
+            const latestItem = itemsOfThisMajor[itemsOfThisMajor.length - 1];
+            
+            // 移除该大类的所有旧选项，保留最新的
+            finalValue = finalValue.filter(v => v[0] !== majorCategory);
+            finalValue.push(latestItem);
+            
+            warningMessage = `「${majorCategory}」大类下的小类不能同时选择，已自动保留最新选项`;
+          }
+        });
+        
+        // 规则3：移除"老师说话句意不通"（如果之前选了其他的）
+        finalValue = finalValue.filter(v => v[1] !== EXCLUSIVE_MINOR);
+      }
+      
+      // 显示警告信息
+      if (warningMessage) {
+        message.warning(warningMessage);
       }
       
       // 提取所有选中的大类和小类
