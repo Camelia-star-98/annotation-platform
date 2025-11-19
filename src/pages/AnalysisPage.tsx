@@ -235,6 +235,8 @@ export default function AnalysisPage() {
 
   // 全学科大类问题饼状图配置
   const getMajorCategoryPieOption = () => {
+    const total = majorCategoryStats.reduce((sum, item) => sum + item.count, 0);
+    
     return {
       title: {
         text: '全学科问题大类占比',
@@ -247,7 +249,10 @@ export default function AnalysisPage() {
       },
       tooltip: {
         trigger: 'item',
-        formatter: '{b}: {c}条 ({d}%)'
+        formatter: (params: any) => {
+          const percentage = ((params.value / total) * 100).toFixed(2);
+          return `${params.name}<br/>数量: ${params.value}条<br/>占比: ${percentage}%`;
+        }
       },
       legend: {
         orient: 'vertical',
@@ -269,7 +274,10 @@ export default function AnalysisPage() {
           },
           label: {
             show: true,
-            formatter: '{b}: {c}条'
+            formatter: (params: any) => {
+              const percentage = ((params.value / total) * 100).toFixed(1);
+              return `${params.name}\n${params.value}条 (${percentage}%)`;
+            }
           },
           emphasis: {
             label: {
@@ -289,6 +297,8 @@ export default function AnalysisPage() {
 
   // 全学科小类问题柱状图配置
   const getMinorCategoryBarOption = () => {
+    const total = minorCategoryStats.reduce((sum, item) => sum + item.count, 0);
+    
     return {
       title: {
         text: '全学科问题小类占比',
@@ -307,7 +317,8 @@ export default function AnalysisPage() {
         formatter: (params: any) => {
           const item = params[0];
           const stat = minorCategoryStats[item.dataIndex];
-          return `${stat.minorCategory}<br/>所属大类: ${stat.majorCategory}<br/>数量: ${item.value}条`;
+          const percentage = ((item.value / total) * 100).toFixed(2);
+          return `${stat.minorCategory}<br/>所属大类: ${stat.majorCategory}<br/>数量: ${item.value}条<br/>占比: ${percentage}%`;
         }
       },
       grid: {
@@ -342,7 +353,10 @@ export default function AnalysisPage() {
           label: {
             show: true,
             position: 'top',
-            formatter: '{c}'
+            formatter: (params: any) => {
+              const percentage = ((params.value / total) * 100).toFixed(1);
+              return `${params.value}条\n(${percentage}%)`;
+            }
           }
         }
       ]
@@ -368,14 +382,41 @@ export default function AnalysisPage() {
       }
     ];
     
-    // 动态添加科目列
+    // 计算每个科目的总数
+    const subjectTotals = availableSubjects.reduce((acc, subject) => {
+      acc[subject] = subjectDetailStats.reduce((sum, row) => sum + (row[subject] || 0), 0);
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // 动态添加科目列（数量 + 占比）
     availableSubjects.forEach(subject => {
+      const total = subjectTotals[subject];
+      
+      // 数量列
       columns.push({
-        title: subject,
-        dataIndex: subject,
-        key: subject,
-        width: 100,
-        render: (value: number) => value > 0 ? <span style={{ fontWeight: 500 }}>{value}</span> : <span style={{ color: '#ccc' }}>0</span>
+        title: `${subject}`,
+        children: [
+          {
+            title: '数量',
+            dataIndex: subject,
+            key: `${subject}_count`,
+            width: 80,
+            render: (value: number) => value > 0 ? <span style={{ fontWeight: 500 }}>{value}条</span> : <span style={{ color: '#ccc' }}>0</span>
+          },
+          {
+            title: '占比',
+            dataIndex: subject,
+            key: `${subject}_percentage`,
+            width: 80,
+            render: (value: number) => {
+              if (value === 0 || total === 0) {
+                return <span style={{ color: '#ccc' }}>0%</span>;
+              }
+              const percentage = ((value / total) * 100).toFixed(1);
+              return <span style={{ color: '#1890ff' }}>{percentage}%</span>;
+            }
+          }
+        ]
       } as any);
     });
     
