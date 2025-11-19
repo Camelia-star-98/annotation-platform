@@ -660,11 +660,30 @@ export default function AnalysisPage() {
                   width: 150,
                   render: (text: string) => (
                     <Space direction="vertical" size={2}>
-                      {text.split(',').map((cat, idx) => (
+                      {text.split(',').filter(Boolean).map((cat, idx) => (
                         <Tag key={idx} color="blue">{cat}</Tag>
                       ))}
                     </Space>
-                  )
+                  ),
+                  filters: (() => {
+                    // 提取所有唯一的问题大类
+                    const allMajorCategories = new Set<string>();
+                    rawData.forEach(item => {
+                      if (item.majorCategory) {
+                        item.majorCategory.split(',').filter(Boolean).forEach(cat => {
+                          allMajorCategories.add(cat.trim());
+                        });
+                      }
+                    });
+                    return Array.from(allMajorCategories).sort().map(cat => ({
+                      text: cat,
+                      value: cat
+                    }));
+                  })(),
+                  onFilter: (value, record) => {
+                    if (!record.majorCategory) return false;
+                    return record.majorCategory.split(',').some(cat => cat.trim() === value);
+                  }
                 },
                 {
                   title: '问题小类',
@@ -673,11 +692,30 @@ export default function AnalysisPage() {
                   width: 150,
                   render: (text: string) => (
                     <Space direction="vertical" size={2}>
-                      {text.split(',').map((cat, idx) => (
+                      {text.split(',').filter(Boolean).map((cat, idx) => (
                         <Tag key={idx} color="cyan">{cat}</Tag>
                       ))}
                     </Space>
-                  )
+                  ),
+                  filters: (() => {
+                    // 提取所有唯一的问题小类
+                    const allMinorCategories = new Set<string>();
+                    rawData.forEach(item => {
+                      if (item.minorCategory) {
+                        item.minorCategory.split(',').filter(Boolean).forEach(cat => {
+                          allMinorCategories.add(cat.trim());
+                        });
+                      }
+                    });
+                    return Array.from(allMinorCategories).sort().map(cat => ({
+                      text: cat,
+                      value: cat
+                    }));
+                  })(),
+                  onFilter: (value, record) => {
+                    if (!record.minorCategory) return false;
+                    return record.minorCategory.split(',').some(cat => cat.trim() === value);
+                  }
                 },
                 {
                   title: '标注人',
