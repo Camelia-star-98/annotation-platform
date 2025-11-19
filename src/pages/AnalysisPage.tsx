@@ -87,9 +87,8 @@ export default function AnalysisPage() {
       const allAnnotations = await getAllAnnotations();
       const filteredData = allAnnotations.filter(item => 
         selectedVideoIds.includes(item.videoId) && 
-        item.reviewStatus === true &&
-        item.majorCategory && 
-        item.minorCategory
+        item.reviewStatus === true
+        // 移除 majorCategory 和 minorCategory 的过滤，以包含无问题的数据
       ).map(item => {
         const videoInfo = videoInfoMap.get(item.videoId);
         return {
