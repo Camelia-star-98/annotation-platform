@@ -18,6 +18,8 @@ import { ArrowLeftOutlined } from '@ant-design/icons';
 import ReactPlayer from 'react-player';
 import { generateMockAnnotations } from '../mock/data';
 import type { AnnotationItem, ProblemCategory } from '../types';
+import { getVideos, saveAnnotations, getProblemCategories } from '../api/database';
+import { supabase } from '../api/supabase';
 import './AnnotationPage.css';
 
 const { Header, Content } = Layout;
@@ -57,7 +59,6 @@ export default function AnnotationPage() {
 
   const loadCategories = async () => {
     try {
-      const { getProblemCategories } = await import('../api/database');
       const loadedCategories = await getProblemCategories();
       setCategories(loadedCategories);
       console.log('✅ 加载了', loadedCategories.length, '个问题分类');
@@ -77,8 +78,6 @@ export default function AnnotationPage() {
   const loadVideoData = async (id: string) => {
     setLoading(true);
     try {
-      const { getVideos, supabase } = await import('../api/database');
-      
       // 获取视频信息
       const allVideos = await getVideos();
       const video = allVideos.find(v => v.id === id);
@@ -296,7 +295,6 @@ export default function AnnotationPage() {
       
       console.log('📤 提交标注数据，已清除质检状态，数据将重新进入质检队列');
       
-      const { saveAnnotations } = await import('../api/database');
       const currentVideoId = videoId || videos[currentVideoIndex]?.id || 'unknown';
       const success = await saveAnnotations(currentVideoId, annotationsWithUser);
       
