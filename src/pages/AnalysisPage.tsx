@@ -225,6 +225,25 @@ export default function AnalysisPage() {
     });
     
     const detailStats = Array.from(detailStatsMap.values());
+    
+    // 添加"无问题"行统计
+    const noProblemRow: SubjectDetailStats = {
+      majorCategory: '无问题',
+      minorCategory: '无问题'
+    };
+    
+    // 统计每个科目的无问题数据条数
+    subjects.forEach(subject => {
+      const noProblemCountForSubject = data.filter(item => 
+        item.subject === subject && 
+        (!item.majorCategory || item.majorCategory.trim() === '')
+      ).length;
+      noProblemRow[subject] = noProblemCountForSubject;
+    });
+    
+    // 将"无问题"行添加到统计数据的开头（或末尾）
+    detailStats.push(noProblemRow);
+    
     setSubjectDetailStats(detailStats);
     
     console.log('📊 大类统计:', majorStats);
@@ -313,11 +332,30 @@ export default function AnalysisPage() {
 
   // 全学科小类问题柱状图配置
   const getMinorCategoryBarOption = () => {
-    const total = minorCategoryStats.reduce((sum, item) => sum + item.count, 0);
+    // 计算总数据条数
+    const totalDataCount = rawData.length;
+    
+    // 计算无问题的数据条数
+    const noProblemCount = rawData.filter(item => !item.majorCategory || item.majorCategory.trim() === '').length;
+    
+    // 构建柱状图数据（包括无问题类别）
+    const barData = [
+      ...minorCategoryStats.map(item => ({
+        name: item.minorCategory,
+        value: item.count,
+        majorCategory: item.majorCategory
+      })),
+      {
+        name: '无问题',
+        value: noProblemCount,
+        majorCategory: '无问题'
+      }
+    ];
     
     return {
       title: {
         text: '全学科问题小类占比',
+        subtext: `总计 ${totalDataCount} 条数据`,
         left: 'center',
         top: 20,
         textStyle: {
@@ -332,9 +370,9 @@ export default function AnalysisPage() {
         },
         formatter: (params: any) => {
           const item = params[0];
-          const stat = minorCategoryStats[item.dataIndex];
-          const percentage = ((item.value / total) * 100).toFixed(2);
-          return `${stat.minorCategory}<br/>所属大类: ${stat.majorCategory}<br/>数量: ${item.value}条<br/>占比: ${percentage}%`;
+          const stat = barData[item.dataIndex];
+          const percentage = ((item.value / totalDataCount) * 100).toFixed(2);
+          return `${stat.name}<br/>所属大类: ${stat.majorCategory}<br/>数量: ${item.value}条<br/>占比: ${percentage}%`;
         }
       },
       grid: {
@@ -346,7 +384,7 @@ export default function AnalysisPage() {
       },
       xAxis: {
         type: 'category',
-        data: minorCategoryStats.map(item => item.minorCategory),
+        data: barData.map(item => item.name),
         axisLabel: {
           interval: 0,
           rotate: 45,
@@ -355,22 +393,24 @@ export default function AnalysisPage() {
       },
       yAxis: {
         type: 'value',
-        name: '问题数量（条）',
+        name: '数据数量（条）',
         minInterval: 1
       },
       series: [
         {
-          name: '问题数量',
+          name: '数据数量',
           type: 'bar',
-          data: minorCategoryStats.map(item => item.count),
-          itemStyle: {
-            color: '#5470c6'
-          },
+          data: barData.map(item => ({
+            value: item.value,
+            itemStyle: {
+              color: item.name === '无问题' ? '#52c41a' : '#5470c6'
+            }
+          })),
           label: {
             show: true,
             position: 'top',
             formatter: (params: any) => {
-              const percentage = ((params.value / total) * 100).toFixed(1);
+              const percentage = ((params.value / totalDataCount) * 100).toFixed(1);
               return `${params.value}条\n(${percentage}%)`;
             }
           }
