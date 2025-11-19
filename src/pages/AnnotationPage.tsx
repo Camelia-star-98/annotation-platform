@@ -143,17 +143,27 @@ export default function AnnotationPage() {
       } else {
         // 第一次标注，加载原始数据模板（任意一个标注人的数据作为模板，或者从上传的数据）
         console.log('🆕 第一次标注，加载原始数据模板');
+        console.log('🔍 查询模板数据 - video_id:', id);
         
         // 获取任意一份标注数据作为模板（获取原文、AI改写等基础数据）
-        const { data: templateData } = await supabase
+        const { data: templateData, error: templateError } = await supabase
           .from('annotations')
           .select('*')
           .eq('video_id', id)
           .order('sentence_no', { ascending: true })
           .limit(200);
 
+        if (templateError) {
+          console.error('❌ 查询模板数据失败:', templateError);
+        }
+        
+        console.log('📦 模板数据返回:', templateData?.length || 0, '条');
         if (templateData && templateData.length > 0) {
-          // 使用模板数据，但清空标注内容
+          console.log('📝 模板数据第一条:', templateData[0]);
+        }
+
+        if (templateData && templateData.length > 0) {
+          // 使用模板数据，保留所有字段（包括 human_annotated_text）
           const newAnnotations = templateData.map((item, index) => ({
             id: `${id}_${item.sentence_no || index + 1}_${userName}`, // 新ID包含当前标注人
             videoId: id,
@@ -163,11 +173,11 @@ export default function AnnotationPage() {
             endTime: item.end_time,
             originalText: item.original_text,
             aiRewrittenText: item.ai_rewritten_text,
-            humanAnnotatedText: '', // 清空，等待标注
-            majorCategory: '',
-            minorCategory: '',
-            remark: '',
-            status: false,
+            humanAnnotatedText: item.human_annotated_text || '', // ✅ 保留原始的人工改写文本作为初始值
+            majorCategory: item.major_category || '',
+            minorCategory: item.minor_category || '',
+            remark: item.remark || '',
+            status: false, // 标注状态默认为未完成
             annotator: userName,
             isQualified: undefined,
             inspector: '',
@@ -176,7 +186,7 @@ export default function AnnotationPage() {
           }));
           
           setAnnotations(newAnnotations);
-          message.info(`首次标注：加载了 ${newAnnotations.length} 条待标注数据`);
+          message.info(`首次标注：加载了 ${newAnnotations.length} 条待标注数据（含参考答案）`);
         } else {
           message.warning('该视频暂无标注数据模板');
         }
@@ -191,16 +201,26 @@ export default function AnnotationPage() {
 
   // 初始化数据（旧模式 - 仅在没有 videoId 时使用）
   useEffect(() => {
+    console.log('🔄 旧模式 useEffect 触发');
+    console.log('videoId:', videoId);
+    console.log('videos.length:', videos.length);
+    console.log('isUploadMode:', isUploadMode);
+    
     // 只有在旧模式下（没有 videoId 参数时）才使用模拟数据
     if (!videoId) {
+      console.log('✅ 旧模式：没有 videoId，使用模拟数据');
       if (isUploadMode && uploadedAnnotations) {
         // 使用上传的数据
+        console.log('📤 使用上传的数据');
         setAnnotations(uploadedAnnotations);
       } else if (videos.length > 0) {
         // 使用模拟数据
+        console.log('🎭 使用模拟数据，数量:', 160);
         const mockData = generateMockAnnotations(videos[currentVideoIndex].id);
         setAnnotations(mockData);
       }
+    } else {
+      console.log('⚠️ 新模式：有 videoId，跳过模拟数据加载');
     }
   }, [currentVideoIndex, videos, uploadedAnnotations, isUploadMode, videoId]);
 
