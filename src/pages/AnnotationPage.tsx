@@ -339,16 +339,19 @@ export default function AnnotationPage() {
     try {
       // 使用 Supabase - 确保每条数据都有标注人姓名
       // 重新提交时，清除质检相关字段，让数据重新进入质检流程
+      // 但要保留复检相关字段（reviewer, reviewStatus）
       const annotationsWithUser = annotations.map(item => ({
         ...item,
         annotator: userName, // 添加标注人姓名
         // 清除质检相关字段，重置为待质检状态
         isQualified: undefined,
         inspector: '',
-        // 保留复检相关字段（如果有的话）
+        // 明确保留复检相关字段
+        reviewer: item.reviewer,
+        reviewStatus: item.reviewStatus,
       }));
       
-      console.log('📤 提交标注数据，已清除质检状态，数据将重新进入质检队列');
+      console.log('📤 提交标注数据，已清除质检状态（保留复检状态），数据将重新进入质检队列');
       
       const currentVideoId = videoId || videos[currentVideoIndex]?.id || 'unknown';
       const success = await saveAnnotations(currentVideoId, annotationsWithUser);
