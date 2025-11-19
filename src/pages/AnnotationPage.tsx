@@ -104,6 +104,9 @@ export default function AnnotationPage() {
       
       if (myAnnotations && myAnnotations.length > 0) {
         // 已有标注数据，加载自己的标注
+        console.log('✅ 找到您的标注数据:', myAnnotations.length, '条');
+        console.log('📝 第一条数据示例:', myAnnotations[0]);
+        
         const formattedData = myAnnotations.map(item => ({
           id: item.id,
           videoId: item.video_id,
@@ -124,6 +127,8 @@ export default function AnnotationPage() {
           reviewer: item.reviewer || '',
           reviewStatus: item.review_status
         }));
+        
+        console.log('📊 格式化后的数据示例:', formattedData[0]);
         
         setAnnotations(formattedData);
         message.success(`加载了您的标注数据：${formattedData.length} 条`);
