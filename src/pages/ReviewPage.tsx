@@ -123,12 +123,32 @@ export default function ReviewPage() {
     );
   };
 
-  // 处理问题分类选择（支持多选）
+  // 处理问题分类选择（支持多选，但"老师说话句意不通"互斥）
   const handleCategoryChange = (id: string, value: [string, string][] | null) => {
     if (value && value.length > 0) {
+      const EXCLUSIVE_CATEGORY = '老师说话句意不通'; // 互斥的特殊分类
+      
+      // 检查是否包含互斥分类
+      const hasExclusive = value.some(v => v[1] === EXCLUSIVE_CATEGORY);
+      
+      let finalValue = value;
+      
+      if (hasExclusive) {
+        // 如果选择了"老师说话句意不通"，只保留这一项
+        finalValue = value.filter(v => v[1] === EXCLUSIVE_CATEGORY);
+        
+        // 如果之前有其他选项，提示用户
+        if (value.length > 1) {
+          message.warning('「老师说话句意不通」不能与其他问题分类同时选择，已自动清除其他选项');
+        }
+      } else {
+        // 如果选择了其他分类，移除"老师说话句意不通"（如果存在）
+        finalValue = value.filter(v => v[1] !== EXCLUSIVE_CATEGORY);
+      }
+      
       // 提取所有选中的大类和小类
-      const majorCategories = value.map(v => v[0]);
-      const minorCategories = value.map(v => v[1]);
+      const majorCategories = finalValue.map(v => v[0]);
+      const minorCategories = finalValue.map(v => v[1]);
       
       // 使用逗号分隔存储多个分类
       updateReview(id, 'majorCategory', [...new Set(majorCategories)].join(','));
