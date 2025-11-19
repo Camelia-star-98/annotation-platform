@@ -516,6 +516,8 @@ export default function AnalysisPage() {
               <ReactECharts 
                 option={getMajorCategoryPieOption()} 
                 style={{ height: '500px' }}
+                notMerge={true}
+                lazyUpdate={true}
               />
             ) : (
               <div style={{ textAlign: 'center', padding: '60px 0', color: '#999' }}>
@@ -539,6 +541,8 @@ export default function AnalysisPage() {
               <ReactECharts 
                 option={getMinorCategoryBarOption()} 
                 style={{ height: '500px' }}
+                notMerge={true}
+                lazyUpdate={true}
               />
             ) : (
               <div style={{ textAlign: 'center', padding: '60px 0', color: '#999' }}>
