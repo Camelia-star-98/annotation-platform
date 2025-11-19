@@ -11,6 +11,7 @@ if (!supabaseUrl || !supabaseAnonKey || supabaseUrl === 'YOUR_SUPABASE_URL' || s
   console.error('VITE_SUPABASE_URL:', supabaseUrl ? '已设置' : '未设置');
   console.error('VITE_SUPABASE_ANON_KEY:', supabaseAnonKey ? '已设置' : '未设置');
   console.error('请检查 Vercel 环境变量配置或 .env.local 文件');
+  throw new Error('Supabase 环境变量未配置，请检查 .env.local 文件或 Vercel 环境变量设置');
 }
 
 // 创建Supabase客户端
