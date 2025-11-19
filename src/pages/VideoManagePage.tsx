@@ -514,7 +514,7 @@ export default function VideoManagePage() {
               remark: row['改写理由'] || row['理由'] || row['备注'] || row['remark'] || '',
               majorCategory: row['问题大类'] || row['majorCategory'] || '',
               minorCategory: row['问题小类'] || row['minorCategory'] || '',
-              status: false,
+              status: true, // 上传的数据默认为已标注状态，可直接进入质检队列
               isQualified: null
             };
             
