@@ -9,7 +9,8 @@ import {
   Typography,
   Table,
   message,
-  Divider
+  Divider,
+  Tag
 } from 'antd';
 import { ArrowLeftOutlined, DownloadOutlined, BarChartOutlined, PieChartOutlined, TableOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
