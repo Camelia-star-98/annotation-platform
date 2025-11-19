@@ -132,6 +132,14 @@ export default function AnnotationPage() {
         
         setAnnotations(formattedData);
         message.success(`加载了您的标注数据：${formattedData.length} 条`);
+        
+        // 额外检查：如果第一条数据的原文为空，显示警告
+        if (formattedData.length > 0 && !formattedData[0].originalText) {
+          console.error('⚠️ 警告：第一条数据的原文为空！');
+          console.error('原始数据:', myAnnotations[0]);
+          console.error('格式化数据:', formattedData[0]);
+          message.warning('数据加载异常：原文为空，请检查数据库');
+        }
       } else {
         // 第一次标注，加载原始数据模板（任意一个标注人的数据作为模板，或者从上传的数据）
         console.log('🆕 第一次标注，加载原始数据模板');
@@ -181,17 +189,20 @@ export default function AnnotationPage() {
     }
   };
 
-  // 初始化数据（旧模式）
+  // 初始化数据（旧模式 - 仅在没有 videoId 时使用）
   useEffect(() => {
-    if (isUploadMode && uploadedAnnotations) {
-      // 使用上传的数据
-      setAnnotations(uploadedAnnotations);
-    } else if (videos.length > 0) {
-      // 使用模拟数据
-      const mockData = generateMockAnnotations(videos[currentVideoIndex].id);
-      setAnnotations(mockData);
+    // 只有在旧模式下（没有 videoId 参数时）才使用模拟数据
+    if (!videoId) {
+      if (isUploadMode && uploadedAnnotations) {
+        // 使用上传的数据
+        setAnnotations(uploadedAnnotations);
+      } else if (videos.length > 0) {
+        // 使用模拟数据
+        const mockData = generateMockAnnotations(videos[currentVideoIndex].id);
+        setAnnotations(mockData);
+      }
     }
-  }, [currentVideoIndex, videos, uploadedAnnotations, isUploadMode]);
+  }, [currentVideoIndex, videos, uploadedAnnotations, isUploadMode, videoId]);
 
   // 构建级联选择器选项
   const categoryOptions = (categories || []).map(cat => ({
@@ -532,7 +543,7 @@ export default function AnnotationPage() {
           {/* 标注表格 */}
           <Card
             className="annotation-table-card"
-            title="标注内容"
+            title={`标注内容 (共 ${annotations.length} 条${annotations.length > 0 && annotations[0].originalText ? ' ✅' : ' ⚠️数据异常'})`}
             extra={
               <Space>
                 <span>已标注：{annotations.filter(a => a.status).length} / {annotations.length}</span>
