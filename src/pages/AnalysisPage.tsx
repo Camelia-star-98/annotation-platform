@@ -235,14 +235,11 @@ export default function AnalysisPage() {
 
   // 全学科大类问题饼状图配置
   const getMajorCategoryPieOption = () => {
-    // 计算总数据条数（包括无问题的）
+    // 计算总数据条数
     const totalDataCount = rawData.length;
     
-    // 计算有问题的数据条数
-    const problemDataCount = majorCategoryStats.reduce((sum, item) => sum + item.count, 0);
-    
-    // 计算无问题的数据条数
-    const noProblemCount = totalDataCount - problemDataCount;
+    // 计算无问题的数据条数（majorCategory 为空的数据）
+    const noProblemCount = rawData.filter(item => !item.majorCategory || item.majorCategory.trim() === '').length;
     
     // 构建饼图数据（包括无问题类别）
     const pieData = [
