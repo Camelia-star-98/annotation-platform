@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>调试复检状态</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: monospace; padding: 20px; }
+    .success { color: green; }
+    .error { color: red; }
+    pre { background: #f5f5f5; padding: 10px; overflow: auto; }
+  </style>
+</head>
+<body>
+  <h2>调试复检状态工具</h2>
+  <button onclick="checkReviewStatus()">检查所有标注的复检状态</button>
+  <div id="result"></div>
+  
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+    
+    const supabaseUrl = 'https://dcqwxvekgxgjujurpipg.supabase.co'
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw'
+    
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    
+    window.checkReviewStatus = async function() {
+      const resultEl = document.getElementById('result')
+      resultEl.innerHTML = '<p>正在查询...</p>'
+      
+      try {
+        // 查询所有标注数据
+        const { data: allAnnotations, error } = await supabase
+          .from('annotations')
+          .select('*')
+          .order('video_id')
+        
+        if (error) {
+          resultEl.innerHTML = `<p class="error">错误: ${JSON.stringify(error)}</p>`
+          return
+        }
+        
+        // 按视频ID分组统计
+        const videoStats = {}
+        
+        allAnnotations.forEach(item => {
+          if (!videoStats[item.video_id]) {
+            videoStats[item.video_id] = {
+              total: 0,
+              reviewedTrue: 0,
+              reviewedFalse: 0,
+              reviewedNull: 0,
+              annotators: new Set(),
+              reviewers: new Set()
+            }
+          }
+          
+          const stats = videoStats[item.video_id]
+          stats.total++
+          
+          if (item.review_status === true) {
+            stats.reviewedTrue++
+          } else if (item.review_status === false) {
+            stats.reviewedFalse++
+          } else {
+            stats.reviewedNull++
+          }
+          
+          if (item.annotator) stats.annotators.add(item.annotator)
+          if (item.reviewer) stats.reviewers.add(item.reviewer)
+        })
+        
+        // 获取视频名称
+        const { data: videos } = await supabase
+          .from('videos')
+          .select('id, name')
+        
+        const videoNameMap = {}
+        videos.forEach(v => {
+          videoNameMap[v.id] = v.name
+        })
+        
+        // 生成报告
+        let html = `<h3 class="success">查询成功！总计 ${allAnnotations.length} 条标注</h3>`
+        html += '<table border="1" style="border-collapse: collapse; width: 100%;">'
+        html += '<tr><th>视频ID</th><th>视频名称</th><th>总数</th><th>reviewStatus=true</th><th>reviewStatus=false</th><th>reviewStatus=null</th><th>标注人</th><th>复检人</th></tr>'
+        
+        Object.keys(videoStats).sort().forEach(videoId => {
+          const stats = videoStats[videoId]
+          const videoName = videoNameMap[videoId] || '未知'
+          
+          html += '<tr>'
+          html += `<td>${videoId.substring(0, 20)}...</td>`
+          html += `<td>${videoName}</td>`
+          html += `<td>${stats.total}</td>`
+          html += `<td style="background: ${stats.reviewedTrue > 0 ? '#d4edda' : '#fff'}">${stats.reviewedTrue}</td>`
+          html += `<td>${stats.reviewedFalse}</td>`
+          html += `<td style="background: ${stats.reviewedNull > 0 ? '#fff3cd' : '#fff'}">${stats.reviewedNull}</td>`
+          html += `<td>${Array.from(stats.annotators).join(', ')}</td>`
+          html += `<td>${Array.from(stats.reviewers).join(', ')}</td>`
+          html += '</tr>'
+        })
+        
+        html += '</table>'
+        
+        resultEl.innerHTML = html
+        
+      } catch (err) {
+        resultEl.innerHTML = `<p class="error">异常: ${err.message}</p>`
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>获取视频ID</title>
+  <meta charset="UTF-8">
+</head>
+<body>
+  <h2>获取视频ID工具</h2>
+  <button onclick="getVideoIds()">获取视频ID</button>
+  <pre id="result"></pre>
+  
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+    
+    const supabaseUrl = 'https://dcqwxvekgxgjujurpipg.supabase.co'
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw'
+    
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    
+    window.getVideoIds = async function() {
+      const resultEl = document.getElementById('result')
+      resultEl.textContent = '正在查询...'
+      
+      try {
+        const { data, error } = await supabase
+          .from('videos')
+          .select('id, name, subject')
+          .in('name', [
+            '1104-英语-1.mp4',
+            '1104-英语-2.mp4',
+            '1104-数学-1.mp4',
+            '1104-数学-2.mp4',
+            '1104-物理-1.mp4',
+            '1104-物理-2.mp4'
+          ])
+          .order('name')
+        
+        if (error) {
+          resultEl.textContent = '错误: ' + JSON.stringify(error, null, 2)
+          return
+        }
+        
+        resultEl.textContent = '查询成功！\n\n' + JSON.stringify(data, null, 2)
+        
+        // 生成恢复SQL
+        const yangluruiIds = data
+          .filter(v => v.name.includes('英语'))
+          .map(v => `'${v.id}'`)
+          .join(', ')
+        
+        const wangxiheIds = data
+          .filter(v => v.name.includes('数学') || v.name.includes('物理'))
+          .map(v => `'${v.id}'`)
+          .join(', ')
+        
+        const sql = `
+-- 恢复杨璐瑞的英语视频
+UPDATE annotations
+SET review_status = true, reviewer = '杨璐瑞', review_completed_at = NOW()
+WHERE video_id IN (${yangluruiIds}) AND annotator = '杨璐瑞';
+
+-- 恢复王曦禾的数学和物理视频
+UPDATE annotations
+SET review_status = true, reviewer = '王曦禾', review_completed_at = NOW()
+WHERE video_id IN (${wangxiheIds}) AND annotator = '王曦禾';
+`
+        
+        resultEl.textContent += '\n\n========== 恢复SQL ==========\n' + sql
+        
+      } catch (err) {
+        resultEl.textContent = '异常: ' + err.message
+      }
+    }
+  </script>
+</body>
+</html>

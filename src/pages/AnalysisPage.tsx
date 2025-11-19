@@ -99,6 +99,13 @@ export default function AnalysisPage() {
       });
       
       console.log('📊 已复检数据数量:', filteredData.length);
+      console.log('📊 前3条数据样例:', filteredData.slice(0, 3).map(item => ({
+        videoId: item.videoId,
+        videoName: item.videoName,
+        annotator: item.annotator,
+        reviewStatus: item.reviewStatus,
+        reviewer: item.reviewer
+      })));
       
       // 按视频分组统计数据
       const videoDataCount = new Map<string, number>();
@@ -110,6 +117,11 @@ export default function AnalysisPage() {
       console.log('📹 各视频数据分布:');
       videoDataCount.forEach((count, videoName) => {
         console.log(`  - ${videoName}: ${count} 条`);
+      });
+      
+      console.log('📹 选中的视频名称列表:');
+      selectedVids.forEach(v => {
+        console.log(`  - v.id: ${v.id}, v.name: ${v.name}`);
       });
       
       // 检查哪些视频没有已复检数据

@@ -143,7 +143,14 @@ export default function ReviewSelectPage() {
       const pending: VideoWithAnnotators[] = [];
       const completed: VideoWithAnnotators[] = [];
       
+      console.log('📊 开始分离待复检和已复检，总视频数:', result.length);
+      
       result.forEach(video => {
+        console.log(`📹 处理视频: ${video.videoName}`);
+        video.annotators.forEach(a => {
+          console.log(`  - 标注人: ${a.annotatorName}, 待复检: ${a.pendingCount}, 已复检: ${a.reviewedCount}`);
+        });
+        
         // 待复检：有已标注但未复检的数据（排除未标注的）
         const pendingAnnotators = video.annotators.filter(a => 
           a.pendingCount > 0 && (a.pendingCount + a.reviewedCount) > 0
@@ -152,6 +159,9 @@ export default function ReviewSelectPage() {
         const completedAnnotators = video.annotators.filter(a => 
           a.pendingCount === 0 && a.reviewedCount > 0
         );
+        
+        console.log(`  ✅ 已复检标注人数: ${completedAnnotators.length}`, completedAnnotators.map(a => a.annotatorName));
+        console.log(`  ⏳ 待复检标注人数: ${pendingAnnotators.length}`, pendingAnnotators.map(a => a.annotatorName));
         
         if (pendingAnnotators.length > 0) {
           pending.push({

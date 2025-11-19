@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>检查复检选择页数据</title>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #4CAF50; color: white; }
+    .pending { background-color: #fff3cd; }
+    .reviewed { background-color: #d4edda; }
+  </style>
+</head>
+<body>
+  <h2>检查复检选择页面的数据统计</h2>
+  <button onclick="checkData()">开始检查</button>
+  <div id="result"></div>
+  
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'
+    
+    const supabaseUrl = 'https://dcqwxvekgxgjujurpipg.supabase.co'
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw'
+    
+    const supabase = createClient(supabaseUrl, supabaseKey)
+    
+    const targetVideoNames = [
+      '1104-语文-1.mp4',
+      '1104-英语-1.mp4',
+      '1104-英语-2.mp4',
+      '1104-数学-1.mp4',
+      '1104-数学-2.mp4',
+      '1104-物理-1.mp4',
+      '1104-物理-2.mp4'
+    ]
+    
+    window.checkData = async function() {
+      const resultEl = document.getElementById('result')
+      resultEl.innerHTML = '<p>正在查询...</p>'
+      
+      try {
+        // 获取视频
+        const { data: videos } = await supabase.from('videos').select('*')
+        const targetVideos = videos.filter(v => targetVideoNames.includes(v.name))
+        
+        // 获取这些视频的所有标注
+        const videoIds = targetVideos.map(v => v.id)
+        const { data: annotations } = await supabase
+          .from('annotations')
+          .select('*')
+          .in('video_id', videoIds)
+        
+        // 按视频和标注人分组统计
+        const stats = {}
+        
+        annotations.forEach(ann => {
+          const video = targetVideos.find(v => v.id === ann.video_id)
+          const videoName = video?.name || ann.video_id
+          const annotator = ann.annotator || 'unknown'
+          
+          const key = `${videoName}|${annotator}`
+          
+          if (!stats[key]) {
+            stats[key] = {
+              videoName,
+              annotator,
+              total: 0,
+              annotated: 0,
+              reviewed: 0,
+              pending: 0,
+              unannotated: 0
+            }
+          }
+          
+          const s = stats[key]
+          s.total++
+          
+          if (ann.status === true) {
+            s.annotated++
+            if (ann.review_status === true) {
+              s.reviewed++
+            } else {
+              s.pending++
+            }
+          } else {
+            s.unannotated++
+          }
+        })
+        
+        // 生成表格
+        let html = '<h3>统计结果：</h3>'
+        html += '<table><tr><th>视频名称</th><th>标注人</th><th>总数</th><th>已标注</th><th>已复检</th><th>待复检</th><th>未标注</th><th>状态</th></tr>'
+        
+        Object.values(stats).forEach(s => {
+          const isFullyReviewed = s.annotated > 0 && s.reviewed === s.annotated
+          const rowClass = isFullyReviewed ? 'reviewed' : 'pending'
+          
+          html += `<tr class="${rowClass}">`
+          html += `<td>${s.videoName}</td>`
+          html += `<td>${s.annotator}</td>`
+          html += `<td>${s.total}</td>`
+          html += `<td>${s.annotated}</td>`
+          html += `<td>${s.reviewed}</td>`
+          html += `<td>${s.pending}</td>`
+          html += `<td>${s.unannotated}</td>`
+          html += `<td>${isFullyReviewed ? '✅ 已复检' : '⏳ 待复检'}</td>`
+          html += '</tr>'
+        })
+        
+        html += '</table>'
+        html += '<p><strong>绿色</strong> = 已复检完成，<strong>黄色</strong> = 待复检</p>'
+        
+        resultEl.innerHTML = html
+        
+      } catch (err) {
+        resultEl.innerHTML = `<p style="color:red">错误: ${err.message}</p>`
+      }
+    }
+  </script>
+</body>
+</html>
