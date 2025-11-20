@@ -231,10 +231,10 @@ export default function VideoManagePage() {
         throw new Error('上传已取消');
       }
       
-      // 3. 上传视频文件到 Supabase Storage (15% -> 95%) - 使用预签名直传
+      // 3. 上传视频文件到 Supabase Storage (15% -> 95%) - 使用 SDK 直接上传（最稳定）
       setUploadProgress(20);
       const { addVideo, saveAnnotations } = await import('../api/database');
-      const { presignedUploadVideo } = await import('../utils/presignedUpload');
+      const { uploadVideoFile } = await import('../api/database');
       
       const fileSizeMB = finalVideoFile.size / 1024 / 1024;
       console.log('📦 最终视频文件大小:', fileSizeMB.toFixed(2), 'MB');
@@ -244,7 +244,7 @@ export default function VideoManagePage() {
       // 检查文件大小
       if (fileSizeMB > 1024) {
         message.error({
-          content: `文件过大 (${fileSizeMB.toFixed(1)}MB)，超过1GB限制，无法上传。请压缩视频后再试。`,
+          content: `文件过大 (${fileSizeMB.toFixed(1)}MB)，超过1GB限制，无法上传。`,
           duration: 5
         });
         setUploadProgress(0);
@@ -258,47 +258,34 @@ export default function VideoManagePage() {
 
       try {
         // 显示上传提示
-        message.info(`正在预签名直传 (${fileSizeMB.toFixed(1)}MB)...`);
+        message.info(`正在上传视频 (${fileSizeMB.toFixed(1)}MB)...`);
         
         const uploadStartTime = Date.now();
-        let lastProgressTime = uploadStartTime;
-        let lastPercentage = 20;
         
-        // 使用预签名直传（带实时进度）
-        const uploadedUrl = await presignedUploadVideo(
-          finalVideoFile,
-          (percentage) => {
-            // 真实上传进度回调
-            const currentTime = Date.now();
-            const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
-            
-            // 映射进度到 20-95%
-            const mappedProgress = 20 + (percentage * 0.75);
-            setUploadProgress(mappedProgress);
-            
-            // 计算速度信息
-            if (elapsedSeconds > 0 && percentage > 5) {
-              const uploadedBytes = (percentage / 100) * finalVideoFile.size;
-              const uploadedMB = uploadedBytes / 1024 / 1024;
-              const speed = uploadedBytes / 1024 / 1024 / elapsedSeconds;
-              const remainingBytes = finalVideoFile.size - uploadedBytes;
-              const remainingSeconds = speed > 0 ? remainingBytes / (speed * 1024 * 1024) : 0;
-              
-              setUploadedSize(`${uploadedMB.toFixed(1)}/${fileSizeMB.toFixed(1)} MB`);
-              setUploadSpeed(`${speed.toFixed(2)} MB/s`);
-              
-              if (remainingSeconds < 60) {
-                setRemainingTime(`约 ${Math.ceil(remainingSeconds)} 秒`);
-              } else {
-                setRemainingTime(`约 ${Math.ceil(remainingSeconds / 60)} 分钟`);
-              }
-            }
-          }
-        );
+        // 模拟进度显示
+        const progressInterval = setInterval(() => {
+          setUploadProgress(prev => {
+            if (prev < 30) return prev + 3;
+            if (prev < 50) return prev + 2;
+            if (prev < 70) return prev + 1.5;
+            if (prev < 90) return prev + 0.5;
+            return prev;
+          });
+        }, 1000);
+        
+        // 使用 Supabase SDK 直接上传（最稳定）
+        const uploadedUrl = await uploadVideoFile(finalVideoFile);
+        
+        clearInterval(progressInterval);
         
         if (!uploadedUrl) {
           throw new Error('上传返回空URL');
         }
+        
+        // 计算实际速度
+        const elapsedSeconds = (Date.now() - uploadStartTime) / 1000;
+        const speedMBps = fileSizeMB / elapsedSeconds;
+        console.log(`✅ 上传完成！耗时: ${elapsedSeconds.toFixed(1)}秒, 速度: ${speedMBps.toFixed(2)} MB/s`);
         
         videoUrl = uploadedUrl;
         setUploadProgress(95);
