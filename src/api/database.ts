@@ -109,11 +109,27 @@ export async function uploadVideoFile(
 
     console.log('✅ 视频上传到Storage成功:', data);
     console.log('⏰ 上传结束时间:', new Date().toLocaleTimeString());
+    
+    // 检查上传返回的数据
+    if (!data || !data.path) {
+      console.error('❌ 上传返回的数据无效:', data);
+      throw new Error('上传返回的数据无效，缺少 path 字段');
+    }
+    
+    console.log('📝 上传文件的 path:', data.path);
     onProgress?.(100);
 
+    // 获取公开URL
     const { data: urlData } = supabase.storage
       .from('videos')
       .getPublicUrl(data.path);
+
+    console.log('📝 getPublicUrl 返回的数据:', urlData);
+    
+    if (!urlData || !urlData.publicUrl) {
+      console.error('❌ 无法获取公开URL:', urlData);
+      throw new Error('无法获取视频的公开URL，请检查 Supabase Storage 配置');
+    }
 
     console.log('✅ 视频公开URL:', urlData.publicUrl);
     return urlData.publicUrl;
