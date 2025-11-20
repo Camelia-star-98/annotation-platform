@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>调试视频ID匹配问题</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1400px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #1890ff; }
+    h2 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover { background: #40a9ff; }
+    .success { color: #52c41a; font-weight: bold; }
+    .error { color: #ff4d4f; font-weight: bold; }
+    .warning { color: #faad14; font-weight: bold; }
+    .info { color: #1890ff; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #fafafa;
+      font-weight: bold;
+      position: sticky;
+      top: 0;
+    }
+    tr:hover { background: #f0f7ff; }
+    .match { background: #f6ffed; }
+    .no-match { background: #fff2e8; }
+    pre {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 调试视频ID匹配问题</h1>
+  
+  <div class="container">
+    <h2>问题分析</h2>
+    <p>控制台显示"以下视频暂无已复检数据"，说明 videoId 匹配有问题。</p>
+    <p>可能的原因：</p>
+    <ul>
+      <li>视频表（videos）的 ID 和 标注表（annotations）的 video_id 不匹配</li>
+      <li>数据中有多余的空格或格式问题</li>
+    </ul>
+    <button onclick="debugVideoMatching()">🔍 开始调试</button>
+    <div id="result"></div>
+  </div>
+
+  <div class="container" id="detailContainer" style="display:none;">
+    <h2>详细匹配结果</h2>
+    <div id="details"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function debugVideoMatching() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<p class="info">正在分析...</p>';
+
+      try {
+        // 1. 获取所有视频
+        const { data: videos, error: vError } = await supabase
+          .from('videos')
+          .select('*')
+          .order('name', { ascending: true });
+
+        if (vError) throw vError;
+
+        console.log('📹 视频总数:', videos.length);
+
+        // 2. 获取所有已复检的标注数据
+        const { data: annotations, error: aError } = await supabase
+          .from('annotations')
+          .select('*')
+          .eq('review_status', true)
+          .limit(1000);
+
+        if (aError) throw aError;
+
+        console.log('📊 已复检标注总数:', annotations.length);
+
+        // 3. 统计每个 video_id 的数据量
+        const annotationsByVideoId = new Map();
+        annotations.forEach(ann => {
+          const videoId = ann.video_id;
+          if (!annotationsByVideoId.has(videoId)) {
+            annotationsByVideoId.set(videoId, []);
+          }
+          annotationsByVideoId.get(videoId).push(ann);
+        });
+
+        console.log('📊 有数据的唯一 video_id 数量:', annotationsByVideoId.size);
+
+        // 4. 对比分析
+        const matchResults = [];
+        videos.forEach(video => {
+          const hasAnnotations = annotationsByVideoId.has(video.id);
+          const annotationCount = hasAnnotations ? annotationsByVideoId.get(video.id).length : 0;
+          
+          matchResults.push({
+            videoId: video.id,
+            videoName: video.name,
+            isCompleted: video.is_completed,
+            hasAnnotations: hasAnnotations,
+            annotationCount: annotationCount,
+            status: hasAnnotations ? 'match' : 'no-match'
+          });
+        });
+
+        // 5. 检查是否有 annotations 中的 video_id 在 videos 表中找不到
+        const orphanedAnnotations = [];
+        annotationsByVideoId.forEach((anns, videoId) => {
+          const videoExists = videos.some(v => v.id === videoId);
+          if (!videoExists) {
+            orphanedAnnotations.push({
+              videoId: videoId,
+              count: anns.length,
+              sampleAnnotation: anns[0]
+            });
+          }
+        });
+
+        // 6. 显示结果
+        displayResults(matchResults, orphanedAnnotations);
+
+      } catch (error) {
+        console.error('调试失败:', error);
+        resultDiv.innerHTML = `<p class="error">调试失败: ${error.message}</p>`;
+      }
+    }
+
+    function displayResults(matchResults, orphanedAnnotations) {
+      const resultDiv = document.getElementById('result');
+      const detailsDiv = document.getElementById('details');
+
+      // 统计
+      const totalVideos = matchResults.length;
+      const videosWithData = matchResults.filter(r => r.hasAnnotations).length;
+      const videosWithoutData = matchResults.filter(r => !r.hasAnnotations).length;
+      const completedVideos = matchResults.filter(r => r.isCompleted === true).length;
+
+      let html = '<div style="margin-top: 20px;">';
+      html += '<h3>📊 统计概览</h3>';
+      html += '<pre>';
+      html += `视频总数: ${totalVideos}\n`;
+      html += `有已复检数据的视频: ${videosWithData}\n`;
+      html += `无已复检数据的视频: ${videosWithoutData}\n`;
+      html += `标记为已完成的视频: ${completedVideos}\n\n`;
+      
+      if (orphanedAnnotations.length > 0) {
+        html += `<span class="error">⚠️ 警告：发现 ${orphanedAnnotations.length} 个孤立的 video_id（在标注表中有数据，但在视频表中找不到）</span>\n`;
+      } else {
+        html += `<span class="success">✅ 没有孤立的 video_id</span>\n`;
+      }
+      html += '</pre>';
+      html += '</div>';
+
+      resultDiv.innerHTML = html;
+
+      // 详细列表
+      let detailHtml = '<h3>视频匹配详情</h3>';
+      detailHtml += '<table><thead><tr>';
+      detailHtml += '<th>视频名称</th>';
+      detailHtml += '<th>视频ID</th>';
+      detailHtml += '<th>is_completed</th>';
+      detailHtml += '<th>已复检数据量</th>';
+      detailHtml += '<th>状态</th>';
+      detailHtml += '</tr></thead><tbody>';
+
+      // 先显示有数据的
+      matchResults.filter(r => r.hasAnnotations).forEach(result => {
+        detailHtml += `<tr class="match">`;
+        detailHtml += `<td><strong>${result.videoName}</strong></td>`;
+        detailHtml += `<td style="font-size: 10px;">${result.videoId}</td>`;
+        detailHtml += `<td>${result.isCompleted ? '<span class="success">✅ true</span>' : '<span class="error">❌ false/null</span>'}</td>`;
+        detailHtml += `<td><strong class="success">${result.annotationCount} 条</strong></td>`;
+        detailHtml += `<td><span class="success">✅ 匹配</span></td>`;
+        detailHtml += `</tr>`;
+      });
+
+      // 再显示没数据的
+      matchResults.filter(r => !r.hasAnnotations).slice(0, 5).forEach(result => {
+        detailHtml += `<tr class="no-match">`;
+        detailHtml += `<td>${result.videoName}</td>`;
+        detailHtml += `<td style="font-size: 10px;">${result.videoId}</td>`;
+        detailHtml += `<td>${result.isCompleted ? '✅ true' : '❌ false/null'}</td>`;
+        detailHtml += `<td>-</td>`;
+        detailHtml += `<td><span class="warning">⚪ 无数据</span></td>`;
+        detailHtml += `</tr>`;
+      });
+
+      detailHtml += '</tbody></table>';
+
+      // 孤立的标注
+      if (orphanedAnnotations.length > 0) {
+        detailHtml += '<div style="margin-top: 30px; padding: 20px; background: #fff2e8; border-left: 4px solid #faad14;">';
+        detailHtml += '<h3 class="error">⚠️ 孤立的标注数据（重要！）</h3>';
+        detailHtml += '<p>以下 video_id 在标注表中有数据，但在视频表中找不到对应的视频：</p>';
+        detailHtml += '<table><thead><tr>';
+        detailHtml += '<th>video_id</th>';
+        detailHtml += '<th>数据量</th>';
+        detailHtml += '<th>示例数据</th>';
+        detailHtml += '</tr></thead><tbody>';
+
+        orphanedAnnotations.forEach(orphan => {
+          detailHtml += '<tr>';
+          detailHtml += `<td style="font-size: 10px;"><strong>${orphan.videoId}</strong></td>`;
+          detailHtml += `<td><strong class="error">${orphan.count} 条</strong></td>`;
+          detailHtml += `<td style="font-size: 10px;">标注人: ${orphan.sampleAnnotation.annotator}, 复检人: ${orphan.sampleAnnotation.reviewer}</td>`;
+          detailHtml += '</tr>';
+        });
+
+        detailHtml += '</tbody></table>';
+        detailHtml += '<p style="margin-top: 15px;"><strong>💡 解决方案：</strong></p>';
+        detailHtml += '<p>这些标注数据关联的视频在 videos 表中不存在。可能原因：</p>';
+        detailHtml += '<ol>';
+        detailHtml += '<li>视频被删除了，但标注数据还在</li>';
+        detailHtml += '<li>video_id 记录错误</li>';
+        detailHtml += '<li>需要重新创建这些视频记录</li>';
+        detailHtml += '</ol>';
+        detailHtml += '</div>';
+      }
+
+      detailsDiv.innerHTML = detailHtml;
+      document.getElementById('detailContainer').style.display = 'block';
+    }
+
+    // 自动运行
+    window.onload = function() {
+      setTimeout(() => {
+        debugVideoMatching();
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+

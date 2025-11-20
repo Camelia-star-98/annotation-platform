@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>修复复检状态</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #1890ff; }
+    h2 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover { background: #40a9ff; }
+    button:disabled {
+      background: #d9d9d9;
+      cursor: not-allowed;
+    }
+    .success { color: #52c41a; font-weight: bold; }
+    .error { color: #ff4d4f; font-weight: bold; }
+    .warning { color: #faad14; font-weight: bold; }
+    .info { color: #1890ff; }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      border-left: 4px solid #1890ff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #fafafa;
+      font-weight: bold;
+    }
+    .status-null { background: #fff2e8; }
+    .status-true { background: #f6ffed; }
+    #loading {
+      display: none;
+      color: #1890ff;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔧 修复复检状态工具</h1>
+  
+  <div class="container">
+    <h2>问题诊断</h2>
+    <p><strong>问题描述：</strong>已复检的数据在数据分析页面找不到，因为 <code>review_status</code> 字段为 <code>null</code> 而不是 <code>true</code></p>
+    <button onclick="diagnose()">🔍 开始诊断</button>
+    <div id="loading">正在加载...</div>
+    <div id="diagnosis-result"></div>
+  </div>
+
+  <div class="container">
+    <h2>修复操作</h2>
+    <p><strong>修复方案：</strong>将所有有复检人（reviewer不为空）但 review_status 为 null 的数据更新为 true</p>
+    <button onclick="fixData()" id="fixButton" disabled>✅ 执行修复</button>
+    <button onclick="verifyFix()" id="verifyButton" disabled>🔍 验证修复结果</button>
+    <div id="fix-result"></div>
+  </div>
+
+  <div class="container">
+    <h2>受影响的数据预览</h2>
+    <div id="affected-data"></div>
+  </div>
+
+  <script>
+    // 从 .env.local 文件读取配置
+    const SUPABASE_URL = 'YOUR_SUPABASE_URL'; // 请替换为您的 Supabase URL
+    const SUPABASE_KEY = 'YOUR_SUPABASE_KEY'; // 请替换为您的 Supabase Key
+
+    // 如果您已经在项目中设置了 .env.local，可以手动复制这里
+    // 或者直接在浏览器控制台运行此脚本
+
+    let supabase;
+
+    function initSupabase() {
+      // 尝试从 localStorage 或提示用户输入
+      const url = localStorage.getItem('supabase_url') || prompt('请输入 Supabase URL:');
+      const key = localStorage.getItem('supabase_key') || prompt('请输入 Supabase Anon Key:');
+      
+      if (!url || !key) {
+        alert('需要 Supabase 配置才能继续！');
+        return false;
+      }
+      
+      localStorage.setItem('supabase_url', url);
+      localStorage.setItem('supabase_key', key);
+      
+      supabase = window.supabase.createClient(url, key);
+      return true;
+    }
+
+    async function diagnose() {
+      if (!supabase && !initSupabase()) return;
+      
+      const resultDiv = document.getElementById('diagnosis-result');
+      const loading = document.getElementById('loading');
+      loading.style.display = 'block';
+      resultDiv.innerHTML = '';
+
+      try {
+        // 1. 获取所有标注数据
+        const { data: allAnnotations, error: allError } = await supabase
+          .from('annotations')
+          .select('id, video_id, annotator, reviewer, review_status, status')
+          .limit(10000);
+
+        if (allError) throw allError;
+
+        console.log('📊 获取到的数据总量:', allAnnotations.length);
+
+        // 2. 分析数据
+        const withReviewer = allAnnotations.filter(a => a.reviewer && a.reviewer.trim() !== '');
+        const reviewStatusNull = withReviewer.filter(a => a.review_status === null);
+        const reviewStatusFalse = withReviewer.filter(a => a.review_status === false);
+        const reviewStatusTrue = withReviewer.filter(a => a.review_status === true);
+        
+        // 3. 按视频统计
+        const videoStats = new Map();
+        reviewStatusNull.forEach(a => {
+          if (!videoStats.has(a.video_id)) {
+            videoStats.set(a.video_id, { null: 0, false: 0, true: 0 });
+          }
+          videoStats.get(a.video_id).null++;
+        });
+
+        // 4. 显示结果
+        let html = '<pre>';
+        html += '=== 诊断结果 ===\n\n';
+        html += `📊 数据库总数据量: ${allAnnotations.length} 条\n`;
+        html += `✅ 有复检人的数据: ${withReviewer.length} 条\n\n`;
+        html += `<span class="error">❌ 问题数据（review_status = null）: ${reviewStatusNull.length} 条</span>\n`;
+        html += `<span class="warning">⚠️  异常数据（review_status = false）: ${reviewStatusFalse.length} 条</span>\n`;
+        html += `<span class="success">✅ 正常数据（review_status = true）: ${reviewStatusTrue.length} 条</span>\n\n`;
+        
+        if (reviewStatusNull.length > 0) {
+          html += `<span class="error">🔴 发现问题！有 ${reviewStatusNull.length} 条已复检的数据状态为 null</span>\n`;
+          html += `   影响 ${videoStats.size} 个视频\n\n`;
+          html += '受影响的视频ID列表:\n';
+          Array.from(videoStats.keys()).slice(0, 10).forEach(videoId => {
+            const stats = videoStats.get(videoId);
+            html += `  - ${videoId}: ${stats.null} 条需要修复\n`;
+          });
+          if (videoStats.size > 10) {
+            html += `  ... 还有 ${videoStats.size - 10} 个视频\n`;
+          }
+          
+          // 启用修复按钮
+          document.getElementById('fixButton').disabled = false;
+        } else {
+          html += '<span class="success">✅ 太好了！没有发现问题数据</span>\n';
+        }
+        
+        html += '</pre>';
+        resultDiv.innerHTML = html;
+
+        // 显示受影响的数据
+        showAffectedData(reviewStatusNull.slice(0, 20));
+
+      } catch (error) {
+        console.error('诊断失败:', error);
+        resultDiv.innerHTML = `<p class="error">诊断失败: ${error.message}</p>`;
+      } finally {
+        loading.style.display = 'none';
+      }
+    }
+
+    function showAffectedData(data) {
+      const div = document.getElementById('affected-data');
+      if (data.length === 0) {
+        div.innerHTML = '<p>没有受影响的数据</p>';
+        return;
+      }
+
+      let html = '<p class="warning">以下是前20条需要修复的数据：</p>';
+      html += '<table><thead><tr>';
+      html += '<th>ID</th><th>视频ID</th><th>标注人</th><th>复检人</th><th>review_status</th><th>status</th>';
+      html += '</tr></thead><tbody>';
+      
+      data.forEach(item => {
+        html += '<tr class="status-null">';
+        html += `<td>${item.id.substring(0, 30)}...</td>`;
+        html += `<td>${item.video_id.substring(0, 20)}...</td>`;
+        html += `<td>${item.annotator || '-'}</td>`;
+        html += `<td>${item.reviewer || '-'}</td>`;
+        html += `<td><strong>null</strong></td>`;
+        html += `<td>${item.status ? '✅' : '❌'}</td>`;
+        html += '</tr>';
+      });
+      
+      html += '</tbody></table>';
+      div.innerHTML = html;
+    }
+
+    async function fixData() {
+      if (!supabase) return;
+      if (!confirm('确定要修复数据吗？此操作将更新所有有复检人但 review_status 为 null 的数据。')) {
+        return;
+      }
+
+      const resultDiv = document.getElementById('fix-result');
+      resultDiv.innerHTML = '<p class="info">正在修复数据...</p>';
+      document.getElementById('fixButton').disabled = true;
+
+      try {
+        // 获取需要修复的数据
+        const { data: needFix, error: fetchError } = await supabase
+          .from('annotations')
+          .select('id, reviewer, review_status')
+          .not('reviewer', 'is', null)
+          .neq('reviewer', '')
+          .is('review_status', null);
+
+        if (fetchError) throw fetchError;
+
+        console.log('📊 需要修复的数据:', needFix.length, '条');
+
+        if (needFix.length === 0) {
+          resultDiv.innerHTML = '<p class="success">✅ 没有需要修复的数据</p>';
+          return;
+        }
+
+        // 批量更新（分批次，每次100条）
+        const batchSize = 100;
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < needFix.length; i += batchSize) {
+          const batch = needFix.slice(i, i + batchSize);
+          const ids = batch.map(item => item.id);
+
+          const { error: updateError } = await supabase
+            .from('annotations')
+            .update({ review_status: true })
+            .in('id', ids);
+
+          if (updateError) {
+            console.error('批次更新失败:', updateError);
+            failCount += batch.length;
+          } else {
+            successCount += batch.length;
+          }
+
+          // 显示进度
+          resultDiv.innerHTML = `<p class="info">正在修复... ${successCount + failCount} / ${needFix.length}</p>`;
+        }
+
+        // 显示结果
+        let html = '<pre>';
+        html += '=== 修复结果 ===\n\n';
+        html += `<span class="success">✅ 成功修复: ${successCount} 条</span>\n`;
+        if (failCount > 0) {
+          html += `<span class="error">❌ 失败: ${failCount} 条</span>\n`;
+        }
+        html += '\n现在可以点击"验证修复结果"按钮检查修复情况\n';
+        html += '</pre>';
+        resultDiv.innerHTML = html;
+
+        // 启用验证按钮
+        document.getElementById('verifyButton').disabled = false;
+
+      } catch (error) {
+        console.error('修复失败:', error);
+        resultDiv.innerHTML = `<p class="error">修复失败: ${error.message}</p>`;
+      } finally {
+        document.getElementById('fixButton').disabled = false;
+      }
+    }
+
+    async function verifyFix() {
+      if (!supabase) return;
+
+      const resultDiv = document.getElementById('fix-result');
+      resultDiv.innerHTML = '<p class="info">正在验证...</p>';
+
+      try {
+        // 检查还有没有问题数据
+        const { data: stillNull, error } = await supabase
+          .from('annotations')
+          .select('id')
+          .not('reviewer', 'is', null)
+          .neq('reviewer', '')
+          .is('review_status', null);
+
+        if (error) throw error;
+
+        // 统计已修复的数据
+        const { data: fixed, error: fixedError } = await supabase
+          .from('annotations')
+          .select('id, video_id')
+          .not('reviewer', 'is', null)
+          .eq('review_status', true);
+
+        if (fixedError) throw fixedError;
+
+        // 按视频统计
+        const videoCount = new Set(fixed.map(item => item.video_id)).size;
+
+        let html = '<pre>';
+        html += '=== 验证结果 ===\n\n';
+        if (stillNull.length === 0) {
+          html += '<span class="success">🎉 完美！所有数据已修复</span>\n\n';
+          html += `✅ 已复检数据总量: ${fixed.length} 条\n`;
+          html += `✅ 涉及视频数量: ${videoCount} 个\n\n`;
+          html += '现在您可以回到数据分析页面，应该能看到所有已复检的数据了！\n';
+        } else {
+          html += `<span class="warning">⚠️  还有 ${stillNull.length} 条数据未修复</span>\n`;
+          html += '请重新运行修复操作\n';
+        }
+        html += '</pre>';
+        resultDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('验证失败:', error);
+        resultDiv.innerHTML = `<p class="error">验证失败: ${error.message}</p>`;
+      }
+    }
+
+    // 页面加载时初始化
+    window.onload = function() {
+      console.log('🔧 修复工具已加载');
+      console.log('请点击"开始诊断"按钮');
+    };
+  </script>
+</body>
+</html>
+

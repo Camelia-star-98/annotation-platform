@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>标记视频为已完成</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #1890ff; }
+    h2 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover { background: #40a9ff; }
+    button.success { background: #52c41a; }
+    button.success:hover { background: #73d13d; }
+    .success { color: #52c41a; font-weight: bold; }
+    .error { color: #ff4d4f; font-weight: bold; }
+    .info { color: #1890ff; }
+    .warning { color: #faad14; font-weight: bold; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #fafafa;
+      font-weight: bold;
+    }
+    tr:hover { background: #f0f7ff; }
+    .highlight { background: #fff7e6; }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎬 标记视频为已完成</h1>
+  
+  <div class="container">
+    <h2>问题说明</h2>
+    <p>您的11个视频虽然有已复检的数据，但是 <code>is_completed</code> 字段不是 <code>true</code>，</p>
+    <p>所以在首页的"已完成视频列表"中看不到它们，也就无法选择去数据分析。</p>
+    <p><strong class="success">解决方案：将这些视频标记为已完成（is_completed = true）</strong></p>
+  </div>
+
+  <div class="container">
+    <h2>第1步：查看需要标记的视频</h2>
+    <button onclick="loadVideos()">🔍 查看待标记视频</button>
+    <div id="videoList"></div>
+  </div>
+
+  <div class="container" id="markContainer" style="display:none;">
+    <h2>第2步：标记视频为已完成</h2>
+    <p class="warning">⚠️ 此操作将把所有有已复检数据的视频标记为"已完成"</p>
+    <button onclick="markVideosAsCompleted()" class="success">✅ 标记为已完成</button>
+    <div id="markResult"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    let videosToMark = [];
+
+    async function loadVideos() {
+      const listDiv = document.getElementById('videoList');
+      listDiv.innerHTML = '<p class="info">正在加载...</p>';
+
+      try {
+        // 1. 获取所有已复检的标注数据（按视频分组）
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .select('video_id')
+          .eq('review_status', true);
+
+        if (annError) throw annError;
+
+        // 提取唯一的视频ID
+        const reviewedVideoIds = [...new Set(annotations.map(a => a.video_id))];
+        console.log('📹 有已复检数据的视频ID:', reviewedVideoIds);
+
+        // 2. 获取这些视频的详细信息
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .in('id', reviewedVideoIds);
+
+        if (videoError) throw videoError;
+
+        console.log('📹 视频详情:', videos);
+
+        // 3. 过滤出 is_completed 不是 true 的视频
+        videosToMark = videos.filter(v => v.is_completed !== true);
+
+        console.log('📹 需要标记的视频:', videosToMark);
+
+        // 4. 显示结果
+        if (videosToMark.length === 0) {
+          listDiv.innerHTML = `
+            <div style="margin-top: 20px;">
+              <p class="success">✅ 太好了！所有有已复检数据的视频都已正确标记为"已完成"</p>
+              <p>现在您应该可以在首页看到这些视频了！</p>
+            </div>
+          `;
+          return;
+        }
+
+        let html = '<div style="margin-top: 20px;">';
+        html += `<p class="warning">⚠️ 发现 <strong>${videosToMark.length}</strong> 个视频有已复检数据，但未标记为"已完成"</p>`;
+        html += '<table><thead><tr>';
+        html += '<th>序号</th><th>视频名称</th><th>科目</th><th>is_completed</th><th>视频ID</th>';
+        html += '</tr></thead><tbody>';
+
+        videosToMark.forEach((video, index) => {
+          html += '<tr class="highlight">';
+          html += `<td>${index + 1}</td>`;
+          html += `<td>${video.name || '未命名'}</td>`;
+          html += `<td>${video.subject || '-'}</td>`;
+          html += `<td><strong class="error">${video.is_completed === null ? 'null' : video.is_completed}</strong></td>`;
+          html += `<td style="font-size: 11px;">${video.id.substring(0, 30)}...</td>`;
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+        listDiv.innerHTML = html;
+
+        // 显示标记按钮
+        document.getElementById('markContainer').style.display = 'block';
+
+      } catch (error) {
+        console.error('加载失败:', error);
+        listDiv.innerHTML = `<p class="error">加载失败: ${error.message}</p>`;
+      }
+    }
+
+    async function markVideosAsCompleted() {
+      if (videosToMark.length === 0) {
+        alert('没有需要标记的视频');
+        return;
+      }
+
+      if (!confirm(`确定要将 ${videosToMark.length} 个视频标记为"已完成"吗？`)) {
+        return;
+      }
+
+      const resultDiv = document.getElementById('markResult');
+      resultDiv.innerHTML = '<p class="info">正在标记...</p>';
+
+      try {
+        const videoIds = videosToMark.map(v => v.id);
+
+        // 批量更新
+        const { error } = await supabase
+          .from('videos')
+          .update({ 
+            is_completed: true,
+            review_completed_at: new Date().toISOString()
+          })
+          .in('id', videoIds);
+
+        if (error) throw error;
+
+        // 显示成功信息
+        let html = '<div style="margin-top: 20px; padding: 20px; background: #f6ffed; border-left: 4px solid #52c41a;">';
+        html += `<p class="success">🎉 成功！已将 ${videosToMark.length} 个视频标记为"已完成"</p>`;
+        html += '<p><strong>已标记的视频：</strong></p>';
+        html += '<ul>';
+        videosToMark.forEach(v => {
+          html += `<li>${v.name}</li>`;
+        });
+        html += '</ul>';
+        html += '<p style="margin-top: 20px;"><strong>✅ 下一步操作：</strong></p>';
+        html += '<ol>';
+        html += '<li>回到标注平台首页</li>';
+        html += '<li>刷新页面（Ctrl+R 或 Cmd+R）</li>';
+        html += '<li>在"已完成视频列表"中应该能看到这些视频了</li>';
+        html += '<li>勾选它们，点击"结果分析"</li>';
+        html += '</ol>';
+        html += '</div>';
+        resultDiv.innerHTML = html;
+
+        console.log('✅ 标记成功，共', videosToMark.length, '个视频');
+
+      } catch (error) {
+        console.error('标记失败:', error);
+        resultDiv.innerHTML = `<p class="error">标记失败: ${error.message}</p>`;
+      }
+    }
+
+    // 页面加载时自动运行
+    window.onload = function() {
+      console.log('🎬 工具已加载');
+      setTimeout(() => {
+        loadVideos();
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+

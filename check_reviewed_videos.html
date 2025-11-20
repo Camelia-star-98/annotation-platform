@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>查看已复检视频列表</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1400px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #1890ff; }
+    h2 { color: #333; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 5px;
+    }
+    button:hover { background: #40a9ff; }
+    .success { color: #52c41a; font-weight: bold; }
+    .error { color: #ff4d4f; font-weight: bold; }
+    .info { color: #1890ff; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 12px 8px;
+      text-align: left;
+    }
+    th {
+      background: #fafafa;
+      font-weight: bold;
+      position: sticky;
+      top: 0;
+    }
+    tr:hover { background: #f0f7ff; }
+    .highlight { background: #e6f7ff; font-weight: bold; }
+    .copy-btn {
+      background: #52c41a;
+      padding: 4px 8px;
+      font-size: 12px;
+      margin-left: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 查看已复检视频列表</h1>
+  
+  <div class="container">
+    <h2>操作说明</h2>
+    <p>此工具可以帮您找到哪些视频有已复检的数据，以及每个视频的数据量。</p>
+    <button onclick="checkVideos()">🔍 查看已复检视频</button>
+    <div id="result"></div>
+  </div>
+
+  <div class="container" id="videoListContainer" style="display:none;">
+    <h2>已复检视频列表</h2>
+    <div id="videoList"></div>
+  </div>
+
+  <div class="container" id="allVideosContainer" style="display:none;">
+    <h2>所有视频对比</h2>
+    <p class="info">以下列出了所有视频，以及它们的复检状态，帮助您确认是否选对了视频。</p>
+    <div id="allVideosList"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = localStorage.getItem('supabase_url') || 'https://dcqwxvekgxgjujurpipg.supabase.co';
+    const SUPABASE_KEY = localStorage.getItem('supabase_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    async function checkVideos() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<p class="info">正在查询...</p>';
+
+      try {
+        // 1. 获取所有已复检的标注数据
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .select('video_id, reviewer, review_status')
+          .eq('review_status', true);
+
+        if (annError) throw annError;
+
+        console.log('📊 已复检数据总量:', annotations.length);
+
+        // 2. 按视频统计
+        const videoStats = new Map();
+        annotations.forEach(item => {
+          if (!videoStats.has(item.video_id)) {
+            videoStats.set(item.video_id, {
+              count: 0,
+              reviewers: new Set()
+            });
+          }
+          const stats = videoStats.get(item.video_id);
+          stats.count++;
+          if (item.reviewer) {
+            stats.reviewers.add(item.reviewer);
+          }
+        });
+
+        console.log('📹 有已复检数据的视频数量:', videoStats.size);
+
+        // 3. 获取所有视频信息
+        const { data: allVideos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (videoError) throw videoError;
+
+        console.log('📹 数据库中的视频总量:', allVideos.length);
+
+        // 4. 显示结果
+        let html = '<div style="margin-top: 20px;">';
+        html += `<p class="success">✅ 查询成功！</p>`;
+        html += `<p>数据库中共有 <strong>${allVideos.length}</strong> 个视频</p>`;
+        html += `<p>其中 <strong class="success">${videoStats.size}</strong> 个视频有已复检的数据</p>`;
+        html += '</div>';
+        resultDiv.innerHTML = html;
+
+        // 5. 显示已复检视频详情
+        displayReviewedVideos(allVideos, videoStats);
+
+        // 6. 显示所有视频对比
+        displayAllVideos(allVideos, videoStats);
+
+      } catch (error) {
+        console.error('查询失败:', error);
+        resultDiv.innerHTML = `<p class="error">查询失败: ${error.message}</p>`;
+      }
+    }
+
+    function displayReviewedVideos(allVideos, videoStats) {
+      const container = document.getElementById('videoListContainer');
+      const listDiv = document.getElementById('videoList');
+      
+      let html = '<table>';
+      html += '<thead><tr>';
+      html += '<th>序号</th>';
+      html += '<th>视频名称</th>';
+      html += '<th>科目</th>';
+      html += '<th>已复检数据量</th>';
+      html += '<th>复检人</th>';
+      html += '<th>视频ID</th>';
+      html += '</tr></thead><tbody>';
+
+      let index = 1;
+      videoStats.forEach((stats, videoId) => {
+        const video = allVideos.find(v => v.id === videoId);
+        const videoName = video ? video.name : '未知视频';
+        const subject = video ? (video.subject || '-') : '-';
+        const reviewers = Array.from(stats.reviewers).join(', ') || '-';
+
+        html += '<tr class="highlight">';
+        html += `<td>${index}</td>`;
+        html += `<td><strong>${videoName}</strong></td>`;
+        html += `<td>${subject}</td>`;
+        html += `<td><strong class="success">${stats.count}</strong> 条</td>`;
+        html += `<td>${reviewers}</td>`;
+        html += `<td style="font-size: 11px;">${videoId.substring(0, 20)}...</td>`;
+        html += '</tr>';
+        index++;
+      });
+
+      html += '</tbody></table>';
+      listDiv.innerHTML = html;
+      container.style.display = 'block';
+    }
+
+    function displayAllVideos(allVideos, videoStats) {
+      const container = document.getElementById('allVideosContainer');
+      const listDiv = document.getElementById('allVideosList');
+      
+      let html = '<table>';
+      html += '<thead><tr>';
+      html += '<th>序号</th>';
+      html += '<th>视频名称</th>';
+      html += '<th>科目</th>';
+      html += '<th>复检状态</th>';
+      html += '<th>已复检数据量</th>';
+      html += '<th>上传时间</th>';
+      html += '</tr></thead><tbody>';
+
+      allVideos.forEach((video, index) => {
+        const stats = videoStats.get(video.id);
+        const hasReviewed = !!stats;
+        const reviewCount = stats ? stats.count : 0;
+
+        const rowClass = hasReviewed ? 'highlight' : '';
+        html += `<tr class="${rowClass}">`;
+        html += `<td>${index + 1}</td>`;
+        html += `<td>${video.name || '未命名'}</td>`;
+        html += `<td>${video.subject || '-'}</td>`;
+        html += `<td>${hasReviewed ? '<span class="success">✅ 已复检</span>' : '<span style="color: #999;">⚪ 未复检</span>'}</td>`;
+        html += `<td>${hasReviewed ? `<strong class="success">${reviewCount} 条</strong>` : '-'}</td>`;
+        html += `<td style="font-size: 12px;">${video.created_at ? new Date(video.created_at).toLocaleString('zh-CN') : '-'}</td>`;
+        html += '</tr>';
+      });
+
+      html += '</tbody></table>';
+      
+      html += '<div style="margin-top: 20px; padding: 15px; background: #e6f7ff; border-left: 4px solid #1890ff;">';
+      html += '<p><strong>💡 使用提示：</strong></p>';
+      html += '<ol style="margin: 10px 0;">';
+      html += '<li>标记为 <span class="success">✅ 已复检</span> 的视频，就是您应该在数据分析页面选择的视频</li>';
+      html += '<li>如果某个视频显示"未复检"，说明它没有已完成复检的数据，不会出现在分析结果中</li>';
+      html += '<li>请确保您在首页勾选的是这些"已复检"的视频</li>';
+      html += '</ol>';
+      html += '</div>';
+
+      listDiv.innerHTML = html;
+      container.style.display = 'block';
+    }
+
+    // 页面加载时自动运行
+    window.onload = function() {
+      console.log('🔍 查询工具已加载');
+      // 自动执行查询
+      setTimeout(() => {
+        checkVideos();
+      }, 500);
+    };
+  </script>
+</body>
+</html>
+
