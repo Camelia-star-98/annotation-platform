@@ -123,7 +123,7 @@ export default function VideoManagePage() {
         
         const mappedData = {
           id: video.id,
-          videoName: video.name || '未命名视频',
+          videoName: video.url ? (video.name || '未命名视频') : '无', // 如果没有视频URL，显示"无"
           videoUrl: video.url || '', // 添加 videoUrl 字段
           excelName: `${video.name || '未命名'}_标注数据`,
           requiredAnnotators: video.required_annotators || 1, // 待标注数量
@@ -1040,9 +1040,9 @@ export default function VideoManagePage() {
     console.log('📝 URL类型:', record.videoUrl?.startsWith('http') ? 'HTTP URL' : record.videoUrl?.startsWith('blob') ? 'Blob URL' : '空或其他');
     console.log('=' .repeat(50));
     
-    if (!record.videoUrl) {
+    if (!record.videoUrl || record.videoName === '无') {
       console.error('❌ 视频URL不存在！');
-      message.error('视频URL不存在，无法预览。这可能是旧数据，请重新上传视频。');
+      message.info('此数据集没有关联视频，仅包含标注数据。');
       return;
     }
     
