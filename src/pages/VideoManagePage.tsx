@@ -73,6 +73,18 @@ export default function VideoManagePage() {
   const [excelFileList, setExcelFileList] = useState<UploadFile[]>([]);
   const [requiredAnnotators, setRequiredAnnotators] = useState<number>(1); // 待标注数量
   
+  // 批量上传相关状态
+  const [batchUploadTasks, setBatchUploadTasks] = useState<Array<{
+    id: string;
+    videoFile: File;
+    excelFile: File;
+    status: 'waiting' | 'uploading' | 'success' | 'failed';
+    progress: number;
+    error?: string;
+  }>>([]);
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const [currentBatchIndex, setCurrentBatchIndex] = useState(0);
+  
   // 更新相关状态
   const [isUpdateModalVisible, setIsUpdateModalVisible] = useState(false);
   const [currentEditRecord, setCurrentEditRecord] = useState<VideoData | null>(null);
@@ -136,8 +148,160 @@ export default function VideoManagePage() {
     }
   };
 
-  // 处理文件上传
+  // 处理文件上传（批量上传）
   const handleUpload = async () => {
+    if (videoFileList.length === 0 || excelFileList.length === 0) {
+      message.warning('请选择视频文件和标注表格');
+      return;
+    }
+    
+    // 检查数量是否一致
+    if (videoFileList.length !== excelFileList.length) {
+      message.error(`视频数量(${videoFileList.length})和表格数量(${excelFileList.length})不一致！`);
+      return;
+    }
+    
+    const fileCount = videoFileList.length;
+    
+    // 如果只有1个文件，使用单文件上传
+    if (fileCount === 1) {
+      await handleSingleUpload();
+      return;
+    }
+    
+    // 批量上传
+    console.log(`📦 开始批量上传：${fileCount} 个文件`);
+    message.info(`准备批量上传 ${fileCount} 个视频...`);
+    
+    setIsBatchUploading(true);
+    setLoading(true);
+    
+    // 准备任务列表
+    const tasks = videoFileList.map((videoFile, index) => ({
+      id: `task_${Date.now()}_${index}`,
+      videoFile: videoFile.originFileObj as File,
+      excelFile: excelFileList[index].originFileObj as File,
+      status: 'waiting' as const,
+      progress: 0
+    }));
+    
+    setBatchUploadTasks(tasks);
+    
+    // 并发上传（一次3个）
+    const CONCURRENT = 3;
+    let successCount = 0;
+    let failedCount = 0;
+    
+    for (let i = 0; i < tasks.length; i += CONCURRENT) {
+      const batch = tasks.slice(i, Math.min(i + CONCURRENT, tasks.length));
+      
+      console.log(`📤 上传批次 ${Math.floor(i / CONCURRENT) + 1}，包含 ${batch.length} 个文件`);
+      
+      // 并发上传这一批
+      const promises = batch.map(async (task, batchIndex) => {
+        const taskIndex = i + batchIndex;
+        setCurrentBatchIndex(taskIndex);
+        
+        try {
+          // 更新任务状态为上传中
+          setBatchUploadTasks(prev => prev.map((t, idx) =>
+            idx === taskIndex ? { ...t, status: 'uploading' as const } : t
+          ));
+          
+          await uploadSingleTask(task, taskIndex);
+          
+          // 更新任务状态为成功
+          setBatchUploadTasks(prev => prev.map((t, idx) =>
+            idx === taskIndex ? { ...t, status: 'success' as const, progress: 100 } : t
+          ));
+          
+          successCount++;
+          console.log(`✅ 任务 ${taskIndex + 1}/${tasks.length} 完成`);
+          
+        } catch (error: any) {
+          // 更新任务状态为失败
+          setBatchUploadTasks(prev => prev.map((t, idx) =>
+            idx === taskIndex ? { ...t, status: 'failed' as const, error: error.message } : t
+          ));
+          
+          failedCount++;
+          console.error(`❌ 任务 ${taskIndex + 1}/${tasks.length} 失败:`, error);
+        }
+      });
+      
+      await Promise.all(promises);
+    }
+    
+    // 完成
+    setIsBatchUploading(false);
+    setLoading(false);
+    
+    message.success({
+      content: `批量上传完成！成功 ${successCount} 个，失败 ${failedCount} 个`,
+      duration: 5
+    });
+    
+    // 清空文件列表
+    setVideoFileList([]);
+    setExcelFileList([]);
+    
+    // 刷新列表
+    loadVideoList();
+  };
+  
+  // 单个任务上传
+  const uploadSingleTask = async (task: any, taskIndex: number) => {
+    const { videoFile, excelFile } = task;
+    
+    console.log(`📤 开始上传任务 ${taskIndex + 1}:`, videoFile.name);
+    
+    // 1. 解析Excel
+    const excelData = await parseExcel(excelFile);
+    
+    // 2. 上传视频
+    const { presignedUploadVideo } = await import('../utils/presignedUpload');
+    const { addVideo, saveAnnotations } = await import('../api/database');
+    
+    const videoUrl = await presignedUploadVideo(
+      videoFile,
+      (percentage) => {
+        // 更新进度
+        setBatchUploadTasks(prev => prev.map((t, idx) =>
+          idx === taskIndex ? { ...t, progress: percentage } : t
+        ));
+      }
+    );
+    
+    if (!videoUrl) {
+      throw new Error('上传返回空URL');
+    }
+    
+    // 3. 保存视频记录
+    const videoId = `upload_${Date.now()}_${taskIndex}`;
+    await addVideo({
+      id: videoId,
+      name: videoFile.name,
+      url: videoUrl,
+      subject: '未知',
+      duration: 0,
+      required_annotators: requiredAnnotators
+    });
+    
+    // 4. 保存标注数据
+    const annotationsWithVideoName = excelData.map(item => ({
+      ...item,
+      videoName: videoFile.name,
+      videoId: videoId,
+      annotator: ''
+    }));
+    
+    await saveAnnotations(videoId, annotationsWithVideoName);
+    
+    console.log(`✅ 任务 ${taskIndex + 1} 完成:`, videoFile.name);
+  };
+  
+  // 单文件上传（保留原逻辑）
+  const handleSingleUpload = async () => {
     if (videoFileList.length === 0 || excelFileList.length === 0) {
       message.warning('请选择视频文件和标注表格');
       return;
@@ -1127,24 +1291,79 @@ export default function VideoManagePage() {
 
       {/* 上传弹窗 */}
       <Modal
-        title="上传视频和标注数据"
+        title={videoFileList.length > 1 ? `批量上传视频和数据 (${videoFileList.length} 个)` : "上传视频和标注数据"}
         open={uploadModalVisible}
         onOk={handleUpload}
-        onCancel={isUploading ? handleCancelUpload : () => {
+        onCancel={isUploading || isBatchUploading ? handleCancelUpload : () => {
           setUploadModalVisible(false);
           setVideoFileList([]);
           setExcelFileList([]);
           setUploadProgress(0);
+          setBatchUploadTasks([]);
         }}
         okText="上传"
-        cancelText={isUploading ? "取消上传" : "取消"}
+        cancelText={isUploading || isBatchUploading ? "取消上传" : "取消"}
         confirmLoading={loading}
-        okButtonProps={{ disabled: isUploading }}
-        closable={!isUploading}
-        maskClosable={!isUploading}
-        width={600}
+        okButtonProps={{ disabled: isUploading || isBatchUploading }}
+        closable={!isUploading && !isBatchUploading}
+        maskClosable={!isUploading && !isBatchUploading}
+        width={800}
       >
         <Space direction="vertical" style={{ width: '100%' }} size="large">
+          {/* 批量上传进度 */}
+          {isBatchUploading && batchUploadTasks.length > 0 && (
+            <div style={{ 
+              maxHeight: '400px', 
+              overflowY: 'auto',
+              border: '1px solid #f0f0f0',
+              borderRadius: '4px',
+              padding: '16px'
+            }}>
+              <div style={{ marginBottom: 16, fontSize: '14px', fontWeight: 'bold', color: '#1890ff' }}>
+                📊 批量上传进度 ({batchUploadTasks.filter(t => t.status === 'success').length}/{batchUploadTasks.length} 完成)
+              </div>
+              {batchUploadTasks.map((task, index) => (
+                <div key={task.id} style={{ 
+                  marginBottom: 12,
+                  padding: '12px',
+                  background: task.status === 'uploading' ? '#e6f7ff' : '#fafafa',
+                  borderRadius: '4px',
+                  border: `1px solid ${
+                    task.status === 'success' ? '#52c41a' :
+                    task.status === 'failed' ? '#ff4d4f' :
+                    task.status === 'uploading' ? '#1890ff' : '#d9d9d9'
+                  }`
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontWeight: 500 }}>
+                      {index + 1}. {task.videoFile.name}
+                    </span>
+                    <span style={{ 
+                      color: task.status === 'success' ? '#52c41a' :
+                             task.status === 'failed' ? '#ff4d4f' :
+                             task.status === 'uploading' ? '#1890ff' : '#999'
+                    }}>
+                      {task.status === 'waiting' && '等待中...'}
+                      {task.status === 'uploading' && `上传中 ${task.progress.toFixed(0)}%`}
+                      {task.status === 'success' && '✅ 完成'}
+                      {task.status === 'failed' && '❌ 失败'}
+                    </span>
+                  </div>
+                  {task.status === 'uploading' && (
+                    <Progress percent={task.progress} size="small" status="active" />
+                  )}
+                  {task.status === 'success' && (
+                    <Progress percent={100} size="small" status="success" />
+                  )}
+                  {task.status === 'failed' && (
+                    <div style={{ color: '#ff4d4f', fontSize: 12, marginTop: 4 }}>
+                      错误: {task.error || '未知错误'}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {/* 压缩进度条 */}
           {isCompressing && (
             <div>
@@ -1230,20 +1449,25 @@ export default function VideoManagePage() {
               fileList={videoFileList}
               beforeUpload={(file) => {
                 console.log('📹 选择视频文件:', file);
-                setVideoFileList([{
-                  uid: file.uid || Date.now().toString(),
+                setVideoFileList(prev => [...prev, {
+                  uid: file.uid || `${Date.now()}_${Math.random()}`,
                   name: file.name,
                   status: 'done',
                   originFileObj: file
                 } as any]);
                 return false;
               }}
-              onRemove={() => setVideoFileList([])}
+              onRemove={(file) => {
+                setVideoFileList(prev => prev.filter(f => f.uid !== file.uid));
+              }}
               accept="video/*"
-              maxCount={1}
+              multiple
             >
-              <Button icon={<UploadOutlined />}>选择视频文件</Button>
+              <Button icon={<UploadOutlined />}>选择视频文件（可多选）</Button>
             </Upload>
+            <div style={{ marginTop: 4, fontSize: '12px', color: '#999' }}>
+              可以一次选择多个视频，系统将自动批量上传（每次3个并发）
+            </div>
           </div>
 
           <div>
@@ -1252,20 +1476,25 @@ export default function VideoManagePage() {
               fileList={excelFileList}
               beforeUpload={(file) => {
                 console.log('📊 选择Excel文件:', file);
-                setExcelFileList([{
-                  uid: file.uid || Date.now().toString(),
+                setExcelFileList(prev => [...prev, {
+                  uid: file.uid || `${Date.now()}_${Math.random()}`,
                   name: file.name,
                   status: 'done',
                   originFileObj: file
                 } as any]);
                 return false;
               }}
-              onRemove={() => setExcelFileList([])}
+              onRemove={(file) => {
+                setExcelFileList(prev => prev.filter(f => f.uid !== file.uid));
+              }}
               accept=".xlsx,.xls"
-              maxCount={1}
+              multiple
             >
-              <Button icon={<UploadOutlined />}>选择Excel文件</Button>
+              <Button icon={<UploadOutlined />}>选择Excel文件（可多选）</Button>
             </Upload>
+            <div style={{ marginTop: 4, fontSize: '12px', color: '#999' }}>
+              数量需要与视频数量一致，按顺序对应
+            </div>
           </div>
 
           <div>
