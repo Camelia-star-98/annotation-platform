@@ -45,24 +45,58 @@ export default function HomePage() {
   const loadCompletedVideos = async () => {
     setLoading(true);
     try {
-      const { getVideos } = await import('../api/database');
-      const allVideos = await getVideos();
+      const { getVideos, getAllAnnotations } = await import('../api/database');
+      const [allVideos, allAnnotations] = await Promise.all([
+        getVideos(),
+        getAllAnnotations()
+      ]);
       
       console.log('🎬 所有视频数量:', allVideos.length);
-      console.log('🎬 所有视频列表:', allVideos);
-      console.log('🎬 每个视频的 is_completed 状态:');
-      allVideos.forEach(v => {
-        console.log(`  - ${v.name}: is_completed =`, v.is_completed, typeof v.is_completed);
+      console.log('📊 所有标注数据量:', allAnnotations.length);
+      
+      // 统计每个视频的复检情况
+      const videoReviewStats = new Map();
+      
+      allAnnotations.forEach(annotation => {
+        const videoId = annotation.videoId;
+        const annotator = annotation.annotator;
+        
+        // 跳过无效标注人
+        if (!annotator || annotator.trim() === '' || annotator === 'unknown') {
+          return;
+        }
+        
+        // 只统计有人工标注文本的数据
+        if (annotation.humanAnnotatedText && annotation.humanAnnotatedText.trim() !== '') {
+          if (!videoReviewStats.has(videoId)) {
+            videoReviewStats.set(videoId, {
+              totalAnnotated: 0,
+              reviewedCount: 0,
+              annotators: new Set()
+            });
+          }
+          
+          const stats = videoReviewStats.get(videoId);
+          stats.totalAnnotated++;
+          stats.annotators.add(annotator);
+          
+          if (annotation.reviewStatus === true) {
+            stats.reviewedCount++;
+          }
+        }
       });
       
-      // 只显示已完成所有流程的视频
-      const completed = allVideos.filter(video => video.is_completed === true);
+      // 只显示有已复检数据的视频（至少有一条已复检）
+      const completed = allVideos.filter(video => {
+        const stats = videoReviewStats.get(video.id);
+        return stats && stats.reviewedCount > 0;
+      });
       
-      console.log('✅ 筛选后的已完成视频:', completed);
+      console.log('✅ 有已复检数据的视频数量:', completed.length);
       setCompletedVideos(completed);
       
       if (completed.length === 0) {
-        console.warn('⚠️ 没有找到 is_completed = true 的视频');
+        console.warn('⚠️ 没有找到有已复检数据的视频');
       }
     } catch (error) {
       console.error('加载视频列表失败:', error);
