@@ -218,52 +218,10 @@ export default function VideoManagePage() {
       const originalFileSizeMB = videoFile.size / 1024 / 1024;
       console.log('📦 原始视频文件大小:', originalFileSizeMB.toFixed(2), 'MB');
       
-      // 如果视频大于 30MB，进行压缩以大幅提升上传速度
-      if (originalFileSizeMB > 30) {
-        try {
-          setIsCompressing(true);
-          setCompressionProgress(0);
-          message.info(`视频较大 (${originalFileSizeMB.toFixed(1)}MB)，正在压缩...`);
-          
-          const { loadFFmpeg, compressVideo } = await import('../utils/videoCompressor');
-          
-          // 模拟加载 FFmpeg 进度 (0-10%)
-          setCompressionProgress(5);
-          await loadFFmpeg();
-          setCompressionProgress(10);
-          
-          // 模拟压缩进度
-          let currentProgress = 10;
-          const progressInterval = setInterval(() => {
-            currentProgress += 2;
-            if (currentProgress < 90) {
-              setCompressionProgress(currentProgress);
-            }
-          }, 1000); // 每秒增加 2%
-          
-          // 压缩视频
-          finalVideoFile = await compressVideo(videoFile, (progress) => {
-            clearInterval(progressInterval); // 清除模拟进度
-            setCompressionProgress(progress);
-            console.log(`🔄 压缩进度: ${progress}%`);
-          });
-          
-          clearInterval(progressInterval);
-          setCompressionProgress(100);
-          
-          const compressedFileSizeMB = finalVideoFile.size / 1024 / 1024;
-          const compressionRate = ((1 - compressedFileSizeMB / originalFileSizeMB) * 100).toFixed(1);
-          
-          message.success(`压缩完成！大小从 ${originalFileSizeMB.toFixed(1)}MB 减少到 ${compressedFileSizeMB.toFixed(1)}MB（压缩 ${compressionRate}%）`);
-          console.log('✅ 视频压缩完成');
-          
-          setIsCompressing(false);
-        } catch (error) {
-          console.error('❌ 视频压缩失败:', error);
-          message.warning('视频压缩失败，将使用原始视频上传');
-          setIsCompressing(false);
-          finalVideoFile = videoFile; // 使用原始文件
-        }
+      // 禁用压缩，直接使用预签名直传（更快更可靠）
+      // 预签名直传速度已经很快，不需要压缩
+      if (originalFileSizeMB > 1000) {
+        message.warning(`视频较大 (${originalFileSizeMB.toFixed(1)}MB)，建议使用视频编辑软件先压缩后再上传`);
       }
       
       setUploadProgress(15);
