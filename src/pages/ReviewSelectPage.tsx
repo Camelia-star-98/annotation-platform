@@ -70,10 +70,16 @@ export default function ReviewSelectPage() {
 
       allAnnotations.forEach(annotation => {
         const videoId = annotation.videoId;
-        const annotator = annotation.annotator || '未知标注员';
+        // 处理标注人：如果为空、null、'unknown'或'未知标注员'，跳过这条数据（不统计）
+        const annotator = annotation.annotator;
+        if (!annotator || annotator.trim() === '' || annotator === 'unknown' || annotator === '未知标注员') {
+          return; // 跳过没有有效标注人的数据
+        }
         const reviewer = annotation.reviewer; // 获取复检人
         const inspector = annotation.inspector; // 获取质检人
-        const isAnnotated = annotation.status === true; // 是否已标注
+        // 判断是否已标注：有人工标注文本即为已标注（不依赖status字段）
+        const hasHumanText = annotation.humanAnnotatedText && annotation.humanAnnotatedText.trim() !== '';
+        const isAnnotated = hasHumanText; // 是否已标注
         
         if (!videoMap.has(videoId)) {
           const video = videos.find(v => v.id === videoId);
