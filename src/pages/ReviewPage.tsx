@@ -385,7 +385,7 @@ export default function ReviewPage() {
     {
       title: '问题分类',
       key: 'category',
-      width: 250,
+      width: 280,
       render: (_: any, record: AnnotationItem) => {
         // 将存储的逗号分隔字符串转换为数组格式
         let currentValue: [string, string][] | undefined;
@@ -412,7 +412,8 @@ export default function ReviewPage() {
             style={{ width: '100%' }}
             showSearch
             multiple
-            maxTagCount="responsive"
+            maxTagCount={2}
+            displayRender={(labels) => labels.join(' / ')}
             size="small"
           />
         );
