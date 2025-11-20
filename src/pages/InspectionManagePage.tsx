@@ -368,27 +368,6 @@ export default function InspectionManagePage() {
     }
   };
 
-  // 随机抽样
-  const handleRandomSample = (count: number) => {
-    // 使用与主过滤条件一致的逻辑：有人工标注文本且未质检
-    const pendingData = allAnnotations.filter(item => {
-      const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-      const notInspected = !item.inspector;
-      return hasHumanText && notInspected;
-    });
-
-    if (pendingData.length === 0) {
-      message.warning('没有待质检的数据');
-      return;
-    }
-
-    const sampleCount = Math.min(count, pendingData.length);
-    const shuffled = [...pendingData].sort(() => 0.5 - Math.random());
-    const sampled = shuffled.slice(0, sampleCount);
-    
-    setSelectedRows(sampled.map(item => item.id));
-    message.success(`已随机抽取 ${sampleCount} 条数据`);
-  };
 
   // 处理父级行的全选/取消
   const handleGroupSelect = (record: any, checked: boolean) => {
