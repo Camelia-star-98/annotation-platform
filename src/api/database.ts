@@ -147,19 +147,42 @@ export async function uploadVideoFile(
 // 获取所有标注数据
 export async function getAllAnnotations(): Promise<AnnotationItem[]> {
   try {
-    const { data, error } = await supabase
-      .from('annotations')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(10000); // 增加查询限制，确保能获取所有数据
+    // 分批加载所有数据，避免limit限制
+    let allData: any[] = [];
+    let offset = 0;
+    const batchSize = 1000;
+    let hasMore = true;
 
-    if (error) {
-      console.error('获取所有标注数据失败:', error);
-      return [];
+    while (hasMore) {
+      const { data, error } = await supabase
+        .from('annotations')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(offset, offset + batchSize - 1);
+
+      if (error) {
+        console.error('获取标注数据失败:', error);
+        break;
+      }
+
+      if (!data || data.length === 0) {
+        hasMore = false;
+        break;
+      }
+
+      allData = allData.concat(data);
+      offset += batchSize;
+
+      // 如果返回的数据少于batchSize，说明已经是最后一批
+      if (data.length < batchSize) {
+        hasMore = false;
+      }
     }
 
+    console.log(`📊 getAllAnnotations 加载了 ${allData.length} 条数据`);
+
     // 转换数据格式（容错处理不存在的字段）
-    return (data || []).map(item => ({
+    return allData.map(item => ({
       id: item.id || '',
       videoId: item.video_id || '',
       sentenceNo: item.sentence_no || 0,
