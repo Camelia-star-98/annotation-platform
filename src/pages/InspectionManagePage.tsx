@@ -708,16 +708,6 @@ export default function InspectionManagePage() {
                 <Option value="all">全部</Option>
               </Select>
 
-              <Button onClick={() => handleRandomSample(5)}>
-                随机抽取5条
-              </Button>
-              <Button onClick={() => handleRandomSample(10)}>
-                随机抽取10条
-              </Button>
-              <Button onClick={() => handleRandomSample(20)}>
-                随机抽取20条
-              </Button>
-
               <div style={{ flex: 1 }} />
 
               <span>已选择 {selectedRows.length} 条</span>
