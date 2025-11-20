@@ -33,19 +33,18 @@ export async function addVideo(video: VideoInfo): Promise<VideoInfo | null> {
   console.log('  - duration:', video.duration);
   console.log('  - required_annotators:', video.required_annotators);
   
-  // 确保 URL 不为空
+  // 允许空URL（用于只上传标注数据的场景）
   if (!video.url) {
-    console.error('❌ 视频URL为空，无法保存到数据库');
-    throw new Error('视频URL不能为空');
+    console.log('⚠️ 视频URL为空，将创建无视频的数据集');
   }
   
   // 明确指定要插入的字段
   const insertData = {
     id: video.id,
     name: video.name,
-    url: video.url,
+    url: video.url || '', // 允许空URL
     subject: video.subject,
-    duration: video.duration,
+    duration: video.duration || 0,
     required_annotators: video.required_annotators || 1 // 添加待标注数量字段
   };
   

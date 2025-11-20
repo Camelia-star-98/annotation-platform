@@ -12,7 +12,10 @@ import {
   Popconfirm,
   Tag,
   Progress,
-  Input
+  Input,
+  Alert,
+  InputNumber,
+  Select
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -20,7 +23,8 @@ import {
   DeleteOutlined,
   EyeOutlined,
   CheckOutlined,
-  RollbackOutlined
+  RollbackOutlined,
+  FileExcelOutlined
 } from '@ant-design/icons';
 import type { UploadFile } from 'antd/es/upload/interface';
 import * as XLSX from 'xlsx';
@@ -74,6 +78,13 @@ export default function VideoManagePage() {
   const [currentEditRecord, setCurrentEditRecord] = useState<VideoData | null>(null);
   const [updateVideoFile, setUpdateVideoFile] = useState<UploadFile | null>(null);
   const [updateExcelFile, setUpdateExcelFile] = useState<UploadFile | null>(null);
+
+  // 只上传标注数据相关状态
+  const [annotationOnlyModalVisible, setAnnotationOnlyModalVisible] = useState(false);
+  const [annotationOnlyExcelFile, setAnnotationOnlyExcelFile] = useState<any>(null);
+  const [annotationOnlyVideoName, setAnnotationOnlyVideoName] = useState('');
+  const [annotationOnlySubject, setAnnotationOnlySubject] = useState('');
+  const [annotationOnlyRequiredAnnotators, setAnnotationOnlyRequiredAnnotators] = useState(1);
 
   // 加载视频列表
   useEffect(() => {
@@ -460,6 +471,122 @@ export default function VideoManagePage() {
       setRemainingTime('');
     } finally {
       setLoading(false);
+    }
+  };
+  
+  // 只上传标注数据（不需要视频）
+  const handleAnnotationOnlyUpload = async () => {
+    // 验证
+    if (!annotationOnlyVideoName.trim()) {
+      message.warning('请输入数据集名称');
+      return;
+    }
+    
+    if (!annotationOnlyExcelFile) {
+      message.warning('请上传标注数据表格');
+      return;
+    }
+    
+    if (annotationOnlyRequiredAnnotators < 1 || annotationOnlyRequiredAnnotators > 10) {
+      message.warning('待标注数量需要在1-10之间');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const { addVideo, saveAnnotations } = await import('../api/database');
+      
+      // 1. 解析 Excel 文件
+      setUploadProgress(20);
+      message.info('正在解析标注数据...');
+      
+      const excelData = await annotationOnlyExcelFile.arrayBuffer();
+      const workbook = XLSX.read(excelData, { type: 'array' });
+      const sheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+      if (jsonData.length === 0) {
+        message.error('Excel文件中没有数据');
+        setIsUploading(false);
+        return;
+      }
+
+      setUploadProgress(40);
+
+      // 2. 生成虚拟视频ID
+      const videoId = `annotation_only_${Date.now()}`;
+      
+      // 3. 创建虚拟视频记录（没有URL）
+      const video = {
+        id: videoId,
+        name: annotationOnlyVideoName,
+        url: '', // 空URL表示没有视频
+        subject: annotationOnlySubject || '未知',
+        duration: 0,
+        required_annotators: annotationOnlyRequiredAnnotators
+      };
+
+      console.log('💾 创建虚拟视频记录:', video);
+      const addedVideo = await addVideo(video);
+      
+      if (!addedVideo) {
+        throw new Error('创建数据集记录失败');
+      }
+
+      setUploadProgress(60);
+
+      // 4. 转换并保存标注数据
+      const annotations = jsonData.map((row: any, index: number) => {
+        return {
+          id: `${videoId}_${index + 1}`,
+          videoId: videoId,
+          sentenceNo: row['句子编号'] || index + 1,
+          timeRange: row['时间范围'] || '-',
+          startTime: 0,
+          endTime: 0,
+          originalText: row['原文文本'] || '',
+          aiRewrittenText: row['大模型改写文本'] || '',
+          humanAnnotatedText: row['人工标注文本'] || '',
+          majorCategory: row['问题大类'] || '',
+          minorCategory: row['问题小类'] || '',
+          remark: row['备注'] || '',
+          status: false,
+          annotator: '',
+          videoName: annotationOnlyVideoName,
+          videoUrl: '', // 空URL
+          subject: annotationOnlySubject || '未知'
+        };
+      });
+
+      console.log('📝 准备保存标注数据:', annotations.length, '条');
+      const success = await saveAnnotations(videoId, annotations);
+
+      if (!success) {
+        throw new Error('保存标注数据失败');
+      }
+
+      setUploadProgress(100);
+      message.success(`标注数据上传成功！共 ${annotations.length} 条数据`);
+      
+      // 重置表单
+      setAnnotationOnlyModalVisible(false);
+      setAnnotationOnlyVideoName('');
+      setAnnotationOnlySubject('');
+      setAnnotationOnlyExcelFile(null);
+      setAnnotationOnlyRequiredAnnotators(1);
+      
+      // 刷新列表
+      loadVideoList();
+
+    } catch (error: any) {
+      console.error('❌ 上传标注数据失败:', error);
+      message.error(`上传失败：${error.message}`);
+    } finally {
+      setIsUploading(false);
+      setUploadProgress(0);
     }
   };
   
@@ -1024,6 +1151,13 @@ export default function VideoManagePage() {
                 上传视频和数据
               </Button>
               <Button
+                type="default"
+                icon={<FileExcelOutlined />}
+                onClick={() => setAnnotationOnlyModalVisible(true)}
+              >
+                只上传标注数据
+              </Button>
+              <Button
                 type="primary"
                 disabled={selectedRowKeys.length === 0}
                 onClick={handlePublish}
@@ -1207,6 +1341,119 @@ export default function VideoManagePage() {
               设置需要多少人对此视频进行标注
             </div>
           </div>
+        </Space>
+      </Modal>
+
+      {/* 只上传标注数据弹窗 */}
+      <Modal
+        title="只上传标注数据"
+        open={annotationOnlyModalVisible}
+        onOk={handleAnnotationOnlyUpload}
+        onCancel={() => {
+          setAnnotationOnlyModalVisible(false);
+          setAnnotationOnlyVideoName('');
+          setAnnotationOnlySubject('');
+          setAnnotationOnlyExcelFile(null);
+          setAnnotationOnlyRequiredAnnotators(1);
+        }}
+        okText="上传"
+        cancelText="取消"
+        confirmLoading={isUploading}
+        width={600}
+      >
+        <Space direction="vertical" style={{ width: '100%' }} size="middle">
+          <Alert
+            message="说明"
+            description="此功能用于只上传标注数据表格，不需要视频文件。适用于已有标注数据但没有对应视频的场景。"
+            type="info"
+            showIcon
+          />
+
+          {/* 数据集名称 */}
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              <span style={{ color: 'red' }}>* </span>
+              数据集名称：
+            </div>
+            <Input
+              placeholder="请输入数据集名称（例如：语文标注数据集）"
+              value={annotationOnlyVideoName}
+              onChange={(e) => setAnnotationOnlyVideoName(e.target.value)}
+              maxLength={100}
+              disabled={isUploading}
+            />
+          </div>
+
+          {/* 科目 */}
+          <div>
+            <div style={{ marginBottom: 8 }}>科目：</div>
+            <Select
+              style={{ width: '100%' }}
+              placeholder="请选择科目"
+              value={annotationOnlySubject}
+              onChange={setAnnotationOnlySubject}
+              allowClear
+              disabled={isUploading}
+            >
+              <Select.Option value="物理">物理</Select.Option>
+              <Select.Option value="英语">英语</Select.Option>
+              <Select.Option value="数学">数学</Select.Option>
+              <Select.Option value="语文">语文</Select.Option>
+              <Select.Option value="化学">化学</Select.Option>
+            </Select>
+          </div>
+
+          {/* 待标注数量 */}
+          <div>
+            <div style={{ marginBottom: 8 }}>待标注数量：</div>
+            <InputNumber
+              min={1}
+              max={10}
+              value={annotationOnlyRequiredAnnotators}
+              onChange={(value) => setAnnotationOnlyRequiredAnnotators(value || 1)}
+              style={{ width: '100%' }}
+              addonAfter="人"
+              disabled={isUploading}
+            />
+            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
+              设置需要多少人标注此数据集
+            </div>
+          </div>
+
+          {/* 标注数据表格 */}
+          <div>
+            <div style={{ marginBottom: 8 }}>
+              <span style={{ color: 'red' }}>* </span>
+              标注数据表格：
+            </div>
+            <Upload
+              accept=".xlsx,.xls"
+              maxCount={1}
+              beforeUpload={(file) => {
+                setAnnotationOnlyExcelFile(file);
+                return false;
+              }}
+              onRemove={() => {
+                setAnnotationOnlyExcelFile(null);
+              }}
+              disabled={isUploading}
+            >
+              <Button icon={<FileExcelOutlined />} disabled={isUploading}>
+                选择Excel文件
+              </Button>
+            </Upload>
+            <div style={{ color: '#999', fontSize: 12, marginTop: 4 }}>
+              支持 .xlsx 和 .xls 格式，需包含以下列：句子编号、原文文本、大模型改写文本等
+            </div>
+          </div>
+
+          {/* 上传进度 */}
+          {isUploading && (
+            <div>
+              <div style={{ marginBottom: 8 }}>上传进度：</div>
+              <Progress percent={uploadProgress} status="active" />
+            </div>
+          )}
         </Space>
       </Modal>
 

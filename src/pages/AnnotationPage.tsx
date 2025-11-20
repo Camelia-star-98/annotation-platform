@@ -255,6 +255,12 @@ export default function AnnotationPage() {
 
   // 点击时间戳跳转视频
   const handleTimeClick = (startTime: number) => {
+    // 检查是否有视频URL
+    if (!displayVideo?.url) {
+      message.info('此数据集没有关联视频');
+      return;
+    }
+    
     if (playerRef.current) {
       playerRef.current.seekTo(startTime, 'seconds');
     }
@@ -601,9 +607,24 @@ export default function AnnotationPage() {
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center',
-                  background: '#f0f0f0'
+                  background: '#f5f5f5',
+                  border: '2px dashed #d9d9d9',
+                  borderRadius: '8px',
+                  flexDirection: 'column'
                 }}>
-                  {loading ? '加载中...' : '暂无视频'}
+                  <div style={{ textAlign: 'center', color: '#999' }}>
+                    {loading ? (
+                      <div>
+                        <div style={{ fontSize: 16 }}>加载中...</div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ fontSize: 48, marginBottom: 16 }}>📝</div>
+                        <div style={{ fontSize: 16, fontWeight: 500 }}>此数据集没有关联视频</div>
+                        <div style={{ fontSize: 14, marginTop: 8 }}>仅包含标注数据</div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
