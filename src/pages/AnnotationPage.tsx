@@ -442,18 +442,13 @@ export default function AnnotationPage() {
       ellipsis: false,
       render: (text: string, record: AnnotationItem) => {
         return (
-          <div style={{ 
-            whiteSpace: 'pre-wrap', 
-            wordBreak: 'break-word',
-            lineHeight: '1.4',
-            fontSize: '13px',
-            padding: '4px 8px',
-            border: '1px solid #d9d9d9',
-            borderRadius: '2px',
-            minHeight: '32px'
-          }}>
-            {text || '-'}
-          </div>
+          <TextArea
+            value={text || ''}
+            onChange={(e) => updateAnnotation(record.id, 'humanAnnotatedText', e.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder="请输入人工标注文本..."
+            style={{ fontSize: '13px' }}
+          />
         );
       }
     },
@@ -655,8 +650,12 @@ export default function AnnotationPage() {
                   return 'row-failed-inspection';
                 }
                 // 对比大模型改写文本和人工标注文本，不一致时整行标红
-                const isDifferent = record.humanAnnotatedText && record.aiRewrittenText && 
-                  record.humanAnnotatedText.trim() !== record.aiRewrittenText.trim();
+                // 使用annotations state中的最新值，确保修改后能实时更新
+                const currentAnnotation = annotations.find(a => a.id === record.id);
+                const humanText = currentAnnotation?.humanAnnotatedText || record.humanAnnotatedText || '';
+                const aiText = currentAnnotation?.aiRewrittenText || record.aiRewrittenText || '';
+                const isDifferent = humanText.trim() && aiText.trim() && 
+                  humanText.trim() !== aiText.trim();
                 if (isDifferent) {
                   return 'row-different-text';
                 }
