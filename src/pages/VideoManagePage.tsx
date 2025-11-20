@@ -273,10 +273,10 @@ export default function VideoManagePage() {
         throw new Error('上传已取消');
       }
       
-      // 3. 上传视频文件到 Supabase Storage (15% -> 75%) - 使用快速上传
+      // 3. 上传视频文件到 Supabase Storage (15% -> 95%) - 使用预签名直传
       setUploadProgress(20);
       const { addVideo, saveAnnotations } = await import('../api/database');
-      const { fastUploadVideo } = await import('../utils/fastUpload');
+      const { presignedUploadVideo } = await import('../utils/presignedUpload');
       
       const fileSizeMB = finalVideoFile.size / 1024 / 1024;
       console.log('📦 最终视频文件大小:', fileSizeMB.toFixed(2), 'MB');
@@ -300,33 +300,27 @@ export default function VideoManagePage() {
 
       try {
         // 显示上传提示
-        message.info(`正在上传视频 (${fileSizeMB.toFixed(1)}MB)...`);
+        message.info(`正在预签名直传 (${fileSizeMB.toFixed(1)}MB)...`);
         
         const uploadStartTime = Date.now();
         let lastProgressTime = uploadStartTime;
         let lastPercentage = 20;
         
-        // 模拟进度和速度显示
-        const progressInterval = setInterval(() => {
-          const currentTime = Date.now();
-          const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
-          
-          setUploadProgress(prev => {
-            // 平滑增长进度
-            let newProgress = prev;
-            if (prev < 30) {
-              newProgress = prev + 3;
-            } else if (prev < 50) {
-              newProgress = prev + 2;
-            } else if (prev < 70) {
-              newProgress = prev + 1;
-            } else if (prev < 90) {
-              newProgress = prev + 0.5;
-            }
+        // 使用预签名直传（带实时进度）
+        const uploadedUrl = await presignedUploadVideo(
+          finalVideoFile,
+          (percentage) => {
+            // 真实上传进度回调
+            const currentTime = Date.now();
+            const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
+            
+            // 映射进度到 20-95%
+            const mappedProgress = 20 + (percentage * 0.75);
+            setUploadProgress(mappedProgress);
             
             // 计算速度信息
-            if (elapsedSeconds > 0) {
-              const uploadedBytes = (newProgress / 100) * finalVideoFile.size;
+            if (elapsedSeconds > 0 && percentage > 5) {
+              const uploadedBytes = (percentage / 100) * finalVideoFile.size;
               const uploadedMB = uploadedBytes / 1024 / 1024;
               const speed = uploadedBytes / 1024 / 1024 / elapsedSeconds;
               const remainingBytes = finalVideoFile.size - uploadedBytes;
@@ -341,24 +335,8 @@ export default function VideoManagePage() {
                 setRemainingTime(`约 ${Math.ceil(remainingSeconds / 60)} 分钟`);
               }
             }
-            
-            return Math.min(newProgress, 92);
-          });
-        }, 1000);
-        
-        // 使用快速上传
-        const uploadedUrl = await fastUploadVideo(
-          finalVideoFile,
-          (percentage) => {
-            // 真实进度回调
-            if (percentage >= 90) {
-              clearInterval(progressInterval);
-              setUploadProgress(90 + percentage / 10);
-            }
           }
         );
-        
-        clearInterval(progressInterval);
         
         if (!uploadedUrl) {
           throw new Error('上传返回空URL');
