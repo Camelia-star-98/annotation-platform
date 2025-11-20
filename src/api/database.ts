@@ -323,19 +323,34 @@ export async function saveAnnotations(
     console.log('📝 质检状态:', data[0]?.is_qualified, '质检人:', data[0]?.inspector);
     console.log('📝 第一条数据的 human_annotated_text:', data[0]?.human_annotated_text);
     console.log('📝 原始 annotations[0].humanAnnotatedText:', annotations[0]?.humanAnnotatedText);
-    console.log('📝 完整的第一条 data:', JSON.stringify(data[0], null, 2));
 
-    // 使用upsert（如果存在则更新，不存在则插入）
-    const { error } = await supabase
-      .from('annotations')
-      .upsert(data, { onConflict: 'id' });
+    // 🚀 优化：分批保存，避免超时
+    const BATCH_SIZE = 50; // 每批50条
+    const totalBatches = Math.ceil(data.length / BATCH_SIZE);
+    
+    console.log(`📦 分批保存：总计 ${data.length} 条，分 ${totalBatches} 批，每批 ${BATCH_SIZE} 条`);
+    
+    for (let i = 0; i < totalBatches; i++) {
+      const start = i * BATCH_SIZE;
+      const end = Math.min(start + BATCH_SIZE, data.length);
+      const batch = data.slice(start, end);
+      
+      console.log(`📤 正在保存第 ${i + 1}/${totalBatches} 批 (${batch.length} 条)...`);
+      
+      // 使用upsert（如果存在则更新，不存在则插入）
+      const { error } = await supabase
+        .from('annotations')
+        .upsert(batch, { onConflict: 'id' });
 
-    if (error) {
-      console.error('保存标注数据失败:', error);
-      return false;
+      if (error) {
+        console.error(`❌ 第 ${i + 1} 批保存失败:`, error);
+        throw new Error(`保存第 ${i + 1} 批数据失败: ${error.message}`);
+      }
+      
+      console.log(`✅ 第 ${i + 1}/${totalBatches} 批保存成功`);
     }
 
-    console.log('✅ 成功保存到 Supabase:', data.length, '条数据');
+    console.log('✅ 所有标注数据保存成功，共', data.length, '条');
     
     // 第3步：记录标注完成状态
     if (annotatorName && videoId) {
