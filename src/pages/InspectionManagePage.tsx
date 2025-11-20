@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Layout,
@@ -28,6 +28,7 @@ import {
 } from '@ant-design/icons';
 import type { AnnotationItem } from '../types';
 import './InspectionManagePage.css';
+import { supabase } from '../lib/supabaseClient'; // Added supabase import
 
 const { Header, Content } = Layout;
 const { Title } = Typography;
@@ -55,156 +56,8 @@ export default function InspectionManagePage() {
   const [loading, setLoading] = useState(false);
   const [sampledCount, setSampledCount] = useState(0); // 抽样数量
 
-  // 加载数据
-  useEffect(() => {
-    loadData();
-  }, [selectedVideoId]);
-
-  // 过滤数据
-  useEffect(() => {
-    filterData();
-  }, [allAnnotations, filterStatus]);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const { getAnnotations, getVideos } = await import('../api/database');
-      
-      let annotations: AnnotationItem[] = [];
-      
-      // 如果指定了视频ID，只加载该视频的数据
-      if (selectedVideoId) {
-        console.log('📹 加载视频数据:', selectedVideoId, videoName);
-        console.log('🎲 抽样比例:', samplePercentage + '%');
-        
-        // 获取视频信息（包括URL）
-        const allVideos = await getVideos();
-        const currentVideo = allVideos.find(v => v.id === selectedVideoId);
-        const videoUrl = currentVideo?.url || '';
-        
-        console.log('🎬 视频URL:', videoUrl);
-        
-        annotations = await getAnnotations(selectedVideoId);
-        console.log('📊 该视频的标注数据数量:', annotations.length);
-        
-        // 过滤出待质检的数据
-        // 条件：有人工标注文本 且 未质检（没有inspector）
-        // 注意：status可能为false（只上传Excel时），但只要有人工标注文本就应该质检
-        const pendingAnnotations = annotations.filter(
-          item => {
-            const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-            const notInspected = !item.inspector;
-            return hasHumanText && notInspected;
-          }
-        );
-        
-        console.log('⏳ 待质检数据数量:', pendingAnnotations.length);
-        
-        // 实施抽样（如果不是100%）
-        let sampledAnnotations = pendingAnnotations;
-        if (samplePercentage < 100) {
-          const calculatedSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
-          // 确保至少抽取1条数据
-          const sampleSize = Math.max(1, calculatedSize);
-          
-          // Fisher-Yates 洗牌算法随机抽样
-          const shuffled = [...pendingAnnotations];
-          for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-          }
-          
-          sampledAnnotations = shuffled.slice(0, sampleSize);
-          console.log('🎯 抽样后数据数量:', sampledAnnotations.length, '(保证最少1条)');
-          setSampledCount(sampledAnnotations.length);
-        } else {
-          setSampledCount(pendingAnnotations.length);
-        }
-        
-        // 给每条标注添加视频名称和视频URL
-        const annotationsWithVideoName = sampledAnnotations.map(item => ({
-          ...item,
-          videoName: videoName || '未知视频',
-          videoUrl: videoUrl // 添加视频URL
-        }));
-        
-        setAllAnnotations(annotationsWithVideoName);
-        
-        if (samplePercentage < 100) {
-          message.success(
-            `已按 ${samplePercentage}% 比例抽样，从 ${pendingAnnotations.length} 条中抽取了 ${sampledAnnotations.length} 条数据`
-          );
-        } else {
-          message.success(`加载了视频"${videoName}"的 ${sampledAnnotations.length} 条待质检数据`);
-        }
-      } else {
-        // 否则加载所有数据（向后兼容）
-        const { getAllAnnotations } = await import('../api/database');
-        const [allAnnotations, videos] = await Promise.all([
-          getAllAnnotations(),
-          getVideos()
-        ]);
-        
-        console.log('📊 加载的标注数据数量:', allAnnotations.length);
-        console.log('🎬 加载的视频数据数量:', videos.length);
-        
-        // 创建视频 ID 到视频信息的映射
-        const videoMap = new Map(videos.map(v => [v.id, { name: v.name, url: v.url }]));
-        
-        // 给每条标注数据添加视频名称和URL
-        const annotationsWithVideoName = allAnnotations.map(item => {
-          const videoInfo = videoMap.get(item.videoId);
-          const videoName = videoInfo?.name || item.videoId || '未知视频';
-          const videoUrl = videoInfo?.url || '';
-          return {
-            ...item,
-            videoName,
-            videoUrl
-          };
-        });
-        
-        setAllAnnotations(annotationsWithVideoName);
-        message.success(`加载了 ${annotationsWithVideoName.length} 条标注数据`);
-      }
-    } catch (error) {
-      console.error('加载数据失败:', error);
-      message.error('加载数据失败，请检查后端服务');
-    }
-    setLoading(false);
-  };
-
-  const filterData = () => {
-    let filtered = allAnnotations;
-    
-    switch (filterStatus) {
-      case 'pending':
-        // 待质检的：有人工标注文本且未质检（没有inspector）
-        filtered = allAnnotations.filter(item => {
-          const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-          const notInspected = !item.inspector;
-          return hasHumanText && notInspected;
-        });
-        break;
-      case 'inspected':
-        // 已质检的（有质检人）
-        filtered = allAnnotations.filter(item => 
-          item.inspector && item.inspector.trim() !== ''
-        );
-        break;
-      case 'all':
-      default:
-        filtered = allAnnotations;
-        break;
-    }
-    
-    // 按视频名称分组
-    const grouped = groupByVideo(filtered);
-    setGroupedData(grouped);
-    setFilteredData(grouped);
-  };
-
-  // 按视频分组数据
-  const groupByVideo = (data: AnnotationItem[]) => {
+  // 按视频分组数据 - 使用 useCallback 优化
+  const groupByVideo = useCallback((data: AnnotationItem[]) => {
     const videoGroups = new Map<string, AnnotationItem[]>();
     
     // 按 videoId 分组
@@ -237,6 +90,189 @@ export default function InspectionManagePage() {
     });
     
     return result;
+  }, []);
+
+  // 加载数据
+  useEffect(() => {
+    loadData();
+  }, [selectedVideoId]);
+
+  // 使用 useMemo 优化过滤和分组计算
+  const filteredAndGroupedData = useMemo(() => {
+    let filtered = allAnnotations;
+    
+    switch (filterStatus) {
+      case 'pending':
+        // 待质检的：有人工标注文本且未质检（没有inspector）
+        filtered = allAnnotations.filter(item => {
+          const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+          const notInspected = !item.inspector;
+          return hasHumanText && notInspected;
+        });
+        break;
+      case 'inspected':
+        // 已质检的（有质检人）
+        filtered = allAnnotations.filter(item => 
+          item.inspector && item.inspector.trim() !== ''
+        );
+        break;
+      case 'all':
+      default:
+        filtered = allAnnotations;
+        break;
+    }
+    
+    // 按视频分组
+    return groupByVideo(filtered);
+  }, [allAnnotations, filterStatus, groupByVideo]);
+  
+  // 更新状态
+  useEffect(() => {
+    setGroupedData(filteredAndGroupedData);
+    setFilteredData(filteredAndGroupedData);
+  }, [filteredAndGroupedData]);
+
+  // 优化数据加载，添加分页和延迟加载
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const { getAnnotations, getVideos } = await import('../api/database');
+      
+      let annotations: AnnotationItem[] = [];
+      
+      // 如果指定了视频ID，只加载该视频的数据
+      if (selectedVideoId) {
+        console.log('📹 加载视频数据:', selectedVideoId, videoName);
+        console.log('🎲 抽样比例:', samplePercentage + '%');
+        
+        // 获取视频信息（包括URL）
+        const allVideos = await getVideos();
+        const currentVideo = allVideos.find(v => v.id === selectedVideoId);
+        const videoUrl = currentVideo?.url || '';
+        
+        console.log('🎬 视频URL:', videoUrl);
+        
+        // 直接获取该视频的所有标注数据
+        annotations = await getAnnotations(selectedVideoId);
+        console.log('📊 该视频的标注数据数量:', annotations.length);
+        
+        // 过滤出待质检的数据 - 优化：使用更高效的过滤
+        const pendingAnnotations = annotations.filter(
+          item => {
+            const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+            const notInspected = !item.inspector;
+            return hasHumanText && notInspected;
+          }
+        );
+        
+        console.log('⏳ 待质检数据数量:', pendingAnnotations.length);
+        
+        // 实施抽样（如果不是100%）
+        let sampledAnnotations = pendingAnnotations;
+        if (samplePercentage < 100) {
+          const calculatedSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
+          const sampleSize = Math.max(1, Math.min(calculatedSize, 1000)); // 限制最大抽样数量
+          
+          // 使用更高效的随机抽样
+          if (pendingAnnotations.length <= sampleSize) {
+            sampledAnnotations = pendingAnnotations;
+          } else {
+            const indices = new Set<number>();
+            while (indices.size < sampleSize) {
+              indices.add(Math.floor(Math.random() * pendingAnnotations.length));
+            }
+            sampledAnnotations = Array.from(indices).map(i => pendingAnnotations[i]);
+          }
+          
+          console.log('🎯 抽样后数据数量:', sampledAnnotations.length);
+          setSampledCount(sampledAnnotations.length);
+        } else {
+          setSampledCount(Math.min(pendingAnnotations.length, 1000)); // 限制最大数量
+        }
+        
+        // 限制返回的数据量，避免前端卡顿
+        const finalAnnotations = sampledAnnotations.slice(0, 1000);
+        
+        // 给每条标注添加视频名称和视频URL
+        const annotationsWithVideoName = finalAnnotations.map(item => ({
+          ...item,
+          videoName: videoName || '未知视频',
+          videoUrl: videoUrl
+        }));
+        
+        setAllAnnotations(annotationsWithVideoName);
+        
+        if (samplePercentage < 100) {
+          message.success(
+            `已按 ${samplePercentage}% 比例抽样，从 ${pendingAnnotations.length} 条中抽取了 ${finalAnnotations.length} 条数据`
+          );
+        } else {
+          message.success(`加载了视频"${videoName}"的 ${finalAnnotations.length} 条待质检数据`);
+        }
+      } else {
+        // 否则加载所有数据 - 优化：只加载有人工标注文本的数据
+        console.log('📊 开始加载待质检数据（仅加载有人工标注文本的数据）...');
+        
+        // 直接查询有人工标注文本的数据，减少数据传输量
+        const { data: annotationsData, error: annotationsError } = await supabase
+          .from('annotations')
+          .select('*')
+          .not('human_annotated_text', 'is', null)
+          .neq('human_annotated_text', '')
+          .order('created_at', { ascending: false })
+          .limit(3000); // 限制最大数量，避免加载过慢
+        
+        if (annotationsError) {
+          console.error('加载标注数据失败:', annotationsError);
+          message.error('加载数据失败，请重试');
+          return;
+        }
+        
+        const allVideos = await getVideos();
+        console.log('📊 加载的标注数据数量:', annotationsData?.length || 0);
+        console.log('🎬 加载的视频数据数量:', allVideos.length);
+        
+        // 创建视频 ID 到视频信息的映射
+        const videoMap = new Map(allVideos.map(v => [v.id, { name: v.name, url: v.url }]));
+        
+        // 转换数据格式并添加视频信息
+        const annotationsWithVideoName = (annotationsData || []).map((item: any) => {
+          const videoInfo = videoMap.get(item.video_id);
+          const videoName = videoInfo?.name || item.video_id || '未知视频';
+          const videoUrl = videoInfo?.url || '';
+          return {
+              id: item.id || '',
+              videoId: item.video_id || '',
+              sentenceNo: item.sentence_no || 0,
+              timeRange: item.time_range || '',
+              startTime: item.start_time,
+              endTime: item.end_time,
+              originalText: item.original_text || '',
+              aiRewrittenText: item.ai_rewritten_text || '',
+              humanAnnotatedText: item.human_annotated_text || '',
+              majorCategory: item.major_category || '',
+              minorCategory: item.minor_category || '',
+              remark: item.remark || '',
+            status: item.status || false,
+            annotator: item.annotator || '',
+            isQualified: item.is_qualified,
+            inspector: item.inspector || '',
+            reviewer: item.reviewer || '',
+            reviewStatus: item.review_status,
+            videoName,
+            videoUrl,
+            subject: item.subject || ''
+          };
+        });
+        
+        setAllAnnotations(annotationsWithVideoName);
+        message.success(`加载了 ${annotationsWithVideoName.length} 条待质检数据`);
+      }
+    } catch (error) {
+      console.error('加载数据失败:', error);
+      message.error('加载数据失败，请检查后端服务');
+    }
+    setLoading(false);
   };
 
   // 开始质检 - 跳转到质检页面
@@ -513,25 +549,30 @@ export default function InspectionManagePage() {
     }
   ];
 
-  // 统计数据 - 基于当前筛选后的数据（抽样后的数据）
-  const pendingCount = filteredData.filter(item => {
-    if (item.isGroup) return false;
-    const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-    const notInspected = !item.inspector;
-    return hasHumanText && notInspected;
-  }).length;
-  
-  const inspectedCount = filteredData.filter(item => 
-    !item.isGroup && item.inspector && item.inspector.trim() !== ''
-  ).length;
-  
-  const passedCount = filteredData.filter(item => 
-    !item.isGroup && item.isQualified === true && item.inspector
-  ).length;
-  
-  const failedCount = filteredData.filter(item => 
-    !item.isGroup && item.isQualified === false && item.inspector
-  ).length;
+  // 使用useMemo优化统计数据计算
+  const statistics = useMemo(() => {
+    const allItems = filteredData.flatMap(group => group.children || []);
+    
+    const pendingCount = allItems.filter(item => {
+      const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+      const notInspected = !item.inspector;
+      return hasHumanText && notInspected;
+    }).length;
+    
+    const inspectedCount = allItems.filter(item => 
+      item.inspector && item.inspector.trim() !== ''
+    ).length;
+    
+    const passedCount = allItems.filter(item => 
+      item.isQualified === true && item.inspector
+    ).length;
+    
+    const failedCount = allItems.filter(item => 
+      item.isQualified === false && item.inspector
+    ).length;
+    
+    return { pendingCount, inspectedCount, passedCount, failedCount };
+  }, [filteredData]);
 
   const rowSelection = {
     selectedRowKeys: selectedRows,
@@ -613,7 +654,7 @@ export default function InspectionManagePage() {
               <Card>
                 <Statistic
                   title={samplePercentage < 100 ? "本次抽样-待质检" : "待质检数据"}
-                  value={pendingCount}
+                  value={statistics.pendingCount}
                   suffix="条"
                   valueStyle={{ color: '#faad14' }}
                   prefix={<ClockCircleOutlined />}
@@ -624,7 +665,7 @@ export default function InspectionManagePage() {
               <Card>
                 <Statistic
                   title={samplePercentage < 100 ? "本次抽样-已质检" : "已质检数据"}
-                  value={inspectedCount}
+                  value={statistics.inspectedCount}
                   suffix="条"
                   valueStyle={{ color: '#1890ff' }}
                 />
@@ -634,7 +675,7 @@ export default function InspectionManagePage() {
               <Card>
                 <Statistic
                   title={samplePercentage < 100 ? "本次抽样-通过" : "质检通过"}
-                  value={passedCount}
+                  value={statistics.passedCount}
                   suffix="条"
                   valueStyle={{ color: '#52c41a' }}
                   prefix={<CheckCircleOutlined />}
@@ -645,7 +686,7 @@ export default function InspectionManagePage() {
               <Card>
                 <Statistic
                   title={samplePercentage < 100 ? "本次抽样-不通过" : "质检不通过"}
-                  value={failedCount}
+                  value={statistics.failedCount}
                   suffix="条"
                   valueStyle={{ color: '#ff4d4f' }}
                 />
