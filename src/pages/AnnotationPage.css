@@ -116,6 +116,20 @@
   border-bottom-color: #ffccc7 !important;
 }
 
+/* 对比不一致的行标识（整行标红） */
+.row-different-text {
+  background-color: #fff1f0 !important;
+}
+
+.row-different-text:hover {
+  background-color: #ffe7e5 !important;
+}
+
+.row-different-text td {
+  border-bottom-color: #ffccc7 !important;
+  border-left: 3px solid #ff4d4f !important;
+}
+
 /* 重标聚焦行标识（橙色） */
 .row-reannotation-focus {
   background-color: #fff7e6 !important;

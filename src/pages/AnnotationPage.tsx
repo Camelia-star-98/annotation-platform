@@ -441,9 +441,6 @@ export default function AnnotationPage() {
       width: 180,
       ellipsis: false,
       render: (text: string, record: AnnotationItem) => {
-        // 对比大模型改写文本和人工标注文本
-        const isDifferent = text && record.aiRewrittenText && text.trim() !== record.aiRewrittenText.trim();
-        
         return (
           <div style={{ 
             whiteSpace: 'pre-wrap', 
@@ -451,8 +448,7 @@ export default function AnnotationPage() {
             lineHeight: '1.4',
             fontSize: '13px',
             padding: '4px 8px',
-            backgroundColor: isDifferent ? '#fff1f0' : undefined, // 不一致时浅红色背景
-            border: isDifferent ? '1px solid #ff4d4f' : '1px solid #d9d9d9', // 不一致时红色边框
+            border: '1px solid #d9d9d9',
             borderRadius: '2px',
             minHeight: '32px'
           }}>
@@ -657,6 +653,12 @@ export default function AnnotationPage() {
                 // 质检未通过的数据行用红色背景标识
                 if (record.isQualified === false) {
                   return 'row-failed-inspection';
+                }
+                // 对比大模型改写文本和人工标注文本，不一致时整行标红
+                const isDifferent = record.humanAnnotatedText && record.aiRewrittenText && 
+                  record.humanAnnotatedText.trim() !== record.aiRewrittenText.trim();
+                if (isDifferent) {
+                  return 'row-different-text';
                 }
                 return '';
               }}
