@@ -1,11 +1,9 @@
--- 修复标注人为 'unknown' 的数据
--- 将 'unknown' 改为空字符串，表示未标注的原始数据
-
+-- 修复标注人为 'unknown' 的数据，将 'unknown' 改为空字符串
 UPDATE annotations
 SET annotator = ''
 WHERE annotator = 'unknown';
 
--- 查看修复结果
+-- 查看修复结果（可选，可以单独执行）
 SELECT 
   annotator,
   COUNT(*) as count

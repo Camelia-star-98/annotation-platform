@@ -87,9 +87,15 @@ export default function InspectionManagePage() {
         annotations = await getAnnotations(selectedVideoId);
         console.log('📊 该视频的标注数据数量:', annotations.length);
         
-        // 过滤出待质检的数据（已标注但未质检）
+        // 过滤出待质检的数据
+        // 条件：有人工标注文本 且 未质检（没有inspector）
+        // 注意：status可能为false（只上传Excel时），但只要有人工标注文本就应该质检
         const pendingAnnotations = annotations.filter(
-          item => item.status === true && !item.inspector
+          item => {
+            const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+            const notInspected = !item.inspector;
+            return hasHumanText && notInspected;
+          }
         );
         
         console.log('⏳ 待质检数据数量:', pendingAnnotations.length);
@@ -172,10 +178,12 @@ export default function InspectionManagePage() {
     
     switch (filterStatus) {
       case 'pending':
-        // 已标注完成但未质检的（status为true且没有质检人）
-        filtered = allAnnotations.filter(item => 
-          item.status === true && !item.inspector
-        );
+        // 待质检的：有人工标注文本且未质检（没有inspector）
+        filtered = allAnnotations.filter(item => {
+          const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+          const notInspected = !item.inspector;
+          return hasHumanText && notInspected;
+        });
         break;
       case 'inspected':
         // 已质检的（有质检人）
@@ -300,9 +308,12 @@ export default function InspectionManagePage() {
 
   // 随机抽样
   const handleRandomSample = (count: number) => {
-    const pendingData = allAnnotations.filter(item => 
-      item.status && !item.isQualified && item.isQualified !== false
-    );
+    // 使用与主过滤条件一致的逻辑：有人工标注文本且未质检
+    const pendingData = allAnnotations.filter(item => {
+      const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+      const notInspected = !item.inspector;
+      return hasHumanText && notInspected;
+    });
 
     if (pendingData.length === 0) {
       message.warning('没有待质检的数据');
@@ -503,9 +514,12 @@ export default function InspectionManagePage() {
   ];
 
   // 统计数据 - 基于当前筛选后的数据（抽样后的数据）
-  const pendingCount = filteredData.filter(item => 
-    !item.isGroup && item.status === true && !item.inspector
-  ).length;
+  const pendingCount = filteredData.filter(item => {
+    if (item.isGroup) return false;
+    const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+    const notInspected = !item.inspector;
+    return hasHumanText && notInspected;
+  }).length;
   
   const inspectedCount = filteredData.filter(item => 
     !item.isGroup && item.inspector && item.inspector.trim() !== ''
