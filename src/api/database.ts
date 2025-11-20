@@ -293,10 +293,13 @@ export async function saveAnnotations(
 
     // 第2步：转换并保存标注数据
     // 每个标注人有独立的数据副本，ID包含标注人姓名
-    const annotatorName = annotations[0]?.annotator || 'unknown';
+    // 如果标注人为空字符串，保持为空字符串（不上传的数据），不要设置为 'unknown'
+    const annotatorName = annotations[0]?.annotator || '';
+    // 生成ID时，如果标注人为空，使用 'template' 作为占位符
+    const idAnnotatorName = annotatorName || 'template';
     
     const data = annotations.map((item, index) => ({
-      id: item.id || `${videoId}_${item.sentenceNo || index + 1}_${annotatorName}`, // ID包含标注人，实现数据隔离
+      id: item.id || `${videoId}_${item.sentenceNo || index + 1}_${idAnnotatorName}`, // ID包含标注人，实现数据隔离
       video_id: videoId,
       sentence_no: item.sentenceNo,
       time_range: item.timeRange,
@@ -309,7 +312,7 @@ export async function saveAnnotations(
       minor_category: item.minorCategory || '',
       remark: item.remark || '',
       status: item.status || false,
-      annotator: annotatorName,
+      annotator: annotatorName, // 保持原始值，如果为空字符串则保持为空
       // 质检相关字段（重新提交时会被清除）
       is_qualified: item.isQualified ?? null,
       inspector: item.inspector || null,

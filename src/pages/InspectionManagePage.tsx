@@ -441,7 +441,14 @@ export default function InspectionManagePage() {
       dataIndex: 'annotator',
       key: 'annotator',
       width: 100,
-      render: (text: string, record: any) => record.isGroup ? null : text
+      render: (text: string, record: any) => {
+        if (record.isGroup) return null;
+        // 如果标注人为空、null 或 'unknown'，显示为"未标注"
+        if (!text || text === 'unknown' || text.trim() === '') {
+          return <span style={{ color: '#999' }}>未标注</span>;
+        }
+        return text;
+      }
     },
     {
       title: '标注状态',

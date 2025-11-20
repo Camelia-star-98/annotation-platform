@@ -199,7 +199,14 @@ export default function InspectionPage() {
       title: '标注人',
       dataIndex: 'annotator',
       key: 'annotator',
-      width: 100
+      width: 100,
+      render: (text: string) => {
+        // 如果标注人为空、null 或 'unknown'，显示为"未标注"
+        if (!text || text === 'unknown' || text.trim() === '') {
+          return <span style={{ color: '#999' }}>未标注</span>;
+        }
+        return text;
+      }
     },
     {
       title: '是否通过',
