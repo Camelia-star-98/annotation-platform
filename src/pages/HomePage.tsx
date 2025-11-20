@@ -136,7 +136,7 @@ export default function HomePage() {
         const baseName = record.name.replace(/\.(mp4|avi|mov|wmv|flv|mkv)$/i, '');
         return `${baseName}_标注数据.xlsx`;
       }
-    },
+    }, // 标注文件名称列
     {
       title: '科目',
       dataIndex: 'subject',
