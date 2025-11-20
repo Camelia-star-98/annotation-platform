@@ -73,19 +73,22 @@ export async function compressVideo(
     console.log('📤 文件已加载到 FFmpeg');
     onProgress?.(20);
 
-    // 设置压缩参数
+    // 设置压缩参数（更激进的压缩）
     // -c:v libx264: 使用 H.264 编码
-    // -crf 28: 质量因子 (18-28 为推荐范围，数值越大压缩率越高但质量越低)
-    // -preset fast: 编码速度预设
+    // -crf 32: 质量因子 (32更高压缩率，28-35都可接受，数值越大压缩率越高)
+    // -preset ultrafast: 最快编码速度
+    // -vf scale=-2:720: 缩放到720p（如果原视频更大）
     // -c:a aac: 音频使用 AAC 编码
-    // -b:a 128k: 音频比特率
+    // -b:a 96k: 降低音频比特率（原128k）
     const ffmpegArgs = [
       '-i', inputFileName,
       '-c:v', 'libx264',
-      '-crf', '28',
-      '-preset', 'ultrafast', // 改为 ultrafast 加快速度
+      '-crf', '32', // 提高压缩率（原28）
+      '-preset', 'ultrafast',
+      '-vf', 'scale=-2:720', // 缩放到720p
       '-c:a', 'aac',
-      '-b:a', '128k',
+      '-b:a', '96k', // 降低音频比特率
+      '-movflags', '+faststart', // 优化web播放
       '-y', // 自动覆盖输出文件
       outputFileName
     ];

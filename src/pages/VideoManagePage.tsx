@@ -218,8 +218,8 @@ export default function VideoManagePage() {
       const originalFileSizeMB = videoFile.size / 1024 / 1024;
       console.log('📦 原始视频文件大小:', originalFileSizeMB.toFixed(2), 'MB');
       
-      // 如果视频大于 50MB，进行压缩以加快上传速度
-      if (originalFileSizeMB > 50) {
+      // 如果视频大于 30MB，进行压缩以大幅提升上传速度
+      if (originalFileSizeMB > 30) {
         try {
           setIsCompressing(true);
           setCompressionProgress(0);
@@ -273,30 +273,17 @@ export default function VideoManagePage() {
         throw new Error('上传已取消');
       }
       
-      // 3. 上传视频文件到 Supabase Storage (15% -> 70%) - 使用断点续传
+      // 3. 上传视频文件到 Supabase Storage (15% -> 75%) - 使用快速上传
       setUploadProgress(20);
       const { addVideo, saveAnnotations } = await import('../api/database');
-      const { resumableUploadVideo, getUploadProgress } = await import('../utils/resumableUpload');
+      const { fastUploadVideo } = await import('../utils/fastUpload');
       
       const fileSizeMB = finalVideoFile.size / 1024 / 1024;
       console.log('📦 最终视频文件大小:', fileSizeMB.toFixed(2), 'MB');
       
-      // 检查是否有未完成的上传
-      const previousProgress = getUploadProgress(finalVideoFile);
-      if (previousProgress > 0) {
-        message.info(`检测到未完成的上传，将从 ${previousProgress.toFixed(1)}% 继续`);
-      }
-      
       let videoUrl: string | null = null;
       
-      // 尝试上传到 Supabase Storage
-      console.log('📤 开始断点续传视频文件到 Supabase Storage...');
-      
-      // 记录上传开始时间
-      const uploadStartTime = Date.now();
-      let lastUploadedBytes = 0;
-      
-      // 先检查文件大小
+      // 检查文件大小
       if (fileSizeMB > 1024) {
         message.error({
           content: `文件过大 (${fileSizeMB.toFixed(1)}MB)，超过1GB限制，无法上传。请压缩视频后再试。`,
@@ -312,36 +299,40 @@ export default function VideoManagePage() {
       }
 
       try {
-        // 根据文件大小显示提示
-        if (fileSizeMB > 500) {
-          message.info(`文件较大 (${fileSizeMB.toFixed(1)}MB)，支持断点续传，请耐心等待...`);
-        } else {
-          message.info(`正在上传视频 (${fileSizeMB.toFixed(1)}MB)，支持断点续传...`);
-        }
+        // 显示上传提示
+        message.info(`正在上传视频 (${fileSizeMB.toFixed(1)}MB)...`);
         
-        // 使用断点续传上传
-        const uploadedUrl = await resumableUploadVideo(
-          finalVideoFile,
-          (uploadedBytes, totalBytes, percentage) => {
-            // 进度回调
-            const currentTime = Date.now();
-            const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
+        const uploadStartTime = Date.now();
+        let lastProgressTime = uploadStartTime;
+        let lastPercentage = 20;
+        
+        // 模拟进度和速度显示
+        const progressInterval = setInterval(() => {
+          const currentTime = Date.now();
+          const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
+          
+          setUploadProgress(prev => {
+            // 平滑增长进度
+            let newProgress = prev;
+            if (prev < 30) {
+              newProgress = prev + 3;
+            } else if (prev < 50) {
+              newProgress = prev + 2;
+            } else if (prev < 70) {
+              newProgress = prev + 1;
+            } else if (prev < 90) {
+              newProgress = prev + 0.5;
+            }
             
-            // 计算上传速度 (基于实际上传的字节数)
-            const bytesDiff = uploadedBytes - lastUploadedBytes;
-            
+            // 计算速度信息
             if (elapsedSeconds > 0) {
+              const uploadedBytes = (newProgress / 100) * finalVideoFile.size;
               const uploadedMB = uploadedBytes / 1024 / 1024;
-              const totalMB = totalBytes / 1024 / 1024;
-              
-              // 计算实时速度 (MB/s)
               const speed = uploadedBytes / 1024 / 1024 / elapsedSeconds;
-              
-              // 计算剩余时间
-              const remainingBytes = totalBytes - uploadedBytes;
+              const remainingBytes = finalVideoFile.size - uploadedBytes;
               const remainingSeconds = speed > 0 ? remainingBytes / (speed * 1024 * 1024) : 0;
               
-              setUploadedSize(`${uploadedMB.toFixed(1)}/${totalMB.toFixed(1)} MB`);
+              setUploadedSize(`${uploadedMB.toFixed(1)}/${fileSizeMB.toFixed(1)} MB`);
               setUploadSpeed(`${speed.toFixed(2)} MB/s`);
               
               if (remainingSeconds < 60) {
@@ -351,40 +342,38 @@ export default function VideoManagePage() {
               }
             }
             
-            lastUploadedBytes = uploadedBytes;
-            
-            // 将上传进度映射到 20% -> 75%
-            const mappedProgress = 20 + (percentage * 0.55);
-            setUploadProgress(Math.min(mappedProgress, 75));
-          },
-          (chunkIndex, totalChunks) => {
-            // 分片完成回调
-            console.log(`✅ 分片 ${chunkIndex}/${totalChunks} 完成`);
+            return Math.min(newProgress, 92);
+          });
+        }, 1000);
+        
+        // 使用快速上传
+        const uploadedUrl = await fastUploadVideo(
+          finalVideoFile,
+          (percentage) => {
+            // 真实进度回调
+            if (percentage >= 90) {
+              clearInterval(progressInterval);
+              setUploadProgress(90 + percentage / 10);
+            }
           }
         );
+        
+        clearInterval(progressInterval);
         
         if (!uploadedUrl) {
           throw new Error('上传返回空URL');
         }
         
         videoUrl = uploadedUrl;
-        setUploadProgress(75);
+        setUploadProgress(95);
         console.log('✅ 视频上传成功，URL:', videoUrl);
         message.success('视频上传成功！');
       } catch (error: any) {
         console.error('❌ 视频上传失败:', error);
         
-        // 上传失败，但保留断点信息
         message.error({
-          content: (
-            <div>
-              <div>视频上传失败：{error.message || '请检查网络连接'}</div>
-              <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
-                已保存上传进度，可以重新点击"上传"继续
-              </div>
-            </div>
-          ),
-          duration: 8
+          content: `视频上传失败：${error.message || '请检查网络连接'}`,
+          duration: 5
         });
         
         setUploadProgress(0);
