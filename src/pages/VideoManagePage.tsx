@@ -604,17 +604,19 @@ export default function VideoManagePage() {
     try {
       const { addVideo, saveAnnotations } = await import('../api/database');
       
-      // 1. 解析 Excel 文件
+      // 1. 解析 Excel 文件（使用统一的parseExcel函数）
       setUploadProgress(20);
       message.info('正在解析标注数据...');
       
-      const excelData = await annotationOnlyExcelFile.arrayBuffer();
-      const workbook = XLSX.read(excelData, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      // 将 File 对象转换为 File 类型（parseExcel需要File类型）
+      const excelFile = annotationOnlyExcelFile instanceof File 
+        ? annotationOnlyExcelFile 
+        : new File([annotationOnlyExcelFile], annotationOnlyExcelFile.name || 'data.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      
+      // 使用parseExcel函数解析（支持多种列名格式）
+      const parsedAnnotations = await parseExcel(excelFile);
 
-      if (jsonData.length === 0) {
+      if (parsedAnnotations.length === 0) {
         message.error('Excel文件中没有数据');
         setIsUploading(false);
         return;
@@ -644,21 +646,21 @@ export default function VideoManagePage() {
 
       setUploadProgress(60);
 
-      // 4. 转换并保存标注数据
-      const annotations = jsonData.map((row: any, index: number) => {
+      // 4. 转换并保存标注数据（使用parseExcel解析的结果）
+      const annotations = parsedAnnotations.map((item: any, index: number) => {
         return {
           id: `${videoId}_${index + 1}`,
           videoId: videoId,
-          sentenceNo: row['句子编号'] || index + 1,
-          timeRange: row['时间范围'] || '-',
-          startTime: 0,
-          endTime: 0,
-          originalText: row['原文文本'] || '',
-          aiRewrittenText: row['大模型改写文本'] || '',
-          humanAnnotatedText: row['人工标注文本'] || '',
-          majorCategory: row['问题大类'] || '',
-          minorCategory: row['问题小类'] || '',
-          remark: row['备注'] || '',
+          sentenceNo: item.sentenceNo || index + 1,
+          timeRange: item.timeRange || '-',
+          startTime: item.startTime || 0,
+          endTime: item.endTime || 0,
+          originalText: item.originalText || '',
+          aiRewrittenText: item.aiRewrittenText || '',
+          humanAnnotatedText: item.humanAnnotatedText || '',
+          majorCategory: item.majorCategory || '',
+          minorCategory: item.minorCategory || '',
+          remark: item.remark || '',
           status: false,
           annotator: '',
           videoName: annotationOnlyVideoName,
