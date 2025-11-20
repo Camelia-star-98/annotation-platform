@@ -218,8 +218,8 @@ export default function VideoManagePage() {
       const originalFileSizeMB = videoFile.size / 1024 / 1024;
       console.log('📦 原始视频文件大小:', originalFileSizeMB.toFixed(2), 'MB');
       
-      // 如果视频大于 5000MB (5GB)，进行压缩（实际上禁用了压缩）
-      if (originalFileSizeMB > 5000) {
+      // 如果视频大于 50MB，进行压缩以加快上传速度
+      if (originalFileSizeMB > 50) {
         try {
           setIsCompressing(true);
           setCompressionProgress(0);
