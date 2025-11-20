@@ -28,7 +28,7 @@ import {
 } from '@ant-design/icons';
 import type { AnnotationItem } from '../types';
 import './InspectionManagePage.css';
-import { supabase } from '../lib/supabaseClient'; // Added supabase import
+import { supabase } from '../api/supabase';
 
 const { Header, Content } = Layout;
 const { Title } = Typography;

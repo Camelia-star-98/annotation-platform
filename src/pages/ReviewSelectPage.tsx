@@ -65,21 +65,58 @@ export default function ReviewSelectPage() {
         getAllAnnotations()
       ]);
 
+      console.log('📊 数据加载统计:');
+      console.log('  - 视频总数:', videos.length);
+      console.log('  - 标注数据总数:', allAnnotations.length);
+      
+      // 统计标注人分布
+      const annotatorStats = new Map<string, number>();
+      let skippedCount = 0;
+      let unknownCount = 0;
+      let withHumanTextCount = 0;
+      allAnnotations.forEach(ann => {
+        if (!ann.annotator || ann.annotator.trim() === '') {
+          skippedCount++;
+        } else if (ann.annotator === 'unknown') {
+          unknownCount++;
+        } else {
+          const count = annotatorStats.get(ann.annotator) || 0;
+          annotatorStats.set(ann.annotator, count + 1);
+        }
+        if (ann.humanAnnotatedText && ann.humanAnnotatedText.trim() !== '') {
+          withHumanTextCount++;
+        }
+      });
+      console.log('  - 标注人分布:', Object.fromEntries(annotatorStats));
+      console.log('  - 标注人为空（跳过）:', skippedCount);
+      console.log('  - 标注人为unknown:', unknownCount);
+      console.log('  - 有人工标注文本:', withHumanTextCount);
+
       // 按视频和标注人分组统计
       const videoMap = new Map<string, VideoWithAnnotators>();
 
       allAnnotations.forEach(annotation => {
         const videoId = annotation.videoId;
-        // 处理标注人：如果为空、null、'unknown'或'未知标注员'，跳过这条数据（不统计）
-        const annotator = annotation.annotator;
-        if (!annotator || annotator.trim() === '' || annotator === 'unknown' || annotator === '未知标注员') {
-          return; // 跳过没有有效标注人的数据
+        // 处理标注人：如果为空、null，跳过这条数据（不统计）
+        // 如果为'unknown'但有人工标注文本，则允许显示（标记为"未知标注员"）
+        let annotator = annotation.annotator;
+        if (!annotator || annotator.trim() === '') {
+          return; // 跳过没有标注人的数据
+        }
+        // 将'unknown'转换为"未知标注员"以便显示
+        if (annotator === 'unknown') {
+          annotator = '未知标注员';
         }
         const reviewer = annotation.reviewer; // 获取复检人
         const inspector = annotation.inspector; // 获取质检人
         // 判断是否已标注：有人工标注文本即为已标注（不依赖status字段）
         const hasHumanText = annotation.humanAnnotatedText && annotation.humanAnnotatedText.trim() !== '';
         const isAnnotated = hasHumanText; // 是否已标注
+        
+        // 如果标注人为"未知标注员"但没有人工标注文本，跳过（避免显示未标注的模板数据）
+        if (annotator === '未知标注员' && !isAnnotated) {
+          return;
+        }
         
         if (!videoMap.has(videoId)) {
           const video = videos.find(v => v.id === videoId);
@@ -190,7 +227,17 @@ export default function ReviewSelectPage() {
       setPendingList(pending);
       setCompletedList(completed);
       
-      message.success(`加载了 ${result.length} 个视频的标注数据`);
+      if (pending.length === 0 && completed.length === 0) {
+        if (allAnnotations.length === 0) {
+          message.warning('没有找到任何标注数据，请先完成标注');
+        } else if (withHumanTextCount === 0) {
+          message.warning('没有找到已标注的数据（humanAnnotatedText为空），请先完成标注');
+        } else {
+          message.warning(`找到 ${allAnnotations.length} 条标注数据，但都没有有效的标注人信息或已标注内容`);
+        }
+      } else {
+        message.success(`加载了 ${result.length} 个视频的标注数据（待复检: ${pending.length}，已复检: ${completed.length}）`);
+      }
     } catch (error) {
       console.error('加载数据失败:', error);
       message.error('加载数据失败');
