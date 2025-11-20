@@ -116,17 +116,26 @@ export default function HomePage() {
       )
     },
     {
-      title: '视频编号',
-      dataIndex: 'id',
-      key: 'id',
-      width: 150,
-      ellipsis: true
-    },
-    {
       title: '视频名称',
       dataIndex: 'name',
       key: 'name',
       width: 250
+    },
+    {
+      title: '标注文件名称',
+      key: 'annotationFileName',
+      width: 250,
+      ellipsis: true,
+      render: (_: any, record: VideoInfo) => {
+        // 如果视频名称为空、只有ID或者是annotation_only_开头的，显示"无"
+        if (!record.name || record.name === record.id || record.name.startsWith('annotation_only_')) {
+          return <span style={{ color: '#999' }}>无</span>;
+        }
+        // 标注文件名通常是：视频名称_标注数据.xlsx
+        // 如果视频名称已经包含扩展名，去掉扩展名
+        const baseName = record.name.replace(/\.(mp4|avi|mov|wmv|flv|mkv)$/i, '');
+        return `${baseName}_标注数据.xlsx`;
+      }
     },
     {
       title: '科目',
