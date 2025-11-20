@@ -280,8 +280,8 @@ export default function ReviewPage() {
         reviewedIds
       });
 
-      // 2. 批量更新复检状态和备注
-      // 使用循环来保存每条数据的备注（因为备注可能不同）
+      // 2. 批量更新复检状态、备注和问题分类
+      // 使用循环来保存每条数据（因为备注和分类可能不同）
       const updatePromises = reviewedItems.map(item => 
         supabase
           .from('annotations')
@@ -289,7 +289,9 @@ export default function ReviewPage() {
             reviewer: reviewerName,
             review_status: true,
             status: true,
-            remark: item.remark || '' // 保存备注
+            remark: item.remark || '', // 保存备注
+            major_category: item.majorCategory || '', // 保存问题大类
+            minor_category: item.minorCategory || ''  // 保存问题小类
           })
           .eq('id', item.id)
       );
