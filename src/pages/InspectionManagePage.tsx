@@ -161,15 +161,35 @@ export default function InspectionManagePage() {
           item => {
             const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
             const notInspected = !item.inspector;
-            return hasHumanText && notInspected;
+            const result = hasHumanText && notInspected;
+            // 调试：如果数据被过滤掉，打印原因
+            if (!result && hasHumanText) {
+              console.log('🔍 数据被过滤（已有质检人）:', {
+                id: item.id,
+                sentenceNo: item.sentenceNo,
+                inspector: item.inspector,
+                humanAnnotatedText: item.humanAnnotatedText?.substring(0, 20) + '...'
+              });
+            }
+            if (!result && !hasHumanText) {
+              console.log('🔍 数据被过滤（无人工标注文本）:', {
+                id: item.id,
+                sentenceNo: item.sentenceNo,
+                humanAnnotatedText: item.humanAnnotatedText
+              });
+            }
+            return result;
           }
         );
         
         console.log('⏳ 待质检数据数量:', pendingAnnotations.length);
+        console.log('📋 总标注数据数量:', annotations.length);
+        console.log('📋 有人工标注文本的数据数量:', annotations.filter(item => item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '').length);
+        console.log('📋 已有质检人的数据数量:', annotations.filter(item => item.inspector && item.inspector.trim() !== '').length);
         
         // 实施抽样（如果不是100%）
         let sampledAnnotations = pendingAnnotations;
-        if (samplePercentage < 100) {
+        if (samplePercentage < 100 && pendingAnnotations.length > 0) {
           const calculatedSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
           const sampleSize = Math.max(1, Math.min(calculatedSize, 1000)); // 限制最大抽样数量
           
@@ -186,8 +206,14 @@ export default function InspectionManagePage() {
           
           console.log('🎯 抽样后数据数量:', sampledAnnotations.length);
           setSampledCount(sampledAnnotations.length);
+        } else if (samplePercentage < 100 && pendingAnnotations.length === 0) {
+          // 如果没有待质检数据，但用户设置了抽样比例，显示0
+          console.log('⚠️ 没有待质检数据，抽样后为0');
+          setSampledCount(0);
+          sampledAnnotations = [];
         } else {
-          setSampledCount(Math.min(pendingAnnotations.length, 1000)); // 限制最大数量
+          // 100%抽样，显示所有待质检数据
+          setSampledCount(pendingAnnotations.length);
         }
         
         // 限制返回的数据量，避免前端卡顿
@@ -549,9 +575,10 @@ export default function InspectionManagePage() {
     }
   ];
 
-  // 使用useMemo优化统计数据计算
+  // 使用useMemo优化统计数据计算 - 基于实际加载的数据，而不是过滤后的数据
   const statistics = useMemo(() => {
-    const allItems = filteredData.flatMap(group => group.children || []);
+    // 使用allAnnotations而不是filteredData，确保统计数据准确
+    const allItems = allAnnotations;
     
     const pendingCount = allItems.filter(item => {
       const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
@@ -572,7 +599,7 @@ export default function InspectionManagePage() {
     ).length;
     
     return { pendingCount, inspectedCount, passedCount, failedCount };
-  }, [filteredData]);
+  }, [allAnnotations]);
 
   const rowSelection = {
     selectedRowKeys: selectedRows,
