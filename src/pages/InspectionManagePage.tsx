@@ -236,17 +236,18 @@ export default function InspectionManagePage() {
           message.success(`加载了视频"${videoName}"的 ${finalAnnotations.length} 条待质检数据`);
         }
       } else {
-        // 否则加载所有数据 - 优化：只加载有人工标注文本的数据
-        console.log('📊 开始加载待质检数据（仅加载有人工标注文本的数据）...');
+        // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据
+        console.log('📊 开始加载待质检数据（仅加载有人工标注文本且未质检的数据）...');
         
-        // 直接查询有人工标注文本的数据，减少数据传输量
+        // 性能优化：直接查询待质检的数据（有人工标注文本且没有质检人）
         const { data: annotationsData, error: annotationsError } = await supabase
           .from('annotations')
           .select('*')
           .not('human_annotated_text', 'is', null)
           .neq('human_annotated_text', '')
+          .is('inspector', null)  // 只查询未质检的数据
           .order('created_at', { ascending: false })
-          .limit(3000); // 限制最大数量，避免加载过慢
+          .limit(1000); // 限制最大数量，避免加载过慢
         
         if (annotationsError) {
           console.error('加载标注数据失败:', annotationsError);
@@ -255,7 +256,7 @@ export default function InspectionManagePage() {
         }
         
         const allVideos = await getVideos();
-        console.log('📊 加载的标注数据数量:', annotationsData?.length || 0);
+        console.log('📊 加载的待质检数据数量:', annotationsData?.length || 0);
         console.log('🎬 加载的视频数据数量:', allVideos.length);
         
         // 创建视频 ID 到视频信息的映射
