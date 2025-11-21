@@ -10,6 +10,7 @@ import InspectionManagePage from './pages/InspectionManagePage';
 import ReviewPage from './pages/ReviewPage';
 import ReviewSelectPage from './pages/ReviewSelectPage';
 import AnalysisPage from './pages/AnalysisPage';
+import ComparisonPage from './pages/ComparisonPage';
 import VideoManagePage from './pages/VideoManagePage';
 import SupabaseTestPage from './pages/SupabaseTestPage';
 
@@ -27,6 +28,7 @@ function App() {
           <Route path="/review" element={<ReviewPage />} />
           <Route path="/review-select" element={<ReviewSelectPage />} />
           <Route path="/analysis" element={<AnalysisPage />} />
+          <Route path="/comparison" element={<ComparisonPage />} />
           <Route path="/video-manage" element={<VideoManagePage />} />
           <Route path="/test-supabase" element={<SupabaseTestPage />} />
         </Routes>

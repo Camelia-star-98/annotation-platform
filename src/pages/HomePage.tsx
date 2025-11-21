@@ -20,7 +20,8 @@ import {
   CheckCircleOutlined,
   EyeOutlined,
   BarChartOutlined,
-  DatabaseOutlined
+  DatabaseOutlined,
+  SwapOutlined
 } from '@ant-design/icons';
 import type { VideoInfo } from '../types';
 import './HomePage.css';
@@ -277,6 +278,15 @@ export default function HomePage() {
     navigate('/analysis', { state: { selectedVideos } });
   };
 
+  // 结果对比
+  const handleComparison = () => {
+    if (selectedVideos.length !== 2) {
+      message.warning('请选择2个视频进行对比');
+      return;
+    }
+    navigate('/comparison', { state: { selectedVideos } });
+  };
+
   return (
     <Layout className="home-layout">
       <Header className="home-header">
@@ -373,6 +383,14 @@ export default function HomePage() {
               <Space>
                 <span>已选择 {selectedVideos.length} 个视频</span>
                 <Button
+                  type="default"
+                  icon={<SwapOutlined />}
+                  onClick={handleComparison}
+                  disabled={selectedVideos.length !== 2}
+                >
+                  结果对比
+                </Button>
+                <Button
                   type="primary"
                   icon={<BarChartOutlined />}
                   onClick={handleAnalysis}
@@ -385,7 +403,7 @@ export default function HomePage() {
             style={{ marginTop: 24 }}
           >
             <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-              这些视频已完成：教研标注 → 抽样质检 → 产品复检，可进行结果分析
+              这些视频已完成：教研标注 → 抽样质检 → 产品复检，可进行结果分析或对比（选择2个视频）
             </Typography.Paragraph>
             <Table
               columns={columns}
