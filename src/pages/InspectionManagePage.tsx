@@ -236,18 +236,18 @@ export default function InspectionManagePage() {
           message.success(`加载了视频"${videoName}"的 ${finalAnnotations.length} 条待质检数据`);
         }
       } else {
-        // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据
-        console.log('📊 开始加载待质检数据（仅加载有人工标注文本且未质检的数据）...');
+        // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据（精简字段）
+        console.log('📊 开始加载待质检数据（仅加载必要字段）...');
         
-        // 性能优化：直接查询待质检的数据（有人工标注文本且没有质检人）
+        // 性能优化：只查询必要的字段，不查询大文本字段
         const { data: annotationsData, error: annotationsError } = await supabase
           .from('annotations')
-          .select('*')
+          .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, created_at')
           .not('human_annotated_text', 'is', null)
           .neq('human_annotated_text', '')
           .is('inspector', null)  // 只查询未质检的数据
           .order('created_at', { ascending: false })
-          .limit(1000); // 限制最大数量，避免加载过慢
+          .limit(500); // 限制500条，避免加载过多
         
         if (annotationsError) {
           console.error('加载标注数据失败:', annotationsError);
@@ -262,7 +262,7 @@ export default function InspectionManagePage() {
         // 创建视频 ID 到视频信息的映射
         const videoMap = new Map(allVideos.map(v => [v.id, { name: v.name, url: v.url }]));
         
-        // 转换数据格式并添加视频信息
+        // 转换数据格式并添加视频信息（只包含必要字段）
         const annotationsWithVideoName = (annotationsData || []).map((item: any) => {
           const videoInfo = videoMap.get(item.video_id);
           const videoName = videoInfo?.name || item.video_id || '未知视频';
@@ -275,25 +275,25 @@ export default function InspectionManagePage() {
               startTime: item.start_time,
               endTime: item.end_time,
               originalText: item.original_text || '',
-              aiRewrittenText: item.ai_rewritten_text || '',
+              aiRewrittenText: '', // 不查询，节省带宽
               humanAnnotatedText: item.human_annotated_text || '',
               majorCategory: item.major_category || '',
               minorCategory: item.minor_category || '',
-              remark: item.remark || '',
-            status: item.status || false,
+              remark: '',
+            status: false,
             annotator: item.annotator || '',
-            isQualified: item.is_qualified,
+            isQualified: undefined,
             inspector: item.inspector || '',
-            reviewer: item.reviewer || '',
-            reviewStatus: item.review_status,
+            reviewer: '',
+            reviewStatus: undefined,
             videoName,
             videoUrl,
-            subject: item.subject || ''
+            subject: ''
           };
         });
         
         setAllAnnotations(annotationsWithVideoName);
-        message.success(`加载了 ${annotationsWithVideoName.length} 条待质检数据`);
+        message.success(`加载了 ${annotationsWithVideoName.length} 条待质检数据（限制500条）`);
       }
     } catch (error) {
       console.error('加载数据失败:', error);
