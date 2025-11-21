@@ -70,27 +70,44 @@ export default function HomePage() {
       const allVideos = await getVideos();
       console.log('🎬 所有视频数量:', allVideos.length);
       
-      // 2. 查询所有标注数据（需要统计每个标注人的复检情况）
-      const { data: allAnnotations, error } = await supabase
-        .from('annotations')
-        .select('video_id, annotator, human_annotated_text, review_status')
-        .not('annotator', 'is', null)
-        .neq('annotator', '')
-        .neq('annotator', 'unknown');
+      // 2. 分页查询所有标注数据（避免Supabase默认分页限制）
+      let allAnnotations: any[] = [];
+      let offset = 0;
+      const limit = 1000;
+      let hasMore = true;
       
-      if (error) {
-        console.error('查询标注数据失败:', error);
-        message.error('加载失败');
-        setLoading(false);
-        return;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('annotations')
+          .select('video_id, annotator, human_annotated_text, review_status')
+          .not('annotator', 'is', null)
+          .neq('annotator', '')
+          .neq('annotator', 'unknown')
+          .range(offset, offset + limit - 1);
+        
+        if (error) {
+          console.error('查询标注数据失败:', error);
+          message.error('加载失败');
+          setLoading(false);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          allAnnotations = allAnnotations.concat(data);
+          offset += data.length;
+          hasMore = data.length === limit;
+          console.log(`  - 已加载 ${allAnnotations.length} 条数据...`);
+        } else {
+          hasMore = false;
+        }
       }
       
-      console.log('📊 查询到的标注数据记录数:', allAnnotations?.length || 0);
+      console.log('📊 查询到的标注数据总数:', allAnnotations.length);
       
       // 3. 按视频和标注人分组，统计每个标注人的复检状态
       const videoAnnotatorMap = new Map<string, Map<string, { total: number; reviewed: number }>>();
       
-      allAnnotations?.forEach(item => {
+      allAnnotations.forEach(item => {
         const videoId = item.video_id;
         const annotator = item.annotator;
         const hasHumanText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
