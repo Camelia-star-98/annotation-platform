@@ -287,8 +287,12 @@ export default function HomePage() {
 
   // 结果对比
   const handleComparison = () => {
-    if (selectedVideos.length !== 2) {
-      message.warning('请选择2个视频进行对比');
+    if (selectedVideos.length < 2) {
+      message.warning('请至少选择2个视频进行对比');
+      return;
+    }
+    if (selectedVideos.length > 6) {
+      message.warning('最多支持同时对比6个视频');
       return;
     }
     navigate('/comparison', { state: { selectedVideos } });
@@ -393,7 +397,7 @@ export default function HomePage() {
                   type="default"
                   icon={<SwapOutlined />}
                   onClick={handleComparison}
-                  disabled={selectedVideos.length !== 2}
+                  disabled={selectedVideos.length < 2}
                 >
                   结果对比
                 </Button>
@@ -410,7 +414,7 @@ export default function HomePage() {
             style={{ marginTop: 24 }}
           >
             <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
-              这些视频已完成：教研标注 → 抽样质检 → 产品复检，可进行结果分析或对比（选择2个视频）
+              这些视频已完成：教研标注 → 抽样质检 → 产品复检，可进行结果分析或对比（选择2-6个视频）
             </Typography.Paragraph>
             <Table
               columns={columns}

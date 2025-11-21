@@ -10,7 +10,8 @@ import {
   Col,
   Divider,
   Table,
-  Spin
+  Spin,
+  Tabs
 } from 'antd';
 import { ArrowLeftOutlined, SwapOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
@@ -33,11 +34,16 @@ export default function ComparisonPage() {
   
   const selectedVideoIds = location.state?.selectedVideos || [];
   const [loading, setLoading] = useState(false);
-  const [comparisonData, setComparisonData] = useState<[ComparisonData | null, ComparisonData | null]>([null, null]);
+  const [comparisonData, setComparisonData] = useState<ComparisonData[]>([]);
 
   useEffect(() => {
-    if (selectedVideoIds.length !== 2) {
-      message.error('请选择2个视频进行对比');
+    if (selectedVideoIds.length < 2) {
+      message.error('请至少选择2个视频进行对比');
+      navigate('/');
+      return;
+    }
+    if (selectedVideoIds.length > 6) {
+      message.error('最多支持同时对比6个视频');
       navigate('/');
       return;
     }
@@ -53,7 +59,7 @@ export default function ComparisonPage() {
       const allVideos = await getVideos();
       const selectedVids = allVideos.filter(v => selectedVideoIds.includes(v.id));
       
-      if (selectedVids.length !== 2) {
+      if (selectedVids.length < 2) {
         message.error('无法加载视频信息');
         return;
       }
@@ -108,9 +114,10 @@ export default function ComparisonPage() {
       });
 
       const results = await Promise.all(dataPromises);
-      setComparisonData([results[0], results[1]]);
+      const validResults = results.filter(r => r !== null) as ComparisonData[];
+      setComparisonData(validResults);
       
-      message.success('数据加载完成');
+      message.success(`数据加载完成，共 ${validResults.length} 个视频`);
     } catch (error) {
       console.error('加载对比数据失败:', error);
       message.error('加载对比数据失败');
@@ -121,29 +128,33 @@ export default function ComparisonPage() {
 
   // 生成问题大类对比图表配置
   const getMajorCategoryComparisonOption = () => {
-    if (!comparisonData[0] || !comparisonData[1]) return {};
+    if (comparisonData.length === 0) return {};
 
-    // 获取所有大类（合并两个任务的）
+    // 获取所有大类（合并所有任务的）
     const allCategories = new Set<string>();
-    comparisonData[0].majorCategoryStats.forEach(s => allCategories.add(s.category));
-    comparisonData[1].majorCategoryStats.forEach(s => allCategories.add(s.category));
+    comparisonData.forEach(data => {
+      data.majorCategoryStats.forEach(s => allCategories.add(s.category));
+    });
     
     const categories = Array.from(allCategories);
     
-    // 构建数据
-    const data1 = categories.map(cat => {
-      const stat = comparisonData[0]!.majorCategoryStats.find(s => s.category === cat);
-      return stat ? stat.count : 0;
-    });
-    
-    const data2 = categories.map(cat => {
-      const stat = comparisonData[1]!.majorCategoryStats.find(s => s.category === cat);
-      return stat ? stat.count : 0;
+    // 为每个视频构建数据
+    const series = comparisonData.map((data, index) => {
+      const colors = ['#5470c6', '#91cc75', '#fac858', '#ee6666', '#73c0de', '#3ba272'];
+      return {
+        name: data.videoName,
+        type: 'bar',
+        data: categories.map(cat => {
+          const stat = data.majorCategoryStats.find(s => s.category === cat);
+          return stat ? stat.count : 0;
+        }),
+        itemStyle: { color: colors[index % colors.length] }
+      };
     });
 
     return {
       title: {
-        text: '问题大类对比',
+        text: '问题大类分布对比',
         left: 'center'
       },
       tooltip: {
@@ -153,8 +164,9 @@ export default function ComparisonPage() {
         }
       },
       legend: {
-        data: [comparisonData[0].videoName, comparisonData[1].videoName],
-        bottom: 0
+        data: comparisonData.map(d => d.videoName),
+        bottom: 0,
+        type: 'scroll'
       },
       grid: {
         left: '3%',
@@ -173,55 +185,69 @@ export default function ComparisonPage() {
       yAxis: {
         type: 'value'
       },
-      series: [
-        {
-          name: comparisonData[0].videoName,
-          type: 'bar',
-          data: data1,
-          itemStyle: { color: '#5470c6' }
-        },
-        {
-          name: comparisonData[1].videoName,
-          type: 'bar',
-          data: data2,
-          itemStyle: { color: '#91cc75' }
-        }
-      ]
+      series: series
     };
   };
 
-  // 生成问题占比对比（饼图）
-  const getPieChartOption = (data: ComparisonData) => {
-    const total = data.data.length;
-    const categoryCounts = data.majorCategoryStats;
+  // 生成问题占比对比（饼图）- 多个视频使用环形图
+  const getPieChartsOption = () => {
+    if (comparisonData.length === 0) return {};
+
+    // 为多个视频生成多个环形图
+    const radius = comparisonData.length === 2 
+      ? [['30%', '50%'], ['30%', '50%']]
+      : comparisonData.length === 3
+      ? [['25%', '40%'], ['25%', '40%'], ['25%', '40%']]
+      : [['20%', '35%'], ['20%', '35%'], ['20%', '35%'], ['20%', '35%']];
+    
+    const centerPositions = comparisonData.length === 2
+      ? [['25%', '50%'], ['75%', '50%']]
+      : comparisonData.length === 3
+      ? [['20%', '50%'], ['50%', '50%'], ['80%', '50%']]
+      : comparisonData.length === 4
+      ? [['25%', '35%'], ['75%', '35%'], ['25%', '75%'], ['75%', '75%']]
+      : comparisonData.length === 5
+      ? [['20%', '30%'], ['50%', '30%'], ['80%', '30%'], ['35%', '70%'], ['65%', '70%']]
+      : [['20%', '30%'], ['50%', '30%'], ['80%', '30%'], ['20%', '70%'], ['50%', '70%'], ['80%', '70%']];
+
+    const series = comparisonData.map((data, index) => ({
+      name: data.videoName,
+      type: 'pie',
+      radius: radius[index] || ['20%', '35%'],
+      center: centerPositions[index] || ['50%', '50%'],
+      data: data.majorCategoryStats.map(item => ({
+        value: item.count,
+        name: item.category
+      })),
+      label: {
+        formatter: '{b}\n{d}%',
+        fontSize: 10
+      },
+      emphasis: {
+        itemStyle: {
+          shadowBlur: 10,
+          shadowOffsetX: 0,
+          shadowColor: 'rgba(0, 0, 0, 0.5)'
+        }
+      }
+    }));
 
     return {
-      title: {
+      title: comparisonData.map((data, index) => ({
         text: data.videoName,
-        left: 'center'
-      },
+        left: centerPositions[index][0],
+        top: comparisonData.length > 3 && index >= 3 ? '55%' : '3%',
+        textAlign: 'center',
+        textStyle: {
+          fontSize: 12,
+          fontWeight: 'normal'
+        }
+      })),
       tooltip: {
         trigger: 'item',
         formatter: '{a} <br/>{b}: {c} ({d}%)'
       },
-      series: [
-        {
-          name: '问题分类',
-          type: 'pie',
-          radius: '50%',
-          data: categoryCounts.map(item => ({
-            value: item.count,
-            name: item.category
-          })),
-          emphasis: {
-            itemStyle: {
-              shadowBlur: 10,
-              shadowOffsetX: 0,
-              shadowColor: 'rgba(0, 0, 0, 0.5)'
-            }
-          }
-        }
-      ]
+      series: series
     };
   };
 
@@ -298,29 +324,25 @@ export default function ComparisonPage() {
           </Button>
           <Title level={3} style={{ margin: 0 }}>
             <SwapOutlined style={{ marginRight: 8 }} />
-            结果对比
+            结果对比（{comparisonData.length} 个视频）
           </Title>
         </div>
       </Header>
 
       <Content style={{ padding: '24px', background: '#f0f2f5' }}>
-        {comparisonData[0] && comparisonData[1] ? (
+        {comparisonData.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
             {/* 基本信息对比 */}
             <Card>
-              <Row gutter={[24, 16]}>
-                <Col span={12}>
-                  <div style={{ textAlign: 'center' }}>
-                    <Title level={4}>{comparisonData[0].videoName}</Title>
-                    <Text type="secondary">共 {comparisonData[0].data.length} 条已复检数据</Text>
-                  </div>
-                </Col>
-                <Col span={12}>
-                  <div style={{ textAlign: 'center' }}>
-                    <Title level={4}>{comparisonData[1].videoName}</Title>
-                    <Text type="secondary">共 {comparisonData[1].data.length} 条已复检数据</Text>
-                  </div>
-                </Col>
+              <Row gutter={[16, 16]}>
+                {comparisonData.map((data, index) => (
+                  <Col span={24 / Math.min(comparisonData.length, 4)} key={data.videoId}>
+                    <div style={{ textAlign: 'center', padding: '12px', background: '#f5f5f5', borderRadius: '8px' }}>
+                      <Title level={5} style={{ marginBottom: 4 }}>{data.videoName}</Title>
+                      <Text type="secondary">共 {data.data.length} 条已复检数据</Text>
+                    </div>
+                  </Col>
+                ))}
               </Row>
             </Card>
 
@@ -334,81 +356,37 @@ export default function ComparisonPage() {
 
             {/* 问题占比饼图对比 */}
             <Card title="问题占比对比">
-              <Row gutter={24}>
-                <Col span={12}>
-                  {comparisonData[0].majorCategoryStats.length > 0 ? (
-                    <ReactECharts 
-                      option={getPieChartOption(comparisonData[0])} 
-                      style={{ height: 400 }}
-                    />
-                  ) : (
-                    <div style={{ textAlign: 'center', padding: '100px 0', color: '#999' }}>
-                      暂无数据
-                    </div>
-                  )}
-                </Col>
-                <Col span={12}>
-                  {comparisonData[1].majorCategoryStats.length > 0 ? (
-                    <ReactECharts 
-                      option={getPieChartOption(comparisonData[1])} 
-                      style={{ height: 400 }}
-                    />
-                  ) : (
-                    <div style={{ textAlign: 'center', padding: '100px 0', color: '#999' }}>
-                      暂无数据
-                    </div>
-                  )}
-                </Col>
-              </Row>
+              <ReactECharts 
+                option={getPieChartsOption()} 
+                style={{ height: comparisonData.length > 3 ? 600 : 400 }}
+              />
             </Card>
 
             <Divider>原始数据明细</Divider>
 
-            {/* 原始数据明细 - 左右分栏 */}
-            <Row gutter={24}>
-              <Col span={12}>
-                <Card 
-                  title={comparisonData[0].videoName} 
-                  bordered
-                  style={{ height: 600, overflow: 'hidden' }}
-                  bodyStyle={{ height: 'calc(100% - 57px)', overflow: 'auto', padding: 0 }}
-                >
-                  <Table
-                    columns={getTableColumns()}
-                    dataSource={comparisonData[0].data}
-                    rowKey="id"
-                    pagination={{
-                      pageSize: 10,
-                      showSizeChanger: true,
-                      showTotal: (total) => `共 ${total} 条`
-                    }}
-                    scroll={{ x: 'max-content' }}
-                    size="small"
-                  />
-                </Card>
-              </Col>
-              <Col span={12}>
-                <Card 
-                  title={comparisonData[1].videoName} 
-                  bordered
-                  style={{ height: 600, overflow: 'hidden' }}
-                  bodyStyle={{ height: 'calc(100% - 57px)', overflow: 'auto', padding: 0 }}
-                >
-                  <Table
-                    columns={getTableColumns()}
-                    dataSource={comparisonData[1].data}
-                    rowKey="id"
-                    pagination={{
-                      pageSize: 10,
-                      showSizeChanger: true,
-                      showTotal: (total) => `共 ${total} 条`
-                    }}
-                    scroll={{ x: 'max-content' }}
-                    size="small"
-                  />
-                </Card>
-              </Col>
-            </Row>
+            {/* 原始数据明细 - 使用Tabs切换 */}
+            <Card>
+              <Tabs
+                items={comparisonData.map((data, index) => ({
+                  key: data.videoId,
+                  label: `${data.videoName} (${data.data.length}条)`,
+                  children: (
+                    <Table
+                      columns={getTableColumns()}
+                      dataSource={data.data}
+                      rowKey="id"
+                      pagination={{
+                        pageSize: 20,
+                        showSizeChanger: true,
+                        showTotal: (total) => `共 ${total} 条`
+                      }}
+                      scroll={{ x: 'max-content' }}
+                      size="small"
+                    />
+                  )
+                }))}
+              />
+            </Card>
           </div>
         ) : (
           <Card>
@@ -421,4 +399,3 @@ export default function ComparisonPage() {
     </Layout>
   );
 }
-
