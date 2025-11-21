@@ -140,8 +140,8 @@ export default function AnalysisPage() {
         return;
       }
       
-      // 保存原始数据（包含科目信息）
-      setRawData(filteredData);
+      // 保存原始数据（包含科目信息），按句子编号排序
+      setRawData(filteredData.sort((a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0)));
       
       // 统计数据
       calculateStatistics(filteredData);

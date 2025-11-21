@@ -92,10 +92,12 @@ export default function ComparisonPage() {
         return {
           videoId: video.id,
           videoName: video.name || '未命名视频',
-          data: annotations.map(item => ({
-            ...item,
-            videoName: video.name || '未命名视频'
-          })),
+          data: annotations
+            .map(item => ({
+              ...item,
+              videoName: video.name || '未命名视频'
+            }))
+            .sort((a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0)), // 按句子编号排序
           majorCategoryStats: Array.from(majorCategoryMap.entries())
             .map(([category, count]) => ({ category, count }))
             .sort((a, b) => b.count - a.count),
