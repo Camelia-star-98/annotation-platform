@@ -90,7 +90,7 @@ export default function AnnotationTaskListPage() {
       // 查询当前标注员在这些视频中的标注情况
       const { data: myAnnotations, error } = await supabase
         .from('annotations')
-        .select('video_id, human_annotated_text')
+        .select('video_id, human_annotated_text, sentence_no')
         .in('video_id', videoIds)
         .eq('annotator', annotatorName);
       
@@ -112,11 +112,24 @@ export default function AnnotationTaskListPage() {
         return;
       }
       
-      // 统计当前标注员已完成的视频（有人工标注文本的视频）
-      const myCompletedVideos = new Set<string>();
+      // 统计每个视频当前标注员的标注情况
+      const myVideoStats = new Map<string, { total: number; annotated: number }>();
       myAnnotations?.forEach(item => {
+        if (!myVideoStats.has(item.video_id)) {
+          myVideoStats.set(item.video_id, { total: 0, annotated: 0 });
+        }
+        const stats = myVideoStats.get(item.video_id)!;
+        stats.total++;
         if (item.human_annotated_text && item.human_annotated_text.trim() !== '') {
-          myCompletedVideos.add(item.video_id);
+          stats.annotated++;
+        }
+      });
+      
+      // 判断当前标注员已完成的视频（所有句子都已标注）
+      const myCompletedVideos = new Set<string>();
+      myVideoStats.forEach((stats, videoId) => {
+        if (stats.total > 0 && stats.annotated === stats.total) {
+          myCompletedVideos.add(videoId);
         }
       });
       
