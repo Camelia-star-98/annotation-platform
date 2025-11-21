@@ -72,6 +72,9 @@ export default function VideoManagePage() {
   const [videoFileList, setVideoFileList] = useState<UploadFile[]>([]);
   const [excelFileList, setExcelFileList] = useState<UploadFile[]>([]);
   const [requiredAnnotators, setRequiredAnnotators] = useState<number>(1); // 待标注数量
+  const [useExistingVideo, setUseExistingVideo] = useState(false); // 是否使用已有视频
+  const [selectedExistingVideoId, setSelectedExistingVideoId] = useState<string>(''); // 选中的已有视频ID
+  const [existingVideos, setExistingVideos] = useState<Array<{id: string, name: string, url: string}>>([]); // 已有视频列表
   
   // 批量上传相关状态
   const [batchUploadTasks, setBatchUploadTasks] = useState<Array<{
@@ -139,6 +142,18 @@ export default function VideoManagePage() {
       
       console.log('📊 转换后的视频数据:', videoData);
       setVideoList(videoData);
+      
+      // 提取已有视频列表（只包含有URL的视频）
+      const existingVideosList = videos
+        .filter(v => v.url && v.url.trim() !== '')
+        .map(v => ({
+          id: v.id,
+          name: v.name || '未命名视频',
+          url: v.url
+        }));
+      setExistingVideos(existingVideosList);
+      console.log('📹 已有视频列表（供选择）:', existingVideosList.length, '个');
+      
       message.success(`加载了 ${videoData.length} 个视频`);
     } catch (error) {
       console.error('❌ 加载视频列表失败:', error);
@@ -150,6 +165,23 @@ export default function VideoManagePage() {
 
   // 处理文件上传（批量上传）
   const handleUpload = async () => {
+    // 检查是否使用已有视频
+    if (useExistingVideo) {
+      // 使用已有视频时不支持批量上传
+      if (!selectedExistingVideoId || excelFileList.length === 0) {
+        message.warning('请选择已有视频和标注表格');
+        return;
+      }
+      if (excelFileList.length > 1) {
+        message.warning('使用已有视频时，每次只能上传一个标注表格');
+        return;
+      }
+      // 使用单文件上传
+      await handleSingleUpload();
+      return;
+    }
+    
+    // 上传新视频
     if (videoFileList.length === 0 || excelFileList.length === 0) {
       message.warning('请选择视频文件和标注表格');
       return;
@@ -302,9 +334,17 @@ export default function VideoManagePage() {
   
   // 单文件上传（保留原逻辑）
   const handleSingleUpload = async () => {
-    if (videoFileList.length === 0 || excelFileList.length === 0) {
-      message.warning('请选择视频文件和标注表格');
-      return;
+    // 检查是否使用已有视频
+    if (useExistingVideo) {
+      if (!selectedExistingVideoId || excelFileList.length === 0) {
+        message.warning('请选择已有视频和标注表格');
+        return;
+      }
+    } else {
+      if (videoFileList.length === 0 || excelFileList.length === 0) {
+        message.warning('请选择视频文件和标注表格');
+        return;
+      }
     }
 
     setLoading(true);
@@ -317,34 +357,25 @@ export default function VideoManagePage() {
     
     try {
       // 获取原始文件对象
-      const videoUploadFile = videoFileList[0];
       const excelUploadFile = excelFileList[0];
       
       console.log('📦 Upload File对象:', { 
-        video: videoUploadFile, 
         excel: excelUploadFile 
       });
 
       // 尝试多种方式获取真实的File对象
-      const videoFile = videoUploadFile.originFileObj || videoUploadFile as any;
       const excelFile = excelUploadFile.originFileObj || excelUploadFile as any;
 
       console.log('📤 开始上传...', { 
-        videoFileName: videoFile?.name, 
         excelFileName: excelFile?.name,
-        videoFileType: typeof videoFile,
         excelFileType: typeof excelFile,
-        videoIsBlob: videoFile instanceof Blob,
         excelIsBlob: excelFile instanceof Blob,
-        videoIsFile: videoFile instanceof File,
         excelIsFile: excelFile instanceof File,
-        videoFile: videoFile,
-        excelFile: excelFile,
-        videoFileListItem: videoUploadFile,
-        excelFileListItem: excelUploadFile
+        useExistingVideo: useExistingVideo,
+        selectedExistingVideoId: selectedExistingVideoId
       });
 
-      if (!videoFile || !excelFile) {
+      if (!excelFile) {
         message.error('文件读取失败，请重新选择');
         setLoading(false);
         setIsUploading(false);
@@ -365,8 +396,8 @@ export default function VideoManagePage() {
         throw new Error('上传已取消');
       }
 
-      // 1. 解析Excel获取标注数据 (5%)
-      setUploadProgress(5);
+      // 1. 解析Excel获取标注数据
+      setUploadProgress(10);
       console.log('🔄 开始解析Excel...');
       const excelData = await parseExcel(excelFile);
       console.log('✅ Excel解析成功，数据条数:', excelData.length);
@@ -376,134 +407,168 @@ export default function VideoManagePage() {
         throw new Error('上传已取消');
       }
       
-      // 2. 检查视频大小，决定是否压缩 (5% -> 15%)
-      setUploadProgress(10);
-      let finalVideoFile = videoFile;
-      const originalFileSizeMB = videoFile.size / 1024 / 1024;
-      console.log('📦 原始视频文件大小:', originalFileSizeMB.toFixed(2), 'MB');
-      
-      // 禁用压缩，直接使用预签名直传（更快更可靠）
-      // 预签名直传速度已经很快，不需要压缩
-      if (originalFileSizeMB > 1000) {
-        message.warning(`视频较大 (${originalFileSizeMB.toFixed(1)}MB)，建议使用视频编辑软件先压缩后再上传`);
-      }
-      
-      setUploadProgress(15);
-      
-      // 检查是否已取消
-      if (abortController.signal.aborted) {
-        throw new Error('上传已取消');
-      }
-      
-      // 3. 上传视频文件到 Supabase Storage (15% -> 95%) - 使用预签名直传
       setUploadProgress(20);
-      const { addVideo, saveAnnotations } = await import('../api/database');
-      const { presignedUploadVideo } = await import('../utils/presignedUpload');
       
-      const fileSizeMB = finalVideoFile.size / 1024 / 1024;
-      console.log('📦 最终视频文件大小:', fileSizeMB.toFixed(2), 'MB');
+      let videoUrl: string;
+      let videoName: string;
+      let videoId: string;
       
-      let videoUrl: string | null = null;
-      
-      // 检查文件大小
-      if (fileSizeMB > 1024) {
-        message.error({
-          content: `文件过大 (${fileSizeMB.toFixed(1)}MB)，超过1GB限制，无法上传。`,
-          duration: 5
-        });
-        setUploadProgress(0);
-        setIsUploading(false);
-        setUploadAbortController(null);
-        setUploadSpeed('');
-        setUploadedSize('');
-        setRemainingTime('');
-        return;
-      }
-
-      try {
-        // 显示上传提示
-        message.info(`正在预签名直传 (${fileSizeMB.toFixed(1)}MB)...`);
+      // 如果使用已有视频
+      if (useExistingVideo && selectedExistingVideoId) {
+        console.log('📹 使用已有视频:', selectedExistingVideoId);
         
-        const uploadStartTime = Date.now();
-        
-        // 使用预签名直传（带实时进度）
-        const uploadedUrl = await presignedUploadVideo(
-          finalVideoFile,
-          (percentage) => {
-            // 真实上传进度回调
-            const currentTime = Date.now();
-            const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
-            
-            // 映射进度到 20-95%
-            const mappedProgress = 20 + (percentage * 0.75);
-            setUploadProgress(mappedProgress);
-            
-            // 计算速度信息
-            if (elapsedSeconds > 0 && percentage > 5) {
-              const uploadedBytes = (percentage / 100) * finalVideoFile.size;
-              const uploadedMB = uploadedBytes / 1024 / 1024;
-              const speed = uploadedBytes / 1024 / 1024 / elapsedSeconds;
-              const remainingBytes = finalVideoFile.size - uploadedBytes;
-              const remainingSeconds = speed > 0 ? remainingBytes / (speed * 1024 * 1024) : 0;
-              
-              setUploadedSize(`${uploadedMB.toFixed(1)}/${fileSizeMB.toFixed(1)} MB`);
-              setUploadSpeed(`${speed.toFixed(2)} MB/s`);
-              
-              if (remainingSeconds < 60) {
-                setRemainingTime(`约 ${Math.ceil(remainingSeconds)} 秒`);
-              } else {
-                setRemainingTime(`约 ${Math.ceil(remainingSeconds / 60)} 分钟`);
-              }
-            }
-          }
-        );
-        
-        if (!uploadedUrl) {
-          throw new Error('上传返回空URL');
+        // 从 existingVideos 中获取视频信息
+        const existingVideo = existingVideos.find(v => v.id === selectedExistingVideoId);
+        if (!existingVideo) {
+          throw new Error('未找到选中的视频');
         }
         
-        videoUrl = uploadedUrl;
-        setUploadProgress(95);
-        console.log('✅ 视频上传成功，URL:', videoUrl);
-        message.success('视频上传成功！');
-      } catch (error: any) {
-        console.error('❌ 视频上传失败:', error);
+        videoUrl = existingVideo.url;
+        videoName = existingVideo.name;
+        videoId = `upload_${Date.now()}`; // 创建新的数据集ID
         
-        // 如果是CORS错误，给出详细提示
-        if (error.message.includes('CORS') || error.message.includes('fetch')) {
+        setUploadProgress(50);
+        message.info('使用已有视频，跳过视频上传...');
+        
+      } else {
+        // 上传新视频（原逻辑）
+        const videoUploadFile = videoFileList[0];
+        const videoFile = videoUploadFile.originFileObj || videoUploadFile as any;
+        
+        if (!videoFile) {
+          message.error('视频文件读取失败，请重新选择');
+          setLoading(false);
+          setIsUploading(false);
+          return;
+        }
+        
+        // 2. 检查视频大小，决定是否压缩
+        setUploadProgress(10);
+        let finalVideoFile = videoFile;
+        const originalFileSizeMB = videoFile.size / 1024 / 1024;
+        console.log('📦 原始视频文件大小:', originalFileSizeMB.toFixed(2), 'MB');
+        
+        // 禁用压缩，直接使用预签名直传（更快更可靠）
+        if (originalFileSizeMB > 1000) {
+          message.warning(`视频较大 (${originalFileSizeMB.toFixed(1)}MB)，建议使用视频编辑软件先压缩后再上传`);
+        }
+        
+        setUploadProgress(15);
+        
+        // 检查是否已取消
+        if (abortController.signal.aborted) {
+          throw new Error('上传已取消');
+        }
+        
+        // 3. 上传视频文件到 Supabase Storage
+        setUploadProgress(20);
+        const { presignedUploadVideo } = await import('../utils/presignedUpload');
+        
+        const fileSizeMB = finalVideoFile.size / 1024 / 1024;
+        console.log('📦 最终视频文件大小:', fileSizeMB.toFixed(2), 'MB');
+        
+        // 检查文件大小
+        if (fileSizeMB > 1024) {
           message.error({
-            content: (
-              <div>
-                <div>上传失败：CORS配置问题</div>
-                <div style={{ marginTop: 8, fontSize: 12 }}>
-                  请在 Supabase Dashboard → Storage → Configuration 中添加您的域名
-                </div>
-              </div>
-            ),
-            duration: 8
-          });
-        } else {
-          message.error({
-            content: `视频上传失败：${error.message || '请检查网络连接'}`,
+            content: `文件过大 (${fileSizeMB.toFixed(1)}MB)，超过1GB限制，无法上传。`,
             duration: 5
           });
+          setUploadProgress(0);
+          setIsUploading(false);
+          setUploadAbortController(null);
+          setUploadSpeed('');
+          setUploadedSize('');
+          setRemainingTime('');
+          return;
+        }
+
+        try {
+          // 显示上传提示
+          message.info(`正在预签名直传 (${fileSizeMB.toFixed(1)}MB)...`);
+          
+          const uploadStartTime = Date.now();
+          
+          // 使用预签名直传（带实时进度）
+          const uploadedUrl = await presignedUploadVideo(
+            finalVideoFile,
+            (percentage) => {
+              // 真实上传进度回调
+              const currentTime = Date.now();
+              const elapsedSeconds = (currentTime - uploadStartTime) / 1000;
+              
+              // 映射进度到 20-70%
+              const mappedProgress = 20 + (percentage * 0.50);
+              setUploadProgress(mappedProgress);
+              
+              // 计算速度信息
+              if (elapsedSeconds > 0 && percentage > 5) {
+                const uploadedBytes = (percentage / 100) * finalVideoFile.size;
+                const uploadedMB = uploadedBytes / 1024 / 1024;
+                const speed = uploadedBytes / 1024 / 1024 / elapsedSeconds;
+                const remainingBytes = finalVideoFile.size - uploadedBytes;
+                const remainingSeconds = speed > 0 ? remainingBytes / (speed * 1024 * 1024) : 0;
+                
+                setUploadedSize(`${uploadedMB.toFixed(1)}/${fileSizeMB.toFixed(1)} MB`);
+                setUploadSpeed(`${speed.toFixed(2)} MB/s`);
+                
+                if (remainingSeconds < 60) {
+                  setRemainingTime(`约 ${Math.ceil(remainingSeconds)} 秒`);
+                } else {
+                  setRemainingTime(`约 ${Math.ceil(remainingSeconds / 60)} 分钟`);
+                }
+              }
+            }
+          );
+          
+          if (!uploadedUrl) {
+            throw new Error('上传返回空URL');
+          }
+          
+          videoUrl = uploadedUrl;
+          setUploadProgress(70);
+          console.log('✅ 视频上传成功，URL:', videoUrl);
+          message.success('视频上传成功！');
+        } catch (error: any) {
+          console.error('❌ 视频上传失败:', error);
+          
+          // 如果是CORS错误，给出详细提示
+          if (error.message.includes('CORS') || error.message.includes('fetch')) {
+            message.error({
+              content: (
+                <div>
+                  <div>上传失败：CORS配置问题</div>
+                  <div style={{ marginTop: 8, fontSize: 12 }}>
+                    请在 Supabase Dashboard → Storage → Configuration 中添加您的域名
+                  </div>
+                </div>
+              ),
+              duration: 8
+            });
+          } else {
+            message.error({
+              content: `视频上传失败：${error.message || '请检查网络连接'}`,
+              duration: 5
+            });
+          }
+          
+          setUploadProgress(0);
+          setIsUploading(false);
+          setUploadAbortController(null);
+          setUploadSpeed('');
+          setUploadedSize('');
+          setRemainingTime('');
+          return;
         }
         
-        setUploadProgress(0);
-        setIsUploading(false);
-        setUploadAbortController(null);
-        setUploadSpeed('');
-        setUploadedSize('');
-        setRemainingTime('');
-        return;
+        videoName = videoFile.name || videoUploadFile.name || '未命名视频';
+        videoId = `upload_${Date.now()}`;
       }
       
       console.log('✅ 准备保存视频记录，URL:', videoUrl);
 
-      // 3. 创建视频记录 (80%)
+      // 4. 创建视频记录
       setUploadProgress(80);
-      const videoId = `upload_${Date.now()}`;
-      const videoName = videoFile.name || videoUploadFile.name || '未命名视频';
+      const { addVideo, saveAnnotations } = await import('../api/database');
       console.log('💾 准备保存视频记录:', { videoId, videoName, videoUrl });
       
       // 确保 videoUrl 不为空
@@ -524,7 +589,7 @@ export default function VideoManagePage() {
       console.log('✅ 视频记录创建成功，URL:', videoUrl);
       console.log('✅ 待标注数量:', requiredAnnotators);
 
-      // 4. 保存标注数据（添加 videoName） (90%)
+      // 5. 保存标注数据（添加 videoName）
       setUploadProgress(90);
       const annotationsWithVideoName = excelData.map(item => ({
         ...item,
@@ -541,7 +606,7 @@ export default function VideoManagePage() {
       
       console.log('✅ 标注数据保存成功');
 
-      // 5. 完成 (100%)
+      // 6. 完成 (100%)
       setUploadProgress(100);
       message.success('上传成功！');
       
@@ -551,6 +616,8 @@ export default function VideoManagePage() {
         setVideoFileList([]);
         setExcelFileList([]);
         setRequiredAnnotators(1); // 重置待标注数量
+        setUseExistingVideo(false); // 重置使用已有视频
+        setSelectedExistingVideoId(''); // 重置选中的视频ID
         setUploadProgress(0);
         setIsUploading(false);
         setUploadAbortController(null);
@@ -1446,32 +1513,82 @@ export default function VideoManagePage() {
           )}
           
           <div>
-            <div style={{ marginBottom: 8 }}>视频文件：</div>
-            <Upload
-              fileList={videoFileList}
-              beforeUpload={(file) => {
-                console.log('📹 选择视频文件:', file);
-                setVideoFileList(prev => [...prev, {
-                  uid: file.uid || `${Date.now()}_${Math.random()}`,
-                  name: file.name,
-                  status: 'done',
-                  originFileObj: file
-                } as any]);
-                return false;
-              }}
-              onRemove={(file) => {
-                setVideoFileList(prev => prev.filter(f => f.uid !== file.uid));
-              }}
-              accept="video/*"
-              multiple
-            >
-              <Button icon={<UploadOutlined />}>选择视频文件（可多选）</Button>
-            </Upload>
-            <div style={{ marginTop: 4, fontSize: '12px', color: '#999' }}>
-              可以一次选择多个视频，系统将自动批量上传（每次3个并发）
+            <div style={{ marginBottom: 8 }}>
+              <span style={{ color: 'red' }}>* </span>
+              视频来源：
             </div>
+            <Select
+              value={useExistingVideo ? 'existing' : 'new'}
+              onChange={(value) => {
+                setUseExistingVideo(value === 'existing');
+                if (value === 'new') {
+                  setSelectedExistingVideoId('');
+                }
+              }}
+              style={{ width: '100%' }}
+              disabled={isUploading || isCompressing}
+            >
+              <Select.Option value="new">上传新视频</Select.Option>
+              <Select.Option value="existing">使用已有视频（避免重复上传）</Select.Option>
+            </Select>
           </div>
-
+          
+          {useExistingVideo ? (
+            // 选择已有视频
+            <div>
+              <div style={{ marginBottom: 8 }}>
+                <span style={{ color: 'red' }}>* </span>
+                选择已有视频：
+              </div>
+              <Select
+                value={selectedExistingVideoId}
+                onChange={setSelectedExistingVideoId}
+                style={{ width: '100%' }}
+                placeholder="请选择已有视频"
+                showSearch
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                options={existingVideos.map(v => ({
+                  value: v.id,
+                  label: v.name
+                }))}
+                disabled={isUploading}
+              />
+              <div style={{ marginTop: 4, fontSize: '12px', color: '#999' }}>
+                从数据库中选择已上传的视频，避免重复上传相同视频文件
+              </div>
+            </div>
+          ) : (
+            // 上传新视频
+            <div>
+              <div style={{ marginBottom: 8 }}>视频文件：</div>
+              <Upload
+                fileList={videoFileList}
+                beforeUpload={(file) => {
+                  console.log('📹 选择视频文件:', file);
+                  setVideoFileList(prev => [...prev, {
+                    uid: file.uid || `${Date.now()}_${Math.random()}`,
+                    name: file.name,
+                    status: 'done',
+                    originFileObj: file
+                  } as any]);
+                  return false;
+                }}
+                onRemove={(file) => {
+                  setVideoFileList(prev => prev.filter(f => f.uid !== file.uid));
+                }}
+                accept="video/*"
+                multiple
+              >
+                <Button icon={<UploadOutlined />}>选择视频文件（可多选）</Button>
+              </Upload>
+              <div style={{ marginTop: 4, fontSize: '12px', color: '#999' }}>
+                可以一次选择多个视频，系统将自动批量上传（每次3个并发）
+              </div>
+            </div>
+          )}
+          
           <div>
             <div style={{ marginBottom: 8 }}>标注表格：</div>
             <Upload

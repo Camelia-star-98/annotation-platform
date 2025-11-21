@@ -636,7 +636,7 @@ export default function AnnotationPage() {
           >
             <Table
               columns={columns}
-              dataSource={annotations}
+              dataSource={[...annotations].sort((a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0))}
               rowKey="id"
               size="small"
               scroll={{ x: 1000 }}
