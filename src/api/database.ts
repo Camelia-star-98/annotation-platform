@@ -566,26 +566,38 @@ export async function getBatchCompletedAnnotatorsCount(
   if (videoIds.length === 0) return {};
   
   try {
+    // 直接查询annotations表，统计有人工标注文本的标注人数
     const { data, error } = await supabase
-      .from('annotation_completions')
-      .select('video_id, annotator_name')
-      .in('video_id', videoIds);
+      .from('annotations')
+      .select('video_id, annotator')
+      .in('video_id', videoIds)
+      .not('annotator', 'is', null)
+      .neq('annotator', '')
+      .neq('annotator', 'unknown')
+      .not('human_annotated_text', 'is', null)
+      .neq('human_annotated_text', '');
 
     if (error) {
       console.error('批量获取完成人数失败:', error);
       return {};
     }
 
-    // 统计每个视频的完成人数
-    const countMap: Record<string, number> = {};
-    videoIds.forEach(id => {
-      countMap[id] = 0;
+    // 统计每个视频的已标注人数（去重）
+    const videoAnnotatorMap = new Map<string, Set<string>>();
+    
+    data?.forEach(item => {
+      if (item.video_id && item.annotator) {
+        if (!videoAnnotatorMap.has(item.video_id)) {
+          videoAnnotatorMap.set(item.video_id, new Set());
+        }
+        videoAnnotatorMap.get(item.video_id)!.add(item.annotator);
+      }
     });
 
-    data?.forEach(item => {
-      if (item.video_id) {
-        countMap[item.video_id] = (countMap[item.video_id] || 0) + 1;
-      }
+    // 转换为计数对象
+    const countMap: Record<string, number> = {};
+    videoIds.forEach(id => {
+      countMap[id] = videoAnnotatorMap.has(id) ? videoAnnotatorMap.get(id)!.size : 0;
     });
 
     return countMap;
