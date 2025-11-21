@@ -20,7 +20,7 @@ import {
   CloseOutlined
 } from '@ant-design/icons';
 import type { AnnotationItem } from '../types';
-import { getVideos, getBatchCompletedAnnotatorsCount, getAllAnnotations } from '../api/database';
+import { getVideos, getBatchCompletedAnnotatorsCount } from '../api/database';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -98,66 +98,47 @@ export default function AnnotationTaskListPage() {
 
   const loadRejectedItems = async () => {
     try {
-      const [allAnnotations, allVideos] = await Promise.all([
-        getAllAnnotations(),
-        getVideos()
-      ]);
+      const { supabase } = await import('../api/supabase');
+      const allVideos = await getVideos();
       
       console.log('🔍 调试信息 - 当前标注人:', annotatorName);
-      console.log('📊 所有标注数据数量:', allAnnotations.length);
+      
+      // 性能优化：直接在数据库查询当前标注人的被打回数据
+      const { data: allAnnotations, error } = await supabase
+        .from('annotations')
+        .select('id, video_id, original_text, annotated_text, major_category, minor_category, inspector, annotator, updated_at, created_at')
+        .eq('annotator', annotatorName)
+        .eq('is_qualified', false)
+        .not('inspector', 'is', null);
+      
+      if (error) {
+        console.error('查询被打回数据失败:', error);
+        message.error('加载失败');
+        return;
+      }
+      
+      console.log('📊 被打回数据数量:', allAnnotations?.length || 0);
       
       // 创建视频ID到视频信息的映射
       const videoMap = new Map(allVideos.map(v => [v.id, v]));
       
-      // 调试：查看所有质检不通过的数据
-      const failedInspections = allAnnotations.filter(item => item.isQualified === false);
-      console.log('❌ 质检不通过的数据数量:', failedInspections.length);
-      console.log('❌ 质检不通过的数据详情:', failedInspections.map(item => ({
-        id: item.id,
-        annotator: item.annotator,
-        inspector: item.inspector,
-        isQualified: item.isQualified,
-        originalText: item.originalText?.substring(0, 20)
-      })));
-      
-      // 筛选出：
-      // 1. 当前标注人的数据
-      // 2. 质检状态为不通过 (isQualified === false)
-      // 3. 已经有质检人的数据
-      const rejected = allAnnotations
-        .filter(item => {
-          const match = item.annotator === annotatorName &&
-                       item.isQualified === false &&
-                       item.inspector;
-          
-          if (item.isQualified === false) {
-            console.log(`🔍 质检不通过的数据 ${item.id}:`, {
-              annotator: item.annotator,
-              匹配标注人: item.annotator === annotatorName,
-              isQualified: item.isQualified,
-              inspector: item.inspector,
-              是否匹配: match
-            });
-          }
-          
-          return match;
-        })
-        .map(item => {
-          const video = videoMap.get(item.videoId);
-          return {
-            id: item.id,
-            videoId: item.videoId,
-            videoName: video?.name || '未知视频',
-            subject: video?.subject || '未知',
-            originalText: item.originalText || '',
-            annotatedText: item.annotatedText || '',
-            majorCategory: item.majorCategory || '',
-            minorCategory: item.minorCategory || '',
-            inspector: item.inspector || '未知',
-            annotator: item.annotator || '',
-            rejectedTime: item.updated_at || item.created_at || ''
-          };
-        });
+      // 转换数据格式
+      const rejected = (allAnnotations || []).map(item => {
+        const video = videoMap.get(item.video_id);
+        return {
+          id: item.id,
+          videoId: item.video_id,
+          videoName: video?.name || '未知视频',
+          subject: video?.subject || '未知',
+          originalText: item.original_text || '',
+          annotatedText: item.annotated_text || '',
+          majorCategory: item.major_category || '',
+          minorCategory: item.minor_category || '',
+          inspector: item.inspector || '未知',
+          annotator: item.annotator || '',
+          rejectedTime: item.updated_at || item.created_at || ''
+        };
+      });
       
       setRejectedItems(rejected);
       console.log(`✅ 加载了 ${rejected.length} 条被打回的数据`);

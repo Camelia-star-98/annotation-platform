@@ -57,24 +57,46 @@ export default function ReviewSelectPage() {
   const loadVideoAndAnnotators = async () => {
     setLoading(true);
     try {
-      const { getVideos, getAllAnnotations } = await import('../api/database');
+      const { getVideos } = await import('../api/database');
+      const { supabase } = await import('../api/supabase');
       
-      // 获取所有视频和标注数据
-      const [videos, allAnnotations] = await Promise.all([
-        getVideos(),
-        getAllAnnotations()
-      ]);
-
+      // 1. 获取所有视频
+      const videos = await getVideos();
       console.log('📊 数据加载统计:');
       console.log('  - 视频总数:', videos.length);
-      console.log('  - 标注数据总数:', allAnnotations.length);
+      
+      // 2. 性能优化：直接在数据库查询需要的数据，不加载所有标注数据
+      const { data: allAnnotations, error } = await supabase
+        .from('annotations')
+        .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector')
+        .not('annotator', 'is', null)
+        .neq('annotator', '');
+      
+      if (error) {
+        console.error('查询标注数据失败:', error);
+        message.error('加载失败');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('  - 标注数据总数:', allAnnotations?.length || 0);
+      
+      // 转换数据格式
+      const formattedAnnotations = (allAnnotations || []).map(item => ({
+        videoId: item.video_id,
+        annotator: item.annotator,
+        humanAnnotatedText: item.human_annotated_text,
+        reviewStatus: item.review_status,
+        reviewer: item.reviewer,
+        inspector: item.inspector
+      }));
       
       // 统计标注人分布
       const annotatorStats = new Map<string, number>();
       let skippedCount = 0;
       let unknownCount = 0;
       let withHumanTextCount = 0;
-      allAnnotations.forEach(ann => {
+      formattedAnnotations.forEach(ann => {
         if (!ann.annotator || ann.annotator.trim() === '') {
           skippedCount++;
         } else if (ann.annotator === 'unknown') {
@@ -95,7 +117,7 @@ export default function ReviewSelectPage() {
       // 按视频和标注人分组统计
       const videoMap = new Map<string, VideoWithAnnotators>();
 
-      allAnnotations.forEach(annotation => {
+      formattedAnnotations.forEach(annotation => {
         const videoId = annotation.videoId;
         // 处理标注人：如果为空、null，跳过这条数据（不统计）
         // 如果为'unknown'但有人工标注文本，则允许显示（标记为"未知标注员"）
