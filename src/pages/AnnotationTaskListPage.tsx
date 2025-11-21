@@ -67,6 +67,7 @@ export default function AnnotationTaskListPage() {
   const loadTasks = async () => {
     setLoading(true);
     try {
+      const { supabase } = await import('../api/supabase');
       const videos = await getVideos();
       
       // 只显示已发布的视频
@@ -76,15 +77,39 @@ export default function AnnotationTaskListPage() {
       const videoIds = publishedVideos.map(v => v.id);
       const completedCountMap = await getBatchCompletedAnnotatorsCount(videoIds);
       
-      const publishedTasks = publishedVideos.map(video => ({
-        id: video.id,
-        videoName: video.name || '未命名视频',
-        subject: video.subject || '未知',
-        duration: video.duration || 0,
-        requiredAnnotators: video.required_annotators || 1,
-        completedAnnotators: completedCountMap[video.id] || 0, // 使用实际完成人数
-        uploadTime: video.created_at || ''
-      }));
+      // 查询当前标注员在这些视频中的标注情况
+      const { data: myAnnotations, error } = await supabase
+        .from('annotations')
+        .select('video_id, human_annotated_text')
+        .in('video_id', videoIds)
+        .eq('annotator', annotatorName);
+      
+      if (error) {
+        console.error('查询当前标注员的标注情况失败:', error);
+      }
+      
+      // 统计当前标注员已完成的视频（有人工标注文本的视频）
+      const myCompletedVideos = new Set<string>();
+      myAnnotations?.forEach(item => {
+        if (item.human_annotated_text && item.human_annotated_text.trim() !== '') {
+          myCompletedVideos.add(item.video_id);
+        }
+      });
+      
+      console.log(`📊 当前标注员 ${annotatorName} 已完成的视频数量:`, myCompletedVideos.size);
+      
+      // 只显示当前标注员还未完成的视频
+      const publishedTasks = publishedVideos
+        .filter(video => !myCompletedVideos.has(video.id)) // 过滤掉已完成的
+        .map(video => ({
+          id: video.id,
+          videoName: video.name || '未命名视频',
+          subject: video.subject || '未知',
+          duration: video.duration || 0,
+          requiredAnnotators: video.required_annotators || 1,
+          completedAnnotators: completedCountMap[video.id] || 0, // 使用实际完成人数
+          uploadTime: video.created_at || ''
+        }));
       
       setTasks(publishedTasks);
       message.success(`加载了 ${publishedTasks.length} 个待标注任务`);
