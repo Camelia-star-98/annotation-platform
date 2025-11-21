@@ -65,24 +65,41 @@ export default function ReviewSelectPage() {
       console.log('📊 数据加载统计:');
       console.log('  - 视频总数:', videos.length);
       
-      // 2. 性能优化：直接在数据库查询需要的数据，不加载所有标注数据
-      const { data: allAnnotations, error } = await supabase
-        .from('annotations')
-        .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector')
-        .not('annotator', 'is', null)
-        .neq('annotator', '');
+      // 2. 性能优化：分页查询所有数据（避免Supabase默认分页限制）
+      let allAnnotations: any[] = [];
+      let offset = 0;
+      const limit = 1000;
+      let hasMore = true;
       
-      if (error) {
-        console.error('查询标注数据失败:', error);
-        message.error('加载失败');
-        setLoading(false);
-        return;
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('annotations')
+          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector')
+          .not('annotator', 'is', null)
+          .neq('annotator', '')
+          .range(offset, offset + limit - 1);
+        
+        if (error) {
+          console.error('查询标注数据失败:', error);
+          message.error('加载失败');
+          setLoading(false);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          allAnnotations = allAnnotations.concat(data);
+          offset += data.length;
+          hasMore = data.length === limit;
+          console.log(`  - 已加载 ${allAnnotations.length} 条数据...`);
+        } else {
+          hasMore = false;
+        }
       }
       
-      console.log('  - 标注数据总数:', allAnnotations?.length || 0);
+      console.log('  - 标注数据总数:', allAnnotations.length);
       
       // 转换数据格式
-      const formattedAnnotations = (allAnnotations || []).map(item => ({
+      const formattedAnnotations = allAnnotations.map(item => ({
         videoId: item.video_id,
         annotator: item.annotator,
         humanAnnotatedText: item.human_annotated_text,
