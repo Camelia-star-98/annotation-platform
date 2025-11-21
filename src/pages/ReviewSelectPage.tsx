@@ -35,6 +35,7 @@ interface AnnotatorData {
   unannotatedCount: number; // 未标注数量
   reviewers: string[]; // 复检人列表
   inspectors: string[]; // 质检人列表
+  lastReviewTime?: string; // 最后复检时间
 }
 
 interface VideoWithAnnotators {
@@ -74,7 +75,7 @@ export default function ReviewSelectPage() {
       while (hasMore) {
         const { data, error } = await supabase
           .from('annotations')
-          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector')
+          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at')
           .not('annotator', 'is', null)
           .neq('annotator', '')
           .range(offset, offset + limit - 1);
@@ -105,7 +106,8 @@ export default function ReviewSelectPage() {
         humanAnnotatedText: item.human_annotated_text,
         reviewStatus: item.review_status,
         reviewer: item.reviewer,
-        inspector: item.inspector
+        inspector: item.inspector,
+        updatedAt: item.updated_at
       }));
       
       // 统计标注人分布
@@ -178,7 +180,8 @@ export default function ReviewSelectPage() {
             pendingCount: 0,
             unannotatedCount: 0,
             reviewers: [],
-            inspectors: []
+            inspectors: [],
+            lastReviewTime: undefined
           };
           videoData.annotators.push(annotatorData);
         }
@@ -192,6 +195,12 @@ export default function ReviewSelectPage() {
             // 添加复检人到列表（去重）
             if (reviewer && !annotatorData.reviewers.includes(reviewer)) {
               annotatorData.reviewers.push(reviewer);
+            }
+            // 记录最后复检时间
+            if (annotation.updatedAt) {
+              if (!annotatorData.lastReviewTime || annotation.updatedAt > annotatorData.lastReviewTime) {
+                annotatorData.lastReviewTime = annotation.updatedAt;
+              }
             }
           } else {
             annotatorData.pendingCount++;
@@ -262,6 +271,22 @@ export default function ReviewSelectPage() {
       
       console.log('⏳ 待复检列表:', pending);
       console.log('✅ 已复检列表:', completed);
+      
+      // 按复检时间排序已复检列表（最新的在前）
+      completed.sort((a, b) => {
+        // 获取视频中最新的复检时间
+        const getLatestReviewTime = (video: VideoWithAnnotators) => {
+          const times = video.annotators
+            .map(ann => ann.lastReviewTime)
+            .filter(t => t)
+            .sort((t1, t2) => t2!.localeCompare(t1!));
+          return times[0] || '';
+        };
+        
+        const timeA = getLatestReviewTime(a);
+        const timeB = getLatestReviewTime(b);
+        return timeB.localeCompare(timeA); // 降序：最新的在前
+      });
       
       setPendingList(pending);
       setCompletedList(completed);
@@ -461,6 +486,20 @@ export default function ReviewSelectPage() {
                         <Text type="secondary">-</Text>
                       )}
                     </Space>
+                  )
+                },
+                {
+                  title: '最后复检时间',
+                  dataIndex: 'lastReviewTime',
+                  key: 'lastReviewTime',
+                  width: 180,
+                  align: 'center' as const,
+                  render: (time: string | undefined) => (
+                    time ? (
+                      <Text>{new Date(time).toLocaleString('zh-CN')}</Text>
+                    ) : (
+                      <Text type="secondary">-</Text>
+                    )
                   )
                 },
                 {
