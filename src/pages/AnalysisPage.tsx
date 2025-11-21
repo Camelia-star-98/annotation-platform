@@ -156,6 +156,8 @@ export default function AnalysisPage() {
   };
 
   const calculateStatistics = (data: AnnotationItem[]) => {
+    console.log('📊 开始统计，数据总量:', data.length);
+    
     // 1. 统计全学科问题大类
     const majorMap = new Map<string, number>();
     data.forEach(item => {
@@ -172,11 +174,22 @@ export default function AnalysisPage() {
     
     setMajorCategoryStats(majorStats);
     
+    console.log('📊 大类统计结果:', majorStats);
+    
     // 2. 统计全学科问题小类（包含所属大类）
     const minorMap = new Map<string, { majorCategory: string; count: number }>();
     data.forEach(item => {
       const majors = item.majorCategory.split(',').map(m => m.trim()).filter(m => m);
       const minors = item.minorCategory.split(',').map(m => m.trim()).filter(m => m);
+      
+      // 调试：打印大类和小类数量不匹配的情况
+      if (majors.length > 0 && minors.length === 0) {
+        console.log('⚠️ 发现只有大类没有小类的数据:', {
+          majorCategory: item.majorCategory,
+          minorCategory: item.minorCategory,
+          videoName: item.videoName
+        });
+      }
       
       // 假设大类和小类按顺序对应
       minors.forEach((minor, index) => {
@@ -201,6 +214,16 @@ export default function AnalysisPage() {
     
     setMinorCategoryStats(minorStats);
     
+    console.log('📊 小类统计结果:', minorStats);
+    
+    setMinorCategoryStats(minorStats);
+    
+    console.log('📊 小类统计结果:', minorStats);
+    
+    // 检查"大模型误删除"的小类数据
+    const llmDeleteStats = minorStats.filter(s => s.majorCategory === '大模型误删除');
+    console.log('📊 大模型误删除的小类数据:', llmDeleteStats);
+    
     // 3. 统计每个科目的问题明细
     const subjects = Array.from(new Set(data.map(item => item.subject).filter(s => s && s !== '未知')));
     setAvailableSubjects(subjects);
@@ -218,6 +241,11 @@ export default function AnalysisPage() {
         }
         categoryStructure.get(major)!.add(minor);
       });
+    });
+    
+    console.log('📊 问题类别结构:');
+    categoryStructure.forEach((minors, major) => {
+      console.log(`  - ${major}: [${Array.from(minors).join(', ')}]`);
     });
     
     // 统计每个科目的每个小类问题数量
@@ -259,6 +287,9 @@ export default function AnalysisPage() {
     });
     
     const detailStats = Array.from(detailStatsMap.values());
+    
+    console.log('📊 单科明细统计结果:', detailStats);
+    console.log('📊 大模型误删除的明细:', detailStats.filter(s => s.majorCategory === '大模型误删除'));
     
     // 添加"无问题"行统计
     const noProblemRow: SubjectDetailStats = {
