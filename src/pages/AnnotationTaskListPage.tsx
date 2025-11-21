@@ -135,9 +135,32 @@ export default function AnnotationTaskListPage() {
       
       console.log(`📊 当前标注员 ${annotatorName} 已完成的视频数量:`, myCompletedVideos.size);
       
-      // 只显示当前标注员还未完成的视频
+      // 打印调试信息
+      console.log('📊 标注完成情况详情:');
+      myVideoStats.forEach((stats, videoId) => {
+        const video = publishedVideos.find(v => v.id === videoId);
+        const videoName = video?.name || videoId;
+        const isCompleted = myCompletedVideos.has(videoId);
+        console.log(`  - ${videoName}: ${stats.annotated}/${stats.total} ${isCompleted ? '✅已完成' : '⏳未完成'}`);
+      });
+      
+      // 只显示当前标注员还未完成且视频未达到标注人数要求的视频
       const publishedTasks = publishedVideos
-        .filter(video => !myCompletedVideos.has(video.id)) // 过滤掉已完成的
+        .filter(video => {
+          const completedCount = completedCountMap[video.id] || 0;
+          const requiredCount = video.required_annotators || 1;
+          const isMyCompleted = myCompletedVideos.has(video.id);
+          const isVideoFull = completedCount >= requiredCount;
+          
+          // 过滤条件：当前标注员已完成 OR 视频已达到要求人数
+          const shouldFilter = isMyCompleted || isVideoFull;
+          
+          if (shouldFilter) {
+            console.log(`🚫 过滤视频: ${video.name} (我已完成:${isMyCompleted}, 视频已满:${isVideoFull}, ${completedCount}/${requiredCount})`);
+          }
+          
+          return !shouldFilter;
+        })
         .map(video => ({
           id: video.id,
           videoName: video.name || '未命名视频',
