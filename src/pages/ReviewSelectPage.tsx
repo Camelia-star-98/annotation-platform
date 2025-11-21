@@ -138,26 +138,17 @@ export default function ReviewSelectPage() {
 
       formattedAnnotations.forEach(annotation => {
         const videoId = annotation.videoId;
-        // 处理标注人：如果为空、null，跳过这条数据（不统计）
-        // 如果为'unknown'但有人工标注文本，则允许显示（标记为"未知标注员"）
+        // 处理标注人：如果为空、null、'unknown'，跳过这条数据（不统计）
         let annotator = annotation.annotator;
-        if (!annotator || annotator.trim() === '') {
-          return; // 跳过没有标注人的数据
+        if (!annotator || annotator.trim() === '' || annotator === 'unknown') {
+          return; // 跳过没有标注人或标注人为unknown的数据
         }
-        // 将'unknown'转换为"未知标注员"以便显示
-        if (annotator === 'unknown') {
-          annotator = '未知标注员';
-        }
+        
         const reviewer = annotation.reviewer; // 获取复检人
         const inspector = annotation.inspector; // 获取质检人
         // 判断是否已标注：有人工标注文本即为已标注（不依赖status字段）
         const hasHumanText = annotation.humanAnnotatedText && annotation.humanAnnotatedText.trim() !== '';
         const isAnnotated = hasHumanText; // 是否已标注
-        
-        // 如果标注人为"未知标注员"但没有人工标注文本，跳过（避免显示未标注的模板数据）
-        if (annotator === '未知标注员' && !isAnnotated) {
-          return;
-        }
         
         if (!videoMap.has(videoId)) {
           const video = videos.find(v => v.id === videoId);
