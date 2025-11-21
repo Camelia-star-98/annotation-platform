@@ -21,7 +21,8 @@ import {
   EyeOutlined,
   BarChartOutlined,
   DatabaseOutlined,
-  SwapOutlined
+  SwapOutlined,
+  ReloadOutlined
 } from '@ant-design/icons';
 import type { VideoInfo } from '../types';
 import './HomePage.css';
@@ -41,6 +42,22 @@ export default function HomePage() {
   // 加载已完成的视频列表
   useEffect(() => {
     loadCompletedVideos();
+  }, []);
+
+  // 监听页面可见性，当用户返回页面时自动刷新
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('📍 页面变为可见，重新加载数据...');
+        loadCompletedVideos();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   const loadCompletedVideos = async () => {
@@ -388,6 +405,14 @@ export default function HomePage() {
                 <CheckCircleOutlined style={{ color: '#52c41a' }} />
                 <span>已完成视频列表</span>
                 <Tag color="success">{completedVideos.length} 个视频</Tag>
+                <Button 
+                  type="text" 
+                  size="small" 
+                  icon={<ReloadOutlined />}
+                  onClick={loadCompletedVideos}
+                  loading={loading}
+                  title="刷新列表"
+                />
               </Space>
             }
             extra={
