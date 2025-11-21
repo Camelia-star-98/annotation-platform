@@ -73,6 +73,16 @@ export default function AnnotationTaskListPage() {
       // 只显示已发布的视频
       const publishedVideos = videos.filter(video => video.is_published);
       
+      console.log(`📊 已发布的视频数量: ${publishedVideos.length}`);
+      
+      // 如果没有已发布的视频，直接返回空列表
+      if (publishedVideos.length === 0) {
+        setTasks([]);
+        message.info('暂无待标注任务');
+        setLoading(false);
+        return;
+      }
+      
       // 批量获取完成人数
       const videoIds = publishedVideos.map(v => v.id);
       const completedCountMap = await getBatchCompletedAnnotatorsCount(videoIds);
@@ -86,6 +96,20 @@ export default function AnnotationTaskListPage() {
       
       if (error) {
         console.error('查询当前标注员的标注情况失败:', error);
+        // 如果查询失败，显示所有已发布的视频（不过滤）
+        const publishedTasks = publishedVideos.map(video => ({
+          id: video.id,
+          videoName: video.name || '未命名视频',
+          subject: video.subject || '未知',
+          duration: video.duration || 0,
+          requiredAnnotators: video.required_annotators || 1,
+          completedAnnotators: completedCountMap[video.id] || 0,
+          uploadTime: video.created_at || ''
+        }));
+        setTasks(publishedTasks);
+        message.warning(`加载了 ${publishedTasks.length} 个任务（无法过滤已完成任务）`);
+        setLoading(false);
+        return;
       }
       
       // 统计当前标注员已完成的视频（有人工标注文本的视频）
