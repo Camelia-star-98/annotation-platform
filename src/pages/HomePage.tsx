@@ -46,52 +46,49 @@ export default function HomePage() {
   const loadCompletedVideos = async () => {
     setLoading(true);
     try {
-      const { getVideos, getAllAnnotations } = await import('../api/database');
-      const [allVideos, allAnnotations] = await Promise.all([
-        getVideos(),
-        getAllAnnotations()
-      ]);
+      const { getVideos } = await import('../api/database');
+      const { supabase } = await import('../api/supabase');
       
+      // 1. 获取所有视频
+      const allVideos = await getVideos();
       console.log('🎬 所有视频数量:', allVideos.length);
-      console.log('📊 所有标注数据量:', allAnnotations.length);
       
-      // 统计每个视频的复检情况
-      const videoReviewStats = new Map();
+      // 2. 直接在数据库查询有已复检数据的视频ID和标注人（性能优化）
+      const { data: reviewedData, error } = await supabase
+        .from('annotations')
+        .select('video_id, annotator')
+        .eq('review_status', true)
+        .not('annotator', 'is', null)
+        .neq('annotator', '')
+        .neq('annotator', 'unknown');
       
-      allAnnotations.forEach(annotation => {
-        const videoId = annotation.videoId;
-        const annotator = annotation.annotator;
-        
-        // 跳过无效标注人
-        if (!annotator || annotator.trim() === '' || annotator === 'unknown') {
-          return;
+      if (error) {
+        console.error('查询已复检数据失败:', error);
+        message.error('加载失败');
+        setLoading(false);
+        return;
+      }
+      
+      console.log('📊 查询到的已复检数据记录数:', reviewedData?.length || 0);
+      
+      // 3. 统计每个视频的已复检标注人数量
+      const videoAnnotatorMap = new Map<string, Set<string>>();
+      reviewedData?.forEach(item => {
+        if (!videoAnnotatorMap.has(item.video_id)) {
+          videoAnnotatorMap.set(item.video_id, new Set());
         }
-        
-        // 只统计有人工标注文本的数据
-        if (annotation.humanAnnotatedText && annotation.humanAnnotatedText.trim() !== '') {
-          if (!videoReviewStats.has(videoId)) {
-            videoReviewStats.set(videoId, {
-              totalAnnotated: 0,
-              reviewedCount: 0,
-              annotators: new Set()
-            });
-          }
-          
-          const stats = videoReviewStats.get(videoId);
-          stats.totalAnnotated++;
-          stats.annotators.add(annotator);
-          
-          if (annotation.reviewStatus === true) {
-            stats.reviewedCount++;
-          }
-        }
+        videoAnnotatorMap.get(item.video_id)!.add(item.annotator);
       });
       
-      // 只显示有已复检数据的视频（至少有一条已复检）
-      const completed = allVideos.filter(video => {
-        const stats = videoReviewStats.get(video.id);
-        return stats && stats.reviewedCount > 0;
-      });
+      console.log('✅ 有已复检数据的视频ID数量:', videoAnnotatorMap.size);
+      
+      // 4. 筛选出有已复检数据的视频，并添加已复检标注人数量
+      const completed = allVideos
+        .filter(video => videoAnnotatorMap.has(video.id))
+        .map(video => ({
+          ...video,
+          completedAnnotators: videoAnnotatorMap.get(video.id)!.size
+        }));
       
       console.log('✅ 有已复检数据的视频数量:', completed.length);
       setCompletedVideos(completed);
@@ -202,6 +199,16 @@ export default function HomePage() {
         const secs = record.duration % 60;
         return `${mins}:${secs.toString().padStart(2, '0')}`;
       }
+    },
+    {
+      title: '已复检标注人数',
+      dataIndex: 'completedAnnotators',
+      key: 'completedAnnotators',
+      width: 130,
+      align: 'center' as const,
+      render: (count: number) => (
+        <Tag color="green">{count || 0} 人</Tag>
+      )
     },
     {
       title: '完成时间',
