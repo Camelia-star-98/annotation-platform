@@ -168,7 +168,7 @@ export default function AnnotationTaskListPage() {
       // 性能优化：直接在数据库查询当前标注人的被打回数据
       const { data: allAnnotations, error } = await supabase
         .from('annotations')
-        .select('id, video_id, original_text, annotated_text, major_category, minor_category, inspector, annotator, updated_at, created_at')
+        .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, updated_at, created_at')
         .eq('annotator', annotatorName)
         .eq('is_qualified', false)
         .not('inspector', 'is', null);
@@ -193,7 +193,7 @@ export default function AnnotationTaskListPage() {
           videoName: video?.name || '未知视频',
           subject: video?.subject || '未知',
           originalText: item.original_text || '',
-          annotatedText: item.annotated_text || '',
+          annotatedText: item.human_annotated_text || '', // 修正字段名
           majorCategory: item.major_category || '',
           minorCategory: item.minor_category || '',
           inspector: item.inspector || '未知',
