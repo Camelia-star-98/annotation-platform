@@ -1,6 +1,48 @@
 import { supabase } from './supabase';
 import type { AnnotationItem, VideoInfo } from '../types';
 
+function coerceBoolean(value: unknown): boolean | undefined {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.toLowerCase();
+    if (normalized === 'true') {
+      return true;
+    }
+    if (normalized === 'false') {
+      return false;
+    }
+  }
+  if (typeof value === 'number') {
+    if (value === 1) return true;
+    if (value === 0) return false;
+  }
+  return undefined;
+}
+
+function normalizeVideoRecord(record: any): VideoInfo {
+  if (!record) {
+    return record;
+  }
+
+  const normalized: VideoInfo = { ...record };
+
+  const published =
+    coerceBoolean(record?.is_published) ??
+    coerceBoolean(record?.isPublished) ??
+    false;
+  const completed =
+    coerceBoolean(record?.is_completed) ??
+    coerceBoolean(record?.isCompleted) ??
+    false;
+
+  normalized.is_published = published;
+  normalized.is_completed = completed;
+
+  return normalized;
+}
+
 // ========== 视频相关 ==========
 
 // 获取所有视频（优化：只查询必要字段，移除日志）
@@ -15,7 +57,7 @@ export async function getVideos(): Promise<VideoInfo[]> {
     return [];
   }
 
-  return data || [];
+  return (data || []).map(normalizeVideoRecord);
 }
 
 // 获取单个视频（优化：避免查询所有视频）
@@ -31,7 +73,7 @@ export async function getVideo(videoId: string): Promise<VideoInfo | null> {
     return null;
   }
 
-  return data;
+  return data ? normalizeVideoRecord(data) : null;
 }
 
 // 添加视频
