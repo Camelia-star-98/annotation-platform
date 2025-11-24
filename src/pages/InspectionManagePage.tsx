@@ -55,6 +55,11 @@ export default function InspectionManagePage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'inspected'>('pending');
   const [loading, setLoading] = useState(false);
   const [sampledCount, setSampledCount] = useState(0); // 抽样数量
+  const [page, setPage] = useState(1); // 当前页码
+  const [pageSize] = useState(50); // 每页数量（初始加载50条）
+  const [hasMore, setHasMore] = useState(true); // 是否还有更多数据
+  const [totalCount, setTotalCount] = useState(0); // 总数据量
+  const [isLoadingMore, setIsLoadingMore] = useState(false); // 是否正在加载更多
 
   // 按视频分组数据 - 使用 useCallback 优化
   const groupByVideo = useCallback((data: AnnotationItem[]) => {
@@ -134,28 +139,42 @@ export default function InspectionManagePage() {
   }, [filteredAndGroupedData]);
 
   // 优化数据加载，添加分页和延迟加载
-  const loadData = async () => {
-    setLoading(true);
+  const loadData = async (isLoadMore = false) => {
+    if (isLoadMore) {
+      setIsLoadingMore(true);
+    } else {
+      setLoading(true);
+      setPage(1);
+      setAllAnnotations([]); // 重置数据
+    }
+    
     try {
-      const { getAnnotations, getVideo } = await import('../api/database');
-      
-      let annotations: AnnotationItem[] = [];
+      const { getVideo, getPendingInspectionAnnotations } = await import('../api/database');
       
       // 如果指定了视频ID，只加载该视频的数据（优化：直接查询单个视频，不查询所有视频）
       if (selectedVideoId) {
         // 优化：直接查询单个视频，而不是查询所有视频后查找
-        const { getVideo, getPendingInspectionAnnotations } = await import('../api/database');
         const currentVideo = await getVideo(selectedVideoId);
         const videoUrl = currentVideo?.url || '';
         
-        // 优化：直接在数据库层面查询待质检数据，而不是查询所有数据后再过滤
-        const pendingAnnotations = await getPendingInspectionAnnotations(selectedVideoId);
+        // 计算分页参数
+        const currentPage = isLoadMore ? page + 1 : 1;
+        const offset = (currentPage - 1) * pageSize;
         
-        // 实施抽样（如果不是100%）
+        // 优化：直接在数据库层面查询待质检数据，支持分页
+        const { data: pendingAnnotations, total } = await getPendingInspectionAnnotations(
+          selectedVideoId,
+          { limit: pageSize, offset }
+        );
+        
+        setTotalCount(total);
+        setHasMore(offset + pendingAnnotations.length < total);
+        
+        // 实施抽样（如果不是100%且是第一页）
         let sampledAnnotations = pendingAnnotations;
-        if (samplePercentage < 100 && pendingAnnotations.length > 0) {
-          const calculatedSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
-          const sampleSize = Math.max(1, Math.min(calculatedSize, 1000)); // 限制最大抽样数量
+        if (samplePercentage < 100 && !isLoadMore && pendingAnnotations.length > 0) {
+          const calculatedSize = Math.ceil(total * samplePercentage / 100);
+          const sampleSize = Math.max(1, Math.min(calculatedSize, 200)); // 限制最大抽样数量
           
           // 使用更高效的随机抽样（Fisher-Yates 洗牌算法）
           if (pendingAnnotations.length <= sampleSize) {
@@ -171,54 +190,68 @@ export default function InspectionManagePage() {
           }
           
           setSampledCount(sampledAnnotations.length);
-        } else if (samplePercentage < 100 && pendingAnnotations.length === 0) {
+        } else if (samplePercentage < 100 && !isLoadMore && pendingAnnotations.length === 0) {
           // 如果没有待质检数据，但用户设置了抽样比例，显示0
           setSampledCount(0);
           sampledAnnotations = [];
         } else {
-          // 100%抽样，显示所有待质检数据
-          setSampledCount(pendingAnnotations.length);
+          // 100%抽样或加载更多，显示所有数据
+          if (!isLoadMore) {
+            setSampledCount(total);
+          }
         }
         
-        // 限制返回的数据量，避免前端卡顿（优化：在抽样前就限制，减少处理量）
-        const maxItems = 200; // 进一步降低最大数量，提升性能
-        const finalAnnotations = sampledAnnotations.slice(0, maxItems);
-        
         // 给每条标注添加视频名称和视频URL
-        const annotationsWithVideoName = finalAnnotations.map(item => ({
+        const annotationsWithVideoName = sampledAnnotations.map(item => ({
           ...item,
           videoName: videoName || '未知视频',
           videoUrl: videoUrl
         }));
         
-        setAllAnnotations(annotationsWithVideoName);
-        
-        if (samplePercentage < 100) {
-          message.success(
-            `已按 ${samplePercentage}% 比例抽样，从 ${pendingAnnotations.length} 条中抽取了 ${finalAnnotations.length} 条数据`
-          );
+        // 合并数据（加载更多时追加，否则替换）
+        if (isLoadMore) {
+          setAllAnnotations(prev => [...prev, ...annotationsWithVideoName]);
+          setPage(currentPage);
         } else {
-          message.success(`加载了视频"${videoName}"的 ${finalAnnotations.length} 条待质检数据`);
+          setAllAnnotations(annotationsWithVideoName);
+          setPage(1);
+        }
+        
+        if (!isLoadMore) {
+          if (samplePercentage < 100) {
+            message.success(
+              `已按 ${samplePercentage}% 比例抽样，从 ${total} 条中抽取了 ${annotationsWithVideoName.length} 条数据`
+            );
+          } else {
+            message.success(`加载了视频"${videoName}"的 ${annotationsWithVideoName.length} 条待质检数据`);
+          }
         }
       } else {
-        // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据（精简字段）
-        // 性能优化：只查询必要的字段，不查询大文本字段，并限制数量
+        // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据（精简字段，支持分页）
+        // 计算分页参数
+        const currentPage = isLoadMore ? page + 1 : 1;
+        const offset = (currentPage - 1) * pageSize;
+        
+        // 性能优化：只查询必要的字段，不查询大文本字段，并支持分页
         // 排除已复检完成的数据（review_status 不为 null）
-        const { data: annotationsData, error: annotationsError } = await supabase
+        const { data: annotationsData, error: annotationsError, count } = await supabase
           .from('annotations')
-          .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at')
+          .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at', { count: 'exact' })
           .not('human_annotated_text', 'is', null)
           .neq('human_annotated_text', '')
           .is('inspector', null)  // 只查询未质检的数据
           .is('review_status', null)  // 排除已复检完成的数据
           .order('created_at', { ascending: false })
-          .limit(200); // 进一步降低限制，提升加载速度
+          .range(offset, offset + pageSize - 1);
         
         if (annotationsError) {
           console.error('加载标注数据失败:', annotationsError);
           message.error('加载数据失败，请重试');
           return;
         }
+        
+        setTotalCount(count || 0);
+        setHasMore(offset + (annotationsData?.length || 0) < (count || 0));
         
         // 优化：只查询相关视频的基本信息（id, name, url），减少数据传输
         // 提取所有唯一的 video_id
@@ -263,14 +296,26 @@ export default function InspectionManagePage() {
           };
         });
         
-        setAllAnnotations(annotationsWithVideoName);
-        message.success(`加载了 ${annotationsWithVideoName.length} 条待质检数据（限制500条）`);
+        // 合并数据（加载更多时追加，否则替换）
+        if (isLoadMore) {
+          setAllAnnotations(prev => [...prev, ...annotationsWithVideoName]);
+          setPage(currentPage);
+        } else {
+          setAllAnnotations(annotationsWithVideoName);
+          setPage(1);
+        }
+        
+        if (!isLoadMore) {
+          message.success(`加载了 ${annotationsWithVideoName.length} 条待质检数据（共 ${count || 0} 条）`);
+        }
       }
     } catch (error) {
       console.error('加载数据失败:', error);
       message.error('加载数据失败，请检查后端服务');
+    } finally {
+      setLoading(false);
+      setIsLoadingMore(false);
     }
-    setLoading(false);
   };
 
   // 开始质检 - 跳转到质检页面
@@ -671,6 +716,15 @@ export default function InspectionManagePage() {
               <div style={{ flex: 1 }} />
 
               <span>已选择 {selectedRows.length} 条</span>
+              {hasMore && (
+                <Button
+                  onClick={() => loadData(true)}
+                  loading={isLoadingMore}
+                  disabled={loading}
+                >
+                  加载更多 ({totalCount - allAnnotations.length} 条剩余)
+                </Button>
+              )}
               <Button
                 type="primary"
                 onClick={handleStartInspection}

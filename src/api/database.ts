@@ -314,12 +314,15 @@ export async function getAnnotations(videoId: string): Promise<AnnotationItem[]>
   }));
 }
 
-// 获取指定视频的待质检数据（优化：在数据库层面直接过滤）
-export async function getPendingInspectionAnnotations(videoId: string): Promise<AnnotationItem[]> {
-  // 直接在数据库层面过滤：只查询有人工标注文本、未质检、未复检的数据
-  const { data, error } = await supabase
+// 获取指定视频的待质检数据（优化：在数据库层面直接过滤，支持分页）
+export async function getPendingInspectionAnnotations(
+  videoId: string, 
+  options?: { limit?: number; offset?: number }
+): Promise<{ data: AnnotationItem[]; total: number }> {
+  // 构建查询
+  let query = supabase
     .from('annotations')
-    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status')
+    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
     .eq('video_id', videoId)
     .not('human_annotated_text', 'is', null)
     .neq('human_annotated_text', '')
@@ -327,13 +330,23 @@ export async function getPendingInspectionAnnotations(videoId: string): Promise<
     .is('review_status', null)  // 未复检
     .order('sentence_no', { ascending: true });
 
+  // 应用分页
+  if (options?.limit) {
+    query = query.limit(options.limit);
+  }
+  if (options?.offset) {
+    query = query.range(options.offset, options.offset + (options.limit || 1000) - 1);
+  }
+
+  const { data, error, count } = await query;
+
   if (error) {
     console.error('获取待质检数据失败:', error);
-    return [];
+    return { data: [], total: 0 };
   }
 
   // 转换数据格式
-  return (data || []).map(item => ({
+  const annotations = (data || []).map(item => ({
     id: item.id,
     videoId: item.video_id,
     sentenceNo: item.sentence_no,
@@ -353,6 +366,8 @@ export async function getPendingInspectionAnnotations(videoId: string): Promise<
     reviewer: item.reviewer || '',
     reviewStatus: item.review_status
   }));
+
+  return { data: annotations, total: count || 0 };
 }
 
 // 批量保存标注数据
