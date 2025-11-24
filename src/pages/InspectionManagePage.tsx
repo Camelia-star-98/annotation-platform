@@ -117,14 +117,17 @@ export default function InspectionManagePage() {
         });
         break;
       case 'inspected':
-        // 已质检的（有质检人）
-        filtered = allAnnotations.filter(item => 
-          item.inspector && item.inspector.trim() !== ''
-        );
+        // 已质检的（有质检人）且未复检完成
+        filtered = allAnnotations.filter(item => {
+          const hasInspector = item.inspector && item.inspector.trim() !== '';
+          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
+          return hasInspector && notReviewed;
+        });
         break;
       case 'all':
       default:
-        filtered = allAnnotations;
+        // 全部：排除已复检完成的数据
+        filtered = allAnnotations.filter(item => item.reviewStatus == null);
         break;
     }
     
