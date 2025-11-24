@@ -157,8 +157,16 @@ export default function InspectionManagePage() {
         const currentVideo = await getVideo(selectedVideoId);
         const videoUrl = currentVideo?.url || '';
         
-        // 计算分页参数
-        const currentPage = isLoadMore ? page + 1 : 1;
+        // 计算分页参数（使用函数式更新避免闭包问题）
+        let currentPage = 1;
+        if (isLoadMore) {
+          setPage(prev => {
+            currentPage = prev + 1;
+            return currentPage;
+          });
+        } else {
+          currentPage = 1;
+        }
         const offset = (currentPage - 1) * pageSize;
         
         // 优化：直接在数据库层面查询待质检数据，支持分页
