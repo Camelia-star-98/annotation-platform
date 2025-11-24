@@ -103,11 +103,12 @@ export default function InspectionManagePage() {
     
     switch (filterStatus) {
       case 'pending':
-        // 待质检的：有人工标注文本且未质检（没有inspector）
+        // 待质检的：有人工标注文本且未质检（没有inspector）且未复检完成
         filtered = allAnnotations.filter(item => {
           const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
           const notInspected = !item.inspector;
-          return hasHumanText && notInspected;
+          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
+          return hasHumanText && notInspected && notReviewed;
         });
         break;
       case 'inspected':
@@ -151,11 +152,13 @@ export default function InspectionManagePage() {
         annotations = await getAnnotations(selectedVideoId);
         
         // 过滤出待质检的数据 - 优化：使用更高效的过滤（移除调试日志提升性能）
+        // 排除已复检完成的数据（reviewStatus 不为 null）
         const pendingAnnotations = annotations.filter(
           item => {
             const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
             const notInspected = !item.inspector;
-            return hasHumanText && notInspected;
+            const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
+            return hasHumanText && notInspected && notReviewed;
           }
         );
         
@@ -211,12 +214,14 @@ export default function InspectionManagePage() {
       } else {
         // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据（精简字段）
         // 性能优化：只查询必要的字段，不查询大文本字段，并限制数量
+        // 排除已复检完成的数据（review_status 不为 null）
         const { data: annotationsData, error: annotationsError } = await supabase
           .from('annotations')
-          .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, created_at')
+          .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at')
           .not('human_annotated_text', 'is', null)
           .neq('human_annotated_text', '')
           .is('inspector', null)  // 只查询未质检的数据
+          .is('review_status', null)  // 排除已复检完成的数据
           .order('created_at', { ascending: false })
           .limit(300); // 降低限制，提升加载速度
         
@@ -262,7 +267,7 @@ export default function InspectionManagePage() {
             isQualified: undefined,
             inspector: item.inspector || '',
             reviewer: '',
-            reviewStatus: undefined,
+            reviewStatus: item.review_status ?? undefined,
             videoName,
             videoUrl,
             subject: ''
@@ -523,9 +528,11 @@ export default function InspectionManagePage() {
   ];
 
   // 使用useMemo优化统计数据计算 - 基于实际加载的数据，而不是过滤后的数据
+  // 排除已复检完成的数据（reviewStatus 不为 null）
   const statistics = useMemo(() => {
     // 使用allAnnotations而不是filteredData，确保统计数据准确
-    const allItems = allAnnotations;
+    // 先过滤掉已复检完成的数据
+    const allItems = allAnnotations.filter(item => item.reviewStatus == null);
     
     const pendingCount = allItems.filter(item => {
       const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
