@@ -144,23 +144,12 @@ export default function InspectionManagePage() {
       // 如果指定了视频ID，只加载该视频的数据（优化：直接查询单个视频，不查询所有视频）
       if (selectedVideoId) {
         // 优化：直接查询单个视频，而不是查询所有视频后查找
-        const { getVideo } = await import('../api/database');
+        const { getVideo, getPendingInspectionAnnotations } = await import('../api/database');
         const currentVideo = await getVideo(selectedVideoId);
         const videoUrl = currentVideo?.url || '';
         
-        // 直接获取该视频的所有标注数据
-        annotations = await getAnnotations(selectedVideoId);
-        
-        // 过滤出待质检的数据 - 优化：使用更高效的过滤（移除调试日志提升性能）
-        // 排除已复检完成的数据（reviewStatus 不为 null）
-        const pendingAnnotations = annotations.filter(
-          item => {
-            const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-            const notInspected = !item.inspector;
-            const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
-            return hasHumanText && notInspected && notReviewed;
-          }
-        );
+        // 优化：直接在数据库层面查询待质检数据，而不是查询所有数据后再过滤
+        const pendingAnnotations = await getPendingInspectionAnnotations(selectedVideoId);
         
         // 实施抽样（如果不是100%）
         let sampledAnnotations = pendingAnnotations;
@@ -192,7 +181,7 @@ export default function InspectionManagePage() {
         }
         
         // 限制返回的数据量，避免前端卡顿（优化：在抽样前就限制，减少处理量）
-        const maxItems = 500; // 降低最大数量，提升性能
+        const maxItems = 200; // 进一步降低最大数量，提升性能
         const finalAnnotations = sampledAnnotations.slice(0, maxItems);
         
         // 给每条标注添加视频名称和视频URL
@@ -223,7 +212,7 @@ export default function InspectionManagePage() {
           .is('inspector', null)  // 只查询未质检的数据
           .is('review_status', null)  // 排除已复检完成的数据
           .order('created_at', { ascending: false })
-          .limit(300); // 降低限制，提升加载速度
+          .limit(200); // 进一步降低限制，提升加载速度
         
         if (annotationsError) {
           console.error('加载标注数据失败:', annotationsError);
@@ -440,16 +429,16 @@ export default function InspectionManagePage() {
       dataIndex: 'originalText',
       key: 'originalText',
       width: 200,
-      ellipsis: true,
-      render: (text: string, record: any) => record.isGroup ? null : text
+      ellipsis: { showTitle: false }, // 优化：禁用 tooltip，提升性能
+      render: (text: string, record: any) => record.isGroup ? null : (text || '-')
     },
     {
       title: '人工标注文本',
       dataIndex: 'humanAnnotatedText',
       key: 'humanAnnotatedText',
       width: 200,
-      ellipsis: true,
-      render: (text: string, record: any) => record.isGroup ? null : text
+      ellipsis: { showTitle: false }, // 优化：禁用 tooltip，提升性能
+      render: (text: string, record: any) => record.isGroup ? null : (text || '-')
     },
     {
       title: '问题大类',
@@ -700,7 +689,7 @@ export default function InspectionManagePage() {
               dataSource={filteredData}
               rowKey="key"
               loading={loading}
-              scroll={{ x: 1400 }}
+              scroll={{ x: 1400, y: 600 }} // 添加固定高度，启用虚拟滚动
               expandable={{
                 defaultExpandAllRows: false,
                 expandedRowKeys: expandedRowKeys,
@@ -714,10 +703,12 @@ export default function InspectionManagePage() {
                 rowExpandable: (record) => record.isGroup && record.children && record.children.length > 0
               }}
               pagination={{
-                pageSize: 20,
+                pageSize: 10, // 减少每页显示数量，提升渲染速度
                 showSizeChanger: true,
+                pageSizeOptions: ['10', '20', '50', '100'],
                 showTotal: (total) => `共 ${total} 个视频`
               }}
+              size="small" // 使用小尺寸，减少渲染负担
             />
           </Card>
         </div>

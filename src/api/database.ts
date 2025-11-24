@@ -314,6 +314,47 @@ export async function getAnnotations(videoId: string): Promise<AnnotationItem[]>
   }));
 }
 
+// 获取指定视频的待质检数据（优化：在数据库层面直接过滤）
+export async function getPendingInspectionAnnotations(videoId: string): Promise<AnnotationItem[]> {
+  // 直接在数据库层面过滤：只查询有人工标注文本、未质检、未复检的数据
+  const { data, error } = await supabase
+    .from('annotations')
+    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status')
+    .eq('video_id', videoId)
+    .not('human_annotated_text', 'is', null)
+    .neq('human_annotated_text', '')
+    .is('inspector', null)  // 未质检
+    .is('review_status', null)  // 未复检
+    .order('sentence_no', { ascending: true });
+
+  if (error) {
+    console.error('获取待质检数据失败:', error);
+    return [];
+  }
+
+  // 转换数据格式
+  return (data || []).map(item => ({
+    id: item.id,
+    videoId: item.video_id,
+    sentenceNo: item.sentence_no,
+    timeRange: item.time_range,
+    startTime: item.start_time,
+    endTime: item.end_time,
+    originalText: item.original_text,
+    aiRewrittenText: '', // 不查询，节省带宽
+    humanAnnotatedText: item.human_annotated_text,
+    majorCategory: item.major_category,
+    minorCategory: item.minor_category,
+    remark: item.remark,
+    status: item.status,
+    annotator: item.annotator,
+    isQualified: item.is_qualified,
+    inspector: item.inspector,
+    reviewer: item.reviewer || '',
+    reviewStatus: item.review_status
+  }));
+}
+
 // 批量保存标注数据
 export async function saveAnnotations(
   videoId: string,
