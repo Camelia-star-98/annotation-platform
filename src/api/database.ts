@@ -1,48 +1,6 @@
 import { supabase } from './supabase';
 import type { AnnotationItem, VideoInfo } from '../types';
 
-function coerceBoolean(value: unknown): boolean | undefined {
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  if (typeof value === 'string') {
-    const normalized = value.toLowerCase();
-    if (normalized === 'true') {
-      return true;
-    }
-    if (normalized === 'false') {
-      return false;
-    }
-  }
-  if (typeof value === 'number') {
-    if (value === 1) return true;
-    if (value === 0) return false;
-  }
-  return undefined;
-}
-
-function normalizeVideoRecord(record: any): VideoInfo {
-  if (!record) {
-    return record;
-  }
-
-  const normalized: VideoInfo = { ...record };
-
-  const published =
-    coerceBoolean(record?.is_published) ??
-    coerceBoolean(record?.isPublished) ??
-    false;
-  const completed =
-    coerceBoolean(record?.is_completed) ??
-    coerceBoolean(record?.isCompleted) ??
-    false;
-
-  normalized.is_published = published;
-  normalized.is_completed = completed;
-
-  return normalized;
-}
-
 // ========== 视频相关 ==========
 
 // 获取所有视频（优化：只查询必要字段，移除日志）
@@ -57,7 +15,7 @@ export async function getVideos(): Promise<VideoInfo[]> {
     return [];
   }
 
-  return (data || []).map(normalizeVideoRecord);
+  return data || [];
 }
 
 // 获取单个视频（优化：避免查询所有视频）
@@ -73,7 +31,7 @@ export async function getVideo(videoId: string): Promise<VideoInfo | null> {
     return null;
   }
 
-  return data ? normalizeVideoRecord(data) : null;
+  return data;
 }
 
 // 添加视频
@@ -269,28 +227,48 @@ export async function getAllAnnotations(): Promise<AnnotationItem[]> {
 // 获取已复检的标注数据（用于数据分析）
 export async function getReviewedAnnotations(videoIds?: string[]): Promise<AnnotationItem[]> {
   try {
-    let query = supabase
-      .from('annotations')
-      .select('*')
-      .eq('review_status', true) // 只查询已复检的数据
-      .order('created_at', { ascending: false });
+    // 分页获取所有数据，避免 Supabase 默认 1000 条限制
+    let allData: any[] = [];
+    let offset = 0;
+    const limit = 1000;
+    let hasMore = true;
 
-    // 如果指定了视频ID，则只查询这些视频的数据
-    if (videoIds && videoIds.length > 0) {
-      query = query.in('video_id', videoIds);
+    console.log('📊 开始分页查询已复检数据...');
+
+    while (hasMore) {
+      let query = supabase
+        .from('annotations')
+        .select('*')
+        .eq('review_status', true) // 只查询已复检的数据
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      // 如果指定了视频ID，则只查询这些视频的数据
+      if (videoIds && videoIds.length > 0) {
+        query = query.in('video_id', videoIds);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('获取已复检标注数据失败:', error);
+        return allData.length > 0 ? allData : [];
+      }
+
+      if (data && data.length > 0) {
+        allData = allData.concat(data);
+        offset += data.length;
+        hasMore = data.length === limit;
+        console.log(`  - 已加载 ${allData.length} 条数据...`);
+      } else {
+        hasMore = false;
+      }
     }
 
-    const { data, error } = await query;
-
-    if (error) {
-      console.error('获取已复检标注数据失败:', error);
-      return [];
-    }
-
-    console.log('📊 getReviewedAnnotations 返回数据量:', data?.length || 0);
+    console.log('📊 getReviewedAnnotations 返回数据总量:', allData.length);
 
     // 转换数据格式
-    return (data || []).map(item => ({
+    return allData.map(item => ({
       id: item.id || '',
       videoId: item.video_id || '',
       sentenceNo: item.sentence_no || 0,
