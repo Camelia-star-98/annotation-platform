@@ -97,10 +97,10 @@ export default function InspectionManagePage() {
     return result;
   }, []);
 
-  // 加载数据
+  // 加载数据（只在 selectedVideoId 变化时重新加载）
   useEffect(() => {
-    loadData();
-  }, [selectedVideoId]);
+    loadData(false);
+  }, [selectedVideoId, loadData]);
 
   // 使用 useMemo 优化过滤和分组计算
   const filteredAndGroupedData = useMemo(() => {
@@ -138,8 +138,8 @@ export default function InspectionManagePage() {
     setFilteredData(filteredAndGroupedData);
   }, [filteredAndGroupedData]);
 
-  // 优化数据加载，添加分页和延迟加载
-  const loadData = async (isLoadMore = false) => {
+  // 优化数据加载，添加分页和延迟加载（使用 useCallback 避免重复创建）
+  const loadData = useCallback(async (isLoadMore = false) => {
     if (isLoadMore) {
       setIsLoadingMore(true);
     } else {
@@ -228,8 +228,16 @@ export default function InspectionManagePage() {
         }
       } else {
         // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据（精简字段，支持分页）
-        // 计算分页参数
-        const currentPage = isLoadMore ? page + 1 : 1;
+        // 计算分页参数（使用函数式更新避免闭包问题）
+        let currentPage = 1;
+        if (isLoadMore) {
+          setPage(prev => {
+            currentPage = prev + 1;
+            return currentPage;
+          });
+        } else {
+          currentPage = 1;
+        }
         const offset = (currentPage - 1) * pageSize;
         
         // 性能优化：只查询必要的字段，不查询大文本字段，并支持分页
@@ -316,7 +324,7 @@ export default function InspectionManagePage() {
       setLoading(false);
       setIsLoadingMore(false);
     }
-  };
+  }, [selectedVideoId, videoName, samplePercentage, pageSize]);
 
   // 开始质检 - 跳转到质检页面
   const handleStartInspection = () => {
@@ -370,7 +378,7 @@ export default function InspectionManagePage() {
       message.success(`批量质检完成！共质检 ${selectedRows.length} 条数据`);
       
       // 重新加载数据
-      await loadData();
+      await loadData(false);
       
       // 清空选择
       setSelectedRows([]);
@@ -716,14 +724,19 @@ export default function InspectionManagePage() {
               <div style={{ flex: 1 }} />
 
               <span>已选择 {selectedRows.length} 条</span>
-              {hasMore && (
+              {hasMore && totalCount > 0 && (
                 <Button
                   onClick={() => loadData(true)}
                   loading={isLoadingMore}
-                  disabled={loading}
+                  disabled={loading || isLoadingMore}
                 >
-                  加载更多 ({totalCount - allAnnotations.length} 条剩余)
+                  {isLoadingMore ? '加载中...' : `加载更多 (${totalCount - allAnnotations.length} 条剩余)`}
                 </Button>
+              )}
+              {!hasMore && totalCount > 0 && (
+                <span style={{ color: '#999', fontSize: 12 }}>
+                  已加载全部 {totalCount} 条数据
+                </span>
               )}
               <Button
                 type="primary"
@@ -760,7 +773,7 @@ export default function InspectionManagePage() {
                 pageSize: 10, // 减少每页显示数量，提升渲染速度
                 showSizeChanger: true,
                 pageSizeOptions: ['10', '20', '50', '100'],
-                showTotal: (total) => `共 ${total} 个视频`
+                showTotal: (total, range) => `已加载 ${allAnnotations.length} / ${totalCount} 条（当前显示 ${range[0]}-${range[1]} 条）`
               }}
               size="small" // 使用小尺寸，减少渲染负担
             />
