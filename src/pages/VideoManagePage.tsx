@@ -1347,7 +1347,7 @@ export default function VideoManagePage() {
         <Card>
           <Space direction="vertical" style={{ width: '100%' }} size="large">
             {/* 操作按钮区 */}
-            <Space>
+            <Space style={{ marginBottom: '16px' }}>
               <Button
                 type="primary"
                 icon={<UploadOutlined />}
@@ -1363,13 +1363,6 @@ export default function VideoManagePage() {
                 只上传标注数据
               </Button>
               <Button
-                type={selectedRowKeys.length === videoList.length && videoList.length > 0 ? 'default' : 'primary'}
-                icon={<CheckOutlined />}
-                onClick={handleSelectAll}
-              >
-                {selectedRowKeys.length === videoList.length && videoList.length > 0 ? '取消全选' : '全选'}
-              </Button>
-              <Button
                 type="primary"
                 disabled={selectedRowKeys.length === 0}
                 onClick={handlePublish}
@@ -1377,6 +1370,47 @@ export default function VideoManagePage() {
                 发布任务 {selectedRowKeys.length > 0 && `(${selectedRowKeys.length})`}
               </Button>
             </Space>
+
+            {/* 选择操作区 */}
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              padding: '12px 16px',
+              background: '#f5f5f5',
+              borderRadius: '4px',
+              marginBottom: '8px'
+            }}>
+              <Space>
+                <Button
+                  type={selectedRowKeys.length === videoList.length && videoList.length > 0 ? 'default' : 'primary'}
+                  size="small"
+                  icon={<CheckOutlined />}
+                  onClick={handleSelectAll}
+                >
+                  {selectedRowKeys.length === videoList.length && videoList.length > 0 ? '取消全选' : '全选'}
+                </Button>
+                <span style={{ color: '#666' }}>
+                  {selectedRowKeys.length > 0 ? (
+                    <span>
+                      已选择 <strong style={{ color: '#1890ff' }}>{selectedRowKeys.length}</strong> 个视频
+                      {videoList.length > 0 && ` / 共 ${videoList.length} 个`}
+                    </span>
+                  ) : (
+                    <span>未选择视频</span>
+                  )}
+                </span>
+              </Space>
+              {selectedRowKeys.length > 0 && (
+                <Button
+                  type="link"
+                  size="small"
+                  onClick={() => setSelectedRowKeys([])}
+                >
+                  清空选择
+                </Button>
+              )}
+            </div>
 
             {/* 视频列表 */}
             <Table
