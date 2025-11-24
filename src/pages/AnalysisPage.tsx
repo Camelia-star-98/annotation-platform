@@ -37,6 +37,12 @@ interface SubjectDetailStats {
   [subject: string]: string | number; // 动态的科目列数据
 }
 
+interface VideoDetailStats {
+  majorCategory: string;
+  minorCategory: string;
+  [videoName: string]: string | number; // 动态的视频列数据
+}
+
 export default function AnalysisPage() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -49,7 +55,9 @@ export default function AnalysisPage() {
   const [majorCategoryStats, setMajorCategoryStats] = useState<MajorCategoryStats[]>([]);
   const [minorCategoryStats, setMinorCategoryStats] = useState<MinorCategoryStats[]>([]);
   const [subjectDetailStats, setSubjectDetailStats] = useState<SubjectDetailStats[]>([]);
+  const [videoDetailStats, setVideoDetailStats] = useState<VideoDetailStats[]>([]); // 按视频统计
   const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
+  const [availableVideos, setAvailableVideos] = useState<string[]>([]); // 可用视频列表
   const [rawData, setRawData] = useState<AnnotationItem[]>([]); // 添加原始数据状态
 
   // 加载数据
@@ -311,6 +319,72 @@ export default function AnalysisPage() {
     
     setSubjectDetailStats(detailStats);
     
+    // 4. 统计每个视频的问题明细
+    const videoNames = Array.from(new Set(data.map(item => item.videoName).filter(v => v && v !== '未知视频')));
+    setAvailableVideos(videoNames);
+    
+    console.log('📹 可用视频列表:', videoNames);
+    
+    // 统计每个视频的每个小类问题数量
+    const videoDetailStatsMap = new Map<string, VideoDetailStats>();
+    
+    categoryStructure.forEach((minors, major) => {
+      minors.forEach(minor => {
+        const key = `${major}|${minor}`;
+        
+        if (!videoDetailStatsMap.has(key)) {
+          const row: VideoDetailStats = {
+            majorCategory: major,
+            minorCategory: minor
+          };
+          
+          videoNames.forEach(videoName => {
+            row[videoName] = 0;
+          });
+          
+          videoDetailStatsMap.set(key, row);
+        }
+        
+        // 统计每个视频的问题数
+        data.forEach(item => {
+          if (!item.videoName || item.videoName === '未知视频') return;
+          
+          const itemMajors = item.majorCategory.split(',').map(m => m.trim());
+          const itemMinors = item.minorCategory.split(',').map(m => m.trim());
+          
+          itemMinors.forEach((itemMinor, index) => {
+            const itemMajor = itemMajors[index] || itemMajors[0];
+            if (itemMajor === major && itemMinor === minor) {
+              const row = videoDetailStatsMap.get(key)!;
+              row[item.videoName] = (row[item.videoName] as number) + 1;
+            }
+          });
+        });
+      });
+    });
+    
+    const videoDetailStatsArray = Array.from(videoDetailStatsMap.values());
+    
+    // 添加"无问题"行统计（按视频）
+    const noProblemRowForVideo: VideoDetailStats = {
+      majorCategory: '无问题',
+      minorCategory: '无问题'
+    };
+    
+    videoNames.forEach(videoName => {
+      const noProblemCountForVideo = data.filter(item => 
+        item.videoName === videoName && 
+        (!item.majorCategory || item.majorCategory.trim() === '')
+      ).length;
+      noProblemRowForVideo[videoName] = noProblemCountForVideo;
+    });
+    
+    videoDetailStatsArray.push(noProblemRowForVideo);
+    
+    setVideoDetailStats(videoDetailStatsArray);
+    
+    console.log('📹 按视频明细统计结果:', videoDetailStatsArray);
+    
     console.log('📊 大类统计:', majorStats);
     console.log('📊 小类统计:', minorStats);
     console.log('📊 科目明细:', detailStats);
@@ -544,6 +618,65 @@ export default function AnalysisPage() {
     return columns;
   };
 
+  // 按视频分类统计表格列配置
+  const getVideoTableColumns = () => {
+    const columns = [
+      {
+        title: '问题大类',
+        dataIndex: 'majorCategory',
+        key: 'majorCategory',
+        width: 150,
+        fixed: 'left' as const
+      },
+      {
+        title: '问题小类',
+        dataIndex: 'minorCategory',
+        key: 'minorCategory',
+        width: 200,
+        fixed: 'left' as const
+      }
+    ];
+    
+    // 计算每个视频的总数
+    const videoTotals = availableVideos.reduce((acc, videoName) => {
+      acc[videoName] = videoDetailStats.reduce((sum, row) => sum + ((row[videoName] as number) || 0), 0);
+      return acc;
+    }, {} as Record<string, number>);
+    
+    // 动态添加视频列（数量 + 占比）
+    availableVideos.forEach(videoName => {
+      const total = videoTotals[videoName];
+      
+      columns.push({
+        title: `${videoName}`,
+        children: [
+          {
+            title: '数量',
+            dataIndex: videoName,
+            key: `${videoName}_count`,
+            width: 80,
+            render: (value: number) => value > 0 ? <span style={{ fontWeight: 500 }}>{value}条</span> : <span style={{ color: '#ccc' }}>0</span>
+          },
+          {
+            title: '占比',
+            dataIndex: videoName,
+            key: `${videoName}_percentage`,
+            width: 80,
+            render: (value: number) => {
+              if (value === 0 || total === 0) {
+                return <span style={{ color: '#ccc' }}>0%</span>;
+              }
+              const percentage = ((value / total) * 100).toFixed(1);
+              return <span style={{ color: '#1890ff' }}>{percentage}%</span>;
+            }
+          }
+        ]
+      } as any);
+    });
+    
+    return columns;
+  };
+
   // 导出CSV
   const handleExport = () => {
     // 构建CSV数据
@@ -707,7 +840,33 @@ export default function AnalysisPage() {
             />
           </Card>
 
-          {/* 4. 原始数据明细（新增） */}
+          {/* 4. 按视频分类统计（新增） */}
+          <Card 
+            title={
+              <Space>
+                <TableOutlined />
+                <span>按视频分类统计</span>
+              </Space>
+            }
+            loading={loading}
+            style={{ marginBottom: 24 }}
+          >
+            <Table
+              columns={getVideoTableColumns()}
+              dataSource={videoDetailStats}
+              rowKey={(record) => `${record.majorCategory}_${record.minorCategory}`}
+              pagination={{
+                pageSize: 20,
+                showSizeChanger: true,
+                showTotal: (total) => `共 ${total} 项`
+              }}
+              scroll={{ x: 'max-content' }}
+              bordered
+              size="middle"
+            />
+          </Card>
+
+          {/* 5. 原始数据明细 */}
           <Card 
             title={
               <Space>
