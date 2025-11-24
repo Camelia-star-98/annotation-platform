@@ -3,11 +3,11 @@ import type { AnnotationItem, VideoInfo } from '../types';
 
 // ========== 视频相关 ==========
 
-// 获取所有视频
+// 获取所有视频（优化：只查询必要字段，移除日志）
 export async function getVideos(): Promise<VideoInfo[]> {
   const { data, error } = await supabase
     .from('videos')
-    .select('*')
+    .select('id, name, url, subject, duration, required_annotators, created_at')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -15,10 +15,23 @@ export async function getVideos(): Promise<VideoInfo[]> {
     return [];
   }
 
-  console.log('🔍 数据库返回的原始视频数据:', data);
-  console.log('🔍 第一条数据详细信息:', data?.[0]);
-
   return data || [];
+}
+
+// 获取单个视频（优化：避免查询所有视频）
+export async function getVideo(videoId: string): Promise<VideoInfo | null> {
+  const { data, error } = await supabase
+    .from('videos')
+    .select('id, name, url, subject, duration, required_annotators, created_at')
+    .eq('id', videoId)
+    .single();
+
+  if (error) {
+    console.error('获取视频失败:', error);
+    return null;
+  }
+
+  return data;
 }
 
 // 添加视频
@@ -266,9 +279,10 @@ export async function getReviewedAnnotations(videoIds?: string[]): Promise<Annot
 
 // 获取指定视频的标注数据
 export async function getAnnotations(videoId: string): Promise<AnnotationItem[]> {
+  // 优化：只查询必要字段，不查询大文本字段（如 ai_rewritten_text）
   const { data, error } = await supabase
     .from('annotations')
-    .select('*')
+    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status')
     .eq('video_id', videoId)
     .order('sentence_no', { ascending: true });
 
@@ -286,7 +300,7 @@ export async function getAnnotations(videoId: string): Promise<AnnotationItem[]>
     startTime: item.start_time,
     endTime: item.end_time,
     originalText: item.original_text,
-    aiRewrittenText: item.ai_rewritten_text,
+    aiRewrittenText: '', // 不查询，节省带宽
     humanAnnotatedText: item.human_annotated_text,
     majorCategory: item.major_category,
     minorCategory: item.minor_category,

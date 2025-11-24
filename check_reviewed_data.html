@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查已复检数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+      background: #f5f5f5;
+    }
+    h1 { color: #1890ff; }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #1890ff;
+      color: white;
+      position: sticky;
+      top: 0;
+    }
+    .status-true { background: #d4edda; font-weight: bold; }
+    .status-false { background: #fff3cd; }
+    .status-null { background: #f8d7da; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px;
+      font-size: 14px;
+    }
+    button:hover { background: #40a9ff; }
+    .info { background: #e6f7ff; padding: 15px; border-left: 4px solid #1890ff; margin: 15px 0; }
+    .warning { background: #fff7e6; padding: 15px; border-left: 4px solid #faad14; margin: 15px 0; }
+    .error { background: #fff1f0; padding: 15px; border-left: 4px solid #ff4d4f; margin: 15px 0; }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查已复检数据</h1>
+  
+  <div class="section">
+    <button onclick="checkAllReviewedData()">🔍 查找所有已复检数据</button>
+    <button onclick="checkReviewStatusDistribution()">📊 查看复检状态分布</button>
+    <button onclick="checkReviewerData()">👥 查看复检人数据</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://ilmcsyxdqybqjsytfyfi.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlsbWNzeXhkcXlicWpzeXRmeWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc2MjcxMTcsImV4cCI6MjA2MzIwMzExN30.njmCj-x43WbW4fQEVrGcnHXdgvl-lp9rPt85M7WnOmQ';
+
+    const { createClient } = window.supabase;
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const resultsDiv = document.getElementById('results');
+
+    async function checkAllReviewedData() {
+      resultsDiv.innerHTML = '<div class="section"><p>正在查询所有已复检数据...</p></div>';
+
+      try {
+        // 查询 review_status = true 的数据
+        const { data: reviewedData, error } = await supabaseClient
+          .from('annotations')
+          .select('*')
+          .eq('review_status', true)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        console.log('✅ 已复检数据:', reviewedData);
+
+        let html = '<div class="section">';
+        
+        if (reviewedData.length === 0) {
+          html += '<div class="error">';
+          html += '<h2>❌ 没有找到任何已复检数据！</h2>';
+          html += '<p><strong>这意味着数据库中所有数据的 review_status 字段都不是 true。</strong></p>';
+          html += '<p>可能的原因：</p>';
+          html += '<ul>';
+          html += '<li>数据被重新上传，覆盖了原有的复检状态</li>';
+          html += '<li>review_status 字段被意外清空</li>';
+          html += '<li>数据库被重置或恢复到之前的版本</li>';
+          html += '</ul>';
+          html += '</div>';
+        } else {
+          html += '<div class="info">';
+          html += `<h2>✅ 找到 ${reviewedData.length} 条已复检数据</h2>`;
+          html += '</div>';
+          
+          // 按视频分组统计
+          const videoGroups = new Map();
+          reviewedData.forEach(item => {
+            const videoId = item.video_id;
+            if (!videoGroups.has(videoId)) {
+              videoGroups.set(videoId, []);
+            }
+            videoGroups.get(videoId).push(item);
+          });
+
+          html += `<p><strong>涉及视频数：</strong>${videoGroups.size}</p>`;
+          html += `<p><strong>复检人列表：</strong>${[...new Set(reviewedData.map(d => d.reviewer).filter(Boolean))].join(', ')}</p>`;
+
+          // 显示数据表格
+          html += '<h3>数据详情</h3>';
+          html += '<table>';
+          html += '<thead><tr>';
+          html += '<th>视频ID</th><th>句号</th><th>标注人</th><th>复检人</th><th>人工标注文本</th><th>review_status</th><th>更新时间</th>';
+          html += '</tr></thead><tbody>';
+
+          reviewedData.slice(0, 100).forEach(item => {
+            html += '<tr>';
+            html += `<td>${item.video_id ? item.video_id.substring(0, 20) : '-'}</td>`;
+            html += `<td>${item.sentence_no || '-'}</td>`;
+            html += `<td>${item.annotator || '-'}</td>`;
+            html += `<td>${item.reviewer || '-'}</td>`;
+            html += `<td>${item.human_annotated_text ? item.human_annotated_text.substring(0, 30) + '...' : '-'}</td>`;
+            html += `<td class="status-true">true</td>`;
+            html += `<td>${item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : '-'}</td>`;
+            html += '</tr>';
+          });
+
+          html += '</tbody></table>';
+          
+          if (reviewedData.length > 100) {
+            html += `<p class="info">显示前100条，共${reviewedData.length}条</p>`;
+          }
+        }
+
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('查询失败:', error);
+        resultsDiv.innerHTML = `<div class="section"><div class="error">❌ 查询失败: ${error.message}</div></div>`;
+      }
+    }
+
+    async function checkReviewStatusDistribution() {
+      resultsDiv.innerHTML = '<div class="section"><p>正在统计复检状态分布...</p></div>';
+
+      try {
+        const { data: allData, error } = await supabaseClient
+          .from('annotations')
+          .select('review_status, reviewer, annotator, human_annotated_text')
+          .limit(10000);
+
+        if (error) throw error;
+
+        const stats = {
+          total: allData.length,
+          reviewStatusTrue: 0,
+          reviewStatusFalse: 0,
+          reviewStatusNull: 0,
+          withReviewer: 0,
+          withHumanText: 0,
+          withAnnotator: 0
+        };
+
+        allData.forEach(item => {
+          if (item.review_status === true) stats.reviewStatusTrue++;
+          else if (item.review_status === false) stats.reviewStatusFalse++;
+          else stats.reviewStatusNull++;
+
+          if (item.reviewer) stats.withReviewer++;
+          if (item.human_annotated_text && item.human_annotated_text.trim()) stats.withHumanText++;
+          if (item.annotator && item.annotator.trim()) stats.withAnnotator++;
+        });
+
+        let html = '<div class="section">';
+        html += '<h2>📊 复检状态分布</h2>';
+        html += '<table style="max-width: 600px;">';
+        html += '<tr><th>统计项</th><th>数量</th><th>占比</th></tr>';
+        html += `<tr><td>总数据量</td><td>${stats.total}</td><td>100%</td></tr>`;
+        html += `<tr class="status-true"><td>review_status = true</td><td>${stats.reviewStatusTrue}</td><td>${(stats.reviewStatusTrue/stats.total*100).toFixed(1)}%</td></tr>`;
+        html += `<tr class="status-false"><td>review_status = false</td><td>${stats.reviewStatusFalse}</td><td>${(stats.reviewStatusFalse/stats.total*100).toFixed(1)}%</td></tr>`;
+        html += `<tr class="status-null"><td>review_status = null</td><td>${stats.reviewStatusNull}</td><td>${(stats.reviewStatusNull/stats.total*100).toFixed(1)}%</td></tr>`;
+        html += `<tr><td>有复检人（reviewer不为空）</td><td>${stats.withReviewer}</td><td>${(stats.withReviewer/stats.total*100).toFixed(1)}%</td></tr>`;
+        html += `<tr><td>有人工标注文本</td><td>${stats.withHumanText}</td><td>${(stats.withHumanText/stats.total*100).toFixed(1)}%</td></tr>`;
+        html += `<tr><td>有标注人</td><td>${stats.withAnnotator}</td><td>${(stats.withAnnotator/stats.total*100).toFixed(1)}%</td></tr>`;
+        html += '</table>';
+
+        if (stats.reviewStatusTrue === 0 && stats.withReviewer > 0) {
+          html += '<div class="warning">';
+          html += '<h3>⚠️ 发现异常</h3>';
+          html += `<p>有 ${stats.withReviewer} 条数据存在复检人（reviewer字段不为空），但 review_status 都不是 true。</p>`;
+          html += '<p>这可能说明数据被重新上传，导致 review_status 字段被覆盖。</p>';
+          html += '</div>';
+        }
+
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('查询失败:', error);
+        resultsDiv.innerHTML = `<div class="section"><div class="error">❌ 查询失败: ${error.message}</div></div>`;
+      }
+    }
+
+    async function checkReviewerData() {
+      resultsDiv.innerHTML = '<div class="section"><p>正在查询有复检人的数据...</p></div>';
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('annotations')
+          .select('*')
+          .not('reviewer', 'is', null)
+          .order('updated_at', { ascending: false })
+          .limit(200);
+
+        if (error) throw error;
+
+        let html = '<div class="section">';
+        html += `<h2>👥 有复检人的数据（共 ${data.length} 条）</h2>`;
+
+        if (data.length === 0) {
+          html += '<div class="error"><p>没有找到任何有复检人的数据。</p></div>';
+        } else {
+          const reviewers = [...new Set(data.map(d => d.reviewer))];
+          html += `<p><strong>复检人列表：</strong>${reviewers.join(', ')}</p>`;
+
+          html += '<table>';
+          html += '<thead><tr>';
+          html += '<th>视频ID</th><th>句号</th><th>标注人</th><th>复检人</th><th>review_status</th><th>人工标注</th><th>更新时间</th>';
+          html += '</tr></thead><tbody>';
+
+          data.forEach(item => {
+            const statusClass = item.review_status === true ? 'status-true' : 
+                              item.review_status === false ? 'status-false' : 'status-null';
+            const statusText = item.review_status === true ? 'true' : 
+                              item.review_status === false ? 'false' : 'null';
+            
+            html += '<tr>';
+            html += `<td>${item.video_id ? item.video_id.substring(0, 15) : '-'}</td>`;
+            html += `<td>${item.sentence_no || '-'}</td>`;
+            html += `<td>${item.annotator || '-'}</td>`;
+            html += `<td><strong>${item.reviewer}</strong></td>`;
+            html += `<td class="${statusClass}">${statusText}</td>`;
+            html += `<td>${item.human_annotated_text ? '✅' : '❌'}</td>`;
+            html += `<td>${item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : '-'}</td>`;
+            html += '</tr>';
+          });
+
+          html += '</tbody></table>';
+
+          // 统计每个复检人的review_status分布
+          html += '<h3>复检人数据统计</h3>';
+          html += '<table style="max-width: 800px;">';
+          html += '<tr><th>复检人</th><th>总数</th><th>review_status=true</th><th>review_status=false</th><th>review_status=null</th></tr>';
+          
+          reviewers.forEach(reviewer => {
+            const reviewerData = data.filter(d => d.reviewer === reviewer);
+            const trueCount = reviewerData.filter(d => d.review_status === true).length;
+            const falseCount = reviewerData.filter(d => d.review_status === false).length;
+            const nullCount = reviewerData.filter(d => d.review_status === null || d.review_status === undefined).length;
+            
+            html += '<tr>';
+            html += `<td><strong>${reviewer}</strong></td>`;
+            html += `<td>${reviewerData.length}</td>`;
+            html += `<td class="status-true">${trueCount}</td>`;
+            html += `<td class="status-false">${falseCount}</td>`;
+            html += `<td class="status-null">${nullCount}</td>`;
+            html += '</tr>';
+          });
+
+          html += '</table>';
+        }
+
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('查询失败:', error);
+        resultsDiv.innerHTML = `<div class="section"><div class="error">❌ 查询失败: ${error.message}</div></div>`;
+      }
+    }
+
+    // 页面加载时自动检查
+    window.onload = () => {
+      setTimeout(checkReviewStatusDistribution, 500);
+    };
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查复检数据</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 40px;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+    .container {
+      background: white;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+    }
+    h1 { color: #1890ff; margin-bottom: 30px; font-size: 32px; }
+    .loading {
+      text-align: center;
+      padding: 60px;
+      font-size: 20px;
+      color: #666;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #1890ff;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .stats-box {
+      background: #f0f2f5;
+      padding: 25px;
+      border-radius: 8px;
+      margin: 20px 0;
+      border-left: 5px solid #1890ff;
+    }
+    .stat-item {
+      margin: 15px 0;
+      font-size: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .stat-label { font-weight: 500; color: #333; }
+    .stat-value { font-weight: bold; font-size: 24px; color: #1890ff; }
+    .stat-value.warning { color: #faad14; }
+    .stat-value.error { color: #ff4d4f; }
+    .stat-value.success { color: #52c41a; }
+    .alert {
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+      font-size: 16px;
+    }
+    .alert-warning { background: #fff7e6; border-left: 5px solid #faad14; color: #ad6800; }
+    .alert-error { background: #fff1f0; border-left: 5px solid #ff4d4f; color: #cf1322; }
+    .alert-success { background: #f6ffed; border-left: 5px solid #52c41a; color: #389e0d; }
+    .alert-info { background: #e6f7ff; border-left: 5px solid #1890ff; color: #096dd9; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #e8e8e8;
+    }
+    th { background: #fafafa; font-weight: 600; color: #333; }
+    tr:hover { background: #fafafa; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      font-weight: 500;
+      margin: 10px 5px;
+      transition: all 0.3s;
+    }
+    button:hover {
+      background: #40a9ff;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
+    }
+    button:disabled {
+      background: #d9d9d9;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .action-section {
+      margin-top: 30px;
+      padding: 25px;
+      background: #f9f9f9;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 检查丢失的复检数据</h1>
+    
+    <div id="content">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>正在连接数据库并检查数据...</p>
+        <p style="font-size: 14px; color: #999;">这可能需要几秒钟</p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    const contentDiv = document.getElementById('content');
+
+    async function checkData() {
+      try {
+        const supabaseModule = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+        const createClient = supabaseModule.createClient;
+        
+        const SUPABASE_URL = 'https://ilmcsyxdqybqjsytfyfi.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlsbWNzeXhkcXlicWpzeXRmeWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc2MjcxMTcsImV4cCI6MjA2MzIwMzExN30.njmCj-x43WbW4fQEVrGcnHXdgvl-lp9rPt85M7WnOmQ';
+        
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const result = await supabase
+          .from('annotations')
+          .select('*')
+          .order('updated_at', { ascending: false })
+          .limit(10000);
+
+        if (result.error) throw result.error;
+        
+        const allData = result.data;
+        const total = allData.length;
+        const withReviewer = allData.filter(d => d.reviewer && d.reviewer.trim() !== '');
+        const reviewStatusTrue = allData.filter(d => d.review_status === true);
+        const reviewStatusFalse = allData.filter(d => d.review_status === false);
+        const reviewStatusNull = allData.filter(d => d.review_status === null || d.review_status === undefined);
+        const lostData = allData.filter(d => d.reviewer && d.reviewer.trim() !== '' && d.review_status !== true);
+
+        const reviewers = [...new Set(withReviewer.map(d => d.reviewer))];
+
+        let html = '<div class="stats-box">';
+        html += '<h2 style="margin-top:0; color:#333;">📊 数据统计</h2>';
+        
+        html += '<div class="stat-item"><span class="stat-label">总数据量：</span>';
+        html += '<span class="stat-value">' + total + '</span></div>';
+        
+        html += '<div class="stat-item"><span class="stat-label">有复检人的数据：</span>';
+        html += '<span class="stat-value ' + (withReviewer.length > 0 ? 'success' : '') + '">' + withReviewer.length + '</span></div>';
+        
+        html += '<div class="stat-item"><span class="stat-label">review_status = true：</span>';
+        html += '<span class="stat-value ' + (reviewStatusTrue.length > 0 ? 'success' : 'error') + '">' + reviewStatusTrue.length + '</span></div>';
+        
+        html += '<div class="stat-item"><span class="stat-label">review_status = false：</span>';
+        html += '<span class="stat-value warning">' + reviewStatusFalse.length + '</span></div>';
+        
+        html += '<div class="stat-item"><span class="stat-label">review_status = null：</span>';
+        html += '<span class="stat-value">' + reviewStatusNull.length + '</span></div>';
+        
+        html += '</div>';
+
+        if (lostData.length > 0) {
+          html += '<div class="alert alert-error">';
+          html += '<h2 style="margin-top:0;">⚠️ 发现问题！</h2>';
+          html += '<p><strong>找到 ' + lostData.length + ' 条有复检人但 review_status 不是 true 的数据！</strong></p>';
+          html += '<p>这些很可能就是您丢失的已复检数据。</p>';
+          html += '</div>';
+
+          html += '<div class="alert alert-info">';
+          html += '<h3 style="margin-top:0;">👥 涉及的复检人</h3>';
+          html += '<p>' + reviewers.join('、') + '</p>';
+          html += '</div>';
+
+          html += '<h2>数据样本（前20条）</h2>';
+          html += '<table><thead><tr>';
+          html += '<th>视频ID</th><th>句号</th><th>标注人</th><th>复检人</th><th>review_status</th><th>有人工标注</th>';
+          html += '</tr></thead><tbody>';
+
+          lostData.slice(0, 20).forEach(function(item) {
+            html += '<tr>';
+            html += '<td>' + item.video_id.substring(0, 20) + '...</td>';
+            html += '<td>' + item.sentence_no + '</td>';
+            html += '<td>' + (item.annotator || '-') + '</td>';
+            html += '<td><strong>' + item.reviewer + '</strong></td>';
+            html += '<td>' + (item.review_status === false ? 'false' : 'null') + '</td>';
+            html += '<td>' + (item.human_annotated_text ? '✅' : '❌') + '</td>';
+            html += '</tr>';
+          });
+
+          html += '</tbody></table>';
+
+          html += '<div class="action-section">';
+          html += '<h2>🔧 恢复方案</h2>';
+          html += '<div class="alert alert-warning">';
+          html += '<p><strong>将所有有复检人的数据的 review_status 设置为 true</strong></p>';
+          html += '<p>这将恢复 ' + lostData.length + ' 条数据的复检状态。</p>';
+          html += '</div>';
+          html += '<button id="fixBtn">🔧 立即修复（将有复检人的数据标记为已复检）</button>';
+          html += '<p style="color:#999; font-size:14px; margin-top:10px;">⚠️ 此操作不可撤销，请确认后再点击</p>';
+          html += '</div>';
+
+          window.lostDataIds = lostData.map(d => d.id);
+          window.lostDataCount = lostData.length;
+          window.supabaseClient = supabase;
+
+        } else if (withReviewer.length === 0) {
+          html += '<div class="alert alert-error">';
+          html += '<h2 style="margin-top:0;">❌ 没有找到任何复检数据</h2>';
+          html += '<p>数据库中没有任何带复检人的数据。</p>';
+          html += '</div>';
+        } else {
+          html += '<div class="alert alert-success">';
+          html += '<h2 style="margin-top:0;">✅ 数据状态正常</h2>';
+          html += '<p>所有 ' + withReviewer.length + ' 条有复检人的数据，其 review_status 都是 true。</p>';
+          html += '</div>';
+        }
+
+        contentDiv.innerHTML = html;
+
+        const fixBtn = document.getElementById('fixBtn');
+        if (fixBtn) {
+          fixBtn.onclick = fixReviewStatus;
+        }
+
+      } catch (error) {
+        console.error('检查失败:', error);
+        contentDiv.innerHTML = '<div class="alert alert-error"><h2 style="margin-top:0;">❌ 检查失败</h2><p>' + error.message + '</p></div>';
+      }
+    }
+
+    async function fixReviewStatus() {
+      const fixBtn = document.getElementById('fixBtn');
+      const confirmMsg = '确定要将 ' + window.lostDataCount + ' 条有复检人的数据标记为已复检吗？\n\n此操作不可撤销！';
+      
+      if (!confirm(confirmMsg)) {
+        return;
+      }
+
+      fixBtn.disabled = true;
+      fixBtn.textContent = '正在修复...';
+
+      try {
+        const ids = window.lostDataIds;
+        const batchSize = 100;
+        
+        for (let i = 0; i < ids.length; i += batchSize) {
+          const batch = ids.slice(i, i + batchSize);
+          const result = await window.supabaseClient
+            .from('annotations')
+            .update({ review_status: true })
+            .in('id', batch);
+          
+          if (result.error) throw result.error;
+          
+          const progress = Math.min(i + batchSize, ids.length);
+          fixBtn.textContent = '正在修复... ' + progress + '/' + ids.length;
+        }
+
+        const successMsg = '✅ 修复成功！已恢复 ' + window.lostDataCount + ' 条复检数据。\n\n请刷新复检页面查看。';
+        alert(successMsg);
+        location.reload();
+        
+      } catch (error) {
+        alert('❌ 修复失败：' + error.message);
+        fixBtn.disabled = false;
+        fixBtn.textContent = '🔧 立即修复';
+      }
+    }
+
+    checkData();
+  </script>
+</body>
+</html>
+

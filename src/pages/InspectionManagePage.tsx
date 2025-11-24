@@ -136,15 +136,15 @@ export default function InspectionManagePage() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const { getAnnotations, getVideos } = await import('../api/database');
+      const { getAnnotations, getVideo } = await import('../api/database');
       
       let annotations: AnnotationItem[] = [];
       
-      // 如果指定了视频ID，只加载该视频的数据
+      // 如果指定了视频ID，只加载该视频的数据（优化：直接查询单个视频，不查询所有视频）
       if (selectedVideoId) {
-        // 获取视频信息（包括URL）
-        const allVideos = await getVideos();
-        const currentVideo = allVideos.find(v => v.id === selectedVideoId);
+        // 优化：直接查询单个视频，而不是查询所有视频后查找
+        const { getVideo } = await import('../api/database');
+        const currentVideo = await getVideo(selectedVideoId);
         const videoUrl = currentVideo?.url || '';
         
         // 直接获取该视频的所有标注数据
@@ -226,10 +226,18 @@ export default function InspectionManagePage() {
           return;
         }
         
-        const allVideos = await getVideos();
+        // 优化：只查询相关视频的基本信息（id, name, url），减少数据传输
+        // 提取所有唯一的 video_id
+        const uniqueVideoIds = [...new Set((annotationsData || []).map((item: any) => item.video_id))];
+        
+        // 只查询相关的视频，而不是所有视频
+        const { data: videosData } = await supabase
+          .from('videos')
+          .select('id, name, url')
+          .in('id', uniqueVideoIds); // 只查询相关的视频
         
         // 创建视频 ID 到视频信息的映射
-        const videoMap = new Map(allVideos.map(v => [v.id, { name: v.name, url: v.url }]));
+        const videoMap = new Map((videosData || []).map((v: any) => [v.id, { name: v.name, url: v.url }]));
         
         // 转换数据格式并添加视频信息（只包含必要字段）
         const annotationsWithVideoName = (annotationsData || []).map((item: any) => {

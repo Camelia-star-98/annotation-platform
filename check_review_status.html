@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查复检状态字段</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 { color: #1890ff; }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+      font-size: 12px;
+    }
+    th {
+      background: #1890ff;
+      color: white;
+    }
+    .status-true { background: #d4edda; color: #155724; }
+    .status-false { background: #fff3cd; color: #856404; }
+    .status-null { background: #f8d7da; color: #721c24; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    button:hover { background: #40a9ff; }
+    pre {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 11px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查 review_status 字段</h1>
+  
+  <div class="section">
+    <button onclick="checkReviewStatus()">开始检查</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://ilmcsyxdqybqjsytfyfi.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlsbWNzeXhkcXlicWpzeXRmeWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc2MjcxMTcsImV4cCI6MjA2MzIwMzExN30.njmCj-x43WbW4fQEVrGcnHXdgvl-lp9rPt85M7WnOmQ';
+
+    let supabaseClient;
+    const resultsDiv = document.getElementById('results');
+
+    function init() {
+      if (typeof supabase !== 'undefined') {
+        const { createClient } = supabase;
+        supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        console.log('✅ Supabase初始化完成');
+      } else {
+        setTimeout(init, 100);
+      }
+    }
+    init();
+
+    async function checkReviewStatus() {
+      if (!supabaseClient) {
+        alert('Supabase尚未初始化，请稍候再试');
+        return;
+      }
+
+      resultsDiv.innerHTML = '<p>正在查询数据...</p>';
+
+      try {
+        const { data: annotations, error } = await supabaseClient
+          .from('annotations')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (error) throw error;
+
+        console.log('📊 查询到的数据:', annotations);
+
+        // 统计
+        const stats = {
+          total: annotations.length,
+          reviewStatusTrue: 0,
+          reviewStatusFalse: 0,
+          reviewStatusNull: 0,
+          withHumanText: 0,
+          withAnnotator: 0,
+          unknownAnnotator: 0
+        };
+
+        annotations.forEach(item => {
+          if (item.review_status === true) stats.reviewStatusTrue++;
+          else if (item.review_status === false) stats.reviewStatusFalse++;
+          else stats.reviewStatusNull++;
+
+          if (item.human_annotated_text && item.human_annotated_text.trim() !== '') {
+            stats.withHumanText++;
+          }
+
+          if (item.annotator && item.annotator.trim() !== '') {
+            stats.withAnnotator++;
+            if (item.annotator === 'unknown') stats.unknownAnnotator++;
+          }
+        });
+
+        let html = '<div class="section">';
+        html += '<h2>📊 统计结果</h2>';
+        html += `<p><strong>总数据量：</strong>${stats.total}</p>`;
+        html += `<p><strong>review_status = true（已复检）：</strong><span class="status-true">${stats.reviewStatusTrue}</span></p>`;
+        html += `<p><strong>review_status = false（待复检）：</strong><span class="status-false">${stats.reviewStatusFalse}</span></p>`;
+        html += `<p><strong>review_status = null（未设置）：</strong><span class="status-null">${stats.reviewStatusNull}</span></p>`;
+        html += `<p><strong>有人工标注文本：</strong>${stats.withHumanText}</p>`;
+        html += `<p><strong>有标注人：</strong>${stats.withAnnotator}</p>`;
+        html += `<p><strong>标注人为unknown：</strong>${stats.unknownAnnotator}</p>`;
+        html += '</div>';
+
+        // 显示前20条数据样本
+        html += '<div class="section">';
+        html += '<h2>📋 数据样本（前20条）</h2>';
+        html += '<table>';
+        html += '<thead><tr>';
+        html += '<th>句号</th><th>标注人</th><th>有人工文本</th><th>review_status</th><th>复检人</th><th>视频ID</th>';
+        html += '</tr></thead><tbody>';
+
+        annotations.slice(0, 20).forEach(item => {
+          const hasText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+          let statusClass = '';
+          let statusText = '';
+          if (item.review_status === true) {
+            statusClass = 'status-true';
+            statusText = 'true';
+          } else if (item.review_status === false) {
+            statusClass = 'status-false';
+            statusText = 'false';
+          } else {
+            statusClass = 'status-null';
+            statusText = 'null';
+          }
+
+          html += '<tr>';
+          html += `<td>${item.sentence_no || '-'}</td>`;
+          html += `<td>${item.annotator || '(空)'}</td>`;
+          html += `<td>${hasText ? '✅' : '❌'}</td>`;
+          html += `<td class="${statusClass}">${statusText}</td>`;
+          html += `<td>${item.reviewer || '-'}</td>`;
+          html += `<td>${item.video_id ? item.video_id.substring(0, 15) + '...' : '-'}</td>`;
+          html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('查询失败:', error);
+        resultsDiv.innerHTML = `<div class="section"><p style="color:red;">❌ 查询失败: ${error.message}</p></div>`;
+      }
+    }
+  </script>
+</body>
+</html>
+

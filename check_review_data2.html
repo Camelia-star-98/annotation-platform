@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>诊断复检数据问题</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+      background: #f5f5f5;
+    }
+    h1 { color: #1890ff; }
+    h2 { color: #333; margin-top: 30px; }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 12px;
+      text-align: left;
+      font-size: 13px;
+    }
+    th {
+      background: #1890ff;
+      color: white;
+      font-weight: 600;
+    }
+    tr:nth-child(even) {
+      background: #f9f9f9;
+    }
+    .status-ok { color: #52c41a; font-weight: bold; }
+    .status-error { color: #ff4d4f; font-weight: bold; }
+    .status-warning { color: #faad14; font-weight: bold; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #40a9ff;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 12px;
+    }
+    .info-box {
+      background: #e6f7ff;
+      border-left: 4px solid #1890ff;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    .loading {
+      text-align: center;
+      padding: 50px;
+      color: #999;
+      font-size: 16px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 诊断复检数据问题</h1>
+  
+  <div class="section">
+    <button onclick="diagnoseReviewData()">🔍 开始诊断</button>
+    <button onclick="showAllAnnotations()">📋 查看所有标注数据</button>
+    <button onclick="fixAnnotatorNames()">🔧 修复标注人姓名</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    // Supabase配置 - 请替换为你的实际配置
+    const SUPABASE_URL = 'https://ilmcsyxdqybqjsytfyfi.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlsbWNzeXhkcXlicWpzeXRmeWZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDc2MjcxMTcsImV4cCI6MjA2MzIwMzExN30.njmCj-x43WbW4fQEVrGcnHXdgvl-lp9rPt85M7WnOmQ';
+
+    // 等待页面和Supabase库都加载完成后再初始化
+    let supabaseClient;
+    let resultsDiv;
+    
+    function initialize() {
+      if (typeof supabase === 'undefined') {
+        console.log('等待Supabase库加载...');
+        setTimeout(initialize, 100);
+        return;
+      }
+      
+      const { createClient } = supabase;
+      supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      resultsDiv = document.getElementById('results');
+      console.log('✅ 初始化完成');
+      
+      // 初始化完成后自动诊断
+      setTimeout(() => {
+        if (resultsDiv && supabaseClient) {
+          diagnoseReviewData();
+        }
+      }, 300);
+    }
+    
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initialize);
+    } else {
+      initialize();
+    }
+
+    async function diagnoseReviewData() {
+      if (!resultsDiv || !supabaseClient) {
+        alert('页面尚未加载完成，请稍候再试');
+        return;
+      }
+      resultsDiv.innerHTML = '<div class="loading">正在诊断数据...</div>';
+      
+      try {
+        // 1. 获取所有标注数据
+        const { data: allAnnotations, error: annotationsError } = await supabaseClient
+          .from('annotations')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(5000);
+
+        if (annotationsError) throw annotationsError;
+
+        console.log('📊 获取到的所有标注数据:', allAnnotations);
+
+        // 2. 统计分析
+        const stats = {
+          total: allAnnotations.length,
+          withAnnotator: 0,
+          withoutAnnotator: 0,
+          invalidAnnotator: 0,
+          withHumanText: 0,
+          withoutHumanText: 0,
+          reviewStatusTrue: 0,
+          reviewStatusFalse: 0,
+          reviewStatusNull: 0,
+          byAnnotator: new Map(),
+          byVideo: new Map()
+        };
+
+        allAnnotations.forEach(item => {
+          const annotator = item.annotator;
+          const humanText = item.human_annotated_text;
+          const reviewStatus = item.review_status;
+
+          // 标注人统计
+          if (!annotator || annotator.trim() === '') {
+            stats.withoutAnnotator++;
+          } else if (annotator === 'unknown' || annotator === '未知标注员') {
+            stats.invalidAnnotator++;
+          } else {
+            stats.withAnnotator++;
+            const count = stats.byAnnotator.get(annotator) || 0;
+            stats.byAnnotator.set(annotator, count + 1);
+          }
+
+          // 人工标注文本统计
+          if (humanText && humanText.trim() !== '') {
+            stats.withHumanText++;
+          } else {
+            stats.withoutHumanText++;
+          }
+
+          // 复检状态统计
+          if (reviewStatus === true) {
+            stats.reviewStatusTrue++;
+          } else if (reviewStatus === false) {
+            stats.reviewStatusFalse++;
+          } else {
+            stats.reviewStatusNull++;
+          }
+
+          // 按视频统计
+          const videoId = item.video_id;
+          if (!stats.byVideo.has(videoId)) {
+            stats.byVideo.set(videoId, {
+              total: 0,
+              withHumanText: 0,
+              pendingReview: 0,
+              reviewed: 0
+            });
+          }
+          const videoStats = stats.byVideo.get(videoId);
+          videoStats.total++;
+          if (humanText && humanText.trim() !== '') {
+            videoStats.withHumanText++;
+            if (reviewStatus === true) {
+              videoStats.reviewed++;
+            } else {
+              videoStats.pendingReview++;
+            }
+          }
+        });
+
+        // 3. 显示诊断结果
+        let html = '<div class="section">';
+        html += '<h2>📊 数据统计</h2>';
+        html += '<div class="info-box">';
+        html += `<p><strong>总数据量：</strong>${stats.total}</p>`;
+        html += `<p><strong>有标注人：</strong><span class="${stats.withAnnotator > 0 ? 'status-ok' : 'status-error'}">${stats.withAnnotator}</span></p>`;
+        html += `<p><strong>无标注人（空）：</strong><span class="${stats.withoutAnnotator > 0 ? 'status-error' : 'status-ok'}">${stats.withoutAnnotator}</span></p>`;
+        html += `<p><strong>无效标注人（unknown/未知）：</strong><span class="${stats.invalidAnnotator > 0 ? 'status-warning' : 'status-ok'}">${stats.invalidAnnotator}</span></p>`;
+        html += `<p><strong>有人工标注文本：</strong><span class="${stats.withHumanText > 0 ? 'status-ok' : 'status-error'}">${stats.withHumanText}</span></p>`;
+        html += `<p><strong>无人工标注文本：</strong>${stats.withoutHumanText}</p>`;
+        html += `<p><strong>复检状态=true（已复检）：</strong><span class="status-ok">${stats.reviewStatusTrue}</span></p>`;
+        html += `<p><strong>复检状态=false（待复检）：</strong><span class="status-warning">${stats.reviewStatusFalse}</span></p>`;
+        html += `<p><strong>复检状态=null（未设置）：</strong><span class="status-warning">${stats.reviewStatusNull}</span></p>`;
+        html += '</div>';
+        html += '</div>';
+
+        // 4. 按标注人统计
+        if (stats.byAnnotator.size > 0) {
+          html += '<div class="section">';
+          html += '<h2>👥 按标注人统计</h2>';
+          html += '<table><thead><tr><th>标注人</th><th>数据量</th></tr></thead><tbody>';
+          Array.from(stats.byAnnotator.entries())
+            .sort((a, b) => b[1] - a[1])
+            .forEach(([annotator, count]) => {
+              html += `<tr><td>${annotator}</td><td>${count}</td></tr>`;
+            });
+          html += '</tbody></table></div>';
+        }
+
+        // 5. 按视频统计（显示有人工标注文本的视频）
+        const videosWithData = Array.from(stats.byVideo.entries())
+          .filter(([, v]) => v.withHumanText > 0)
+          .sort((a, b) => b[1].withHumanText - a[1].withHumanText);
+
+        if (videosWithData.length > 0) {
+          html += '<div class="section">';
+          html += '<h2>🎬 按视频统计（有人工标注文本）</h2>';
+          html += '<table><thead><tr><th>视频ID</th><th>总数据</th><th>已标注</th><th>待复检</th><th>已复检</th></tr></thead><tbody>';
+          videosWithData.forEach(([videoId, videoStats]) => {
+            html += `<tr>`;
+            html += `<td>${videoId.substring(0, 20)}...</td>`;
+            html += `<td>${videoStats.total}</td>`;
+            html += `<td class="${videoStats.withHumanText > 0 ? 'status-ok' : ''}">${videoStats.withHumanText}</td>`;
+            html += `<td class="${videoStats.pendingReview > 0 ? 'status-warning' : ''}">${videoStats.pendingReview}</td>`;
+            html += `<td class="${videoStats.reviewed > 0 ? 'status-ok' : ''}">${videoStats.reviewed}</td>`;
+            html += `</tr>`;
+          });
+          html += '</tbody></table></div>';
+        } else {
+          html += '<div class="section">';
+          html += '<h2>❌ 问题发现</h2>';
+          html += '<div class="info-box">';
+          html += '<p><strong>没有找到任何有人工标注文本的数据！</strong></p>';
+          html += '<p>这就是为什么复检页面显示"暂无数据"的原因。</p>';
+          html += '<p>可能的原因：</p>';
+          html += '<ul>';
+          html += '<li>1. 数据还没有被标注（human_annotated_text字段为空）</li>';
+          html += '<li>2. 标注人字段为空或无效（被过滤掉了）</li>';
+          html += '<li>3. 数据上传有问题</li>';
+          html += '</ul>';
+          html += '</div></div>';
+        }
+
+        // 6. 显示问题样本
+        const problemSamples = allAnnotations.slice(0, 10);
+        if (problemSamples.length > 0) {
+          html += '<div class="section">';
+          html += '<h2>🔍 数据样本（前10条）</h2>';
+          html += '<table><thead><tr><th>句号</th><th>标注人</th><th>人工标注文本</th><th>复检状态</th><th>视频ID</th></tr></thead><tbody>';
+          problemSamples.forEach(item => {
+            const annotatorClass = !item.annotator || item.annotator.trim() === '' || item.annotator === 'unknown' ? 'status-error' : 'status-ok';
+            const humanTextClass = item.human_annotated_text && item.human_annotated_text.trim() !== '' ? 'status-ok' : 'status-error';
+            const reviewClass = item.review_status === true ? 'status-ok' : (item.review_status === false ? 'status-warning' : 'status-error');
+            html += `<tr>`;
+            html += `<td>${item.sentence_no || '-'}</td>`;
+            html += `<td class="${annotatorClass}">${item.annotator || '(空)'}</td>`;
+            html += `<td class="${humanTextClass}">${item.human_annotated_text ? item.human_annotated_text.substring(0, 30) + '...' : '(空)'}</td>`;
+            html += `<td class="${reviewClass}">${item.review_status === true ? '已复检' : (item.review_status === false ? '待复检' : 'null')}</td>`;
+            html += `<td>${item.video_id ? item.video_id.substring(0, 20) + '...' : '-'}</td>`;
+            html += `</tr>`;
+          });
+          html += '</tbody></table></div>';
+        }
+
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('诊断失败:', error);
+        resultsDiv.innerHTML = `<div class="section"><p class="status-error">❌ 诊断失败: ${error.message}</p></div>`;
+      }
+    }
+
+    async function showAllAnnotations() {
+      if (!resultsDiv || !supabaseClient) {
+        alert('页面尚未加载完成，请稍候再试');
+        return;
+      }
+      resultsDiv.innerHTML = '<div class="loading">正在加载所有标注数据...</div>';
+      
+      try {
+        const { data, error } = await supabaseClient
+          .from('annotations')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+
+        if (error) throw error;
+
+        let html = '<div class="section">';
+        html += `<h2>📋 所有标注数据（前100条）</h2>`;
+        html += `<p>总数量：${data.length}</p>`;
+        html += '<pre>' + JSON.stringify(data, null, 2) + '</pre>';
+        html += '</div>';
+
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('加载失败:', error);
+        resultsDiv.innerHTML = `<div class="section"><p class="status-error">❌ 加载失败: ${error.message}</p></div>`;
+      }
+    }
+
+    async function fixAnnotatorNames() {
+      if (!resultsDiv || !supabaseClient) {
+        alert('页面尚未加载完成，请稍候再试');
+        return;
+      }
+      if (!confirm('确定要将所有空标注人姓名修复为"未知标注员"吗？')) {
+        return;
+      }
+
+      resultsDiv.innerHTML = '<div class="loading">正在修复标注人姓名...</div>';
+      
+      try {
+        // 更新所有空标注人为"未知标注员"
+        const { data, error } = await supabaseClient
+          .from('annotations')
+          .update({ annotator: '未知标注员' })
+          .or('annotator.is.null,annotator.eq.');
+
+        if (error) throw error;
+
+        resultsDiv.innerHTML = `<div class="section"><p class="status-ok">✅ 修复完成！请刷新页面重新诊断。</p></div>`;
+        
+        setTimeout(() => {
+          diagnoseReviewData();
+        }, 2000);
+
+      } catch (error) {
+        console.error('修复失败:', error);
+        resultsDiv.innerHTML = `<div class="section"><p class="status-error">❌ 修复失败: ${error.message}</p></div>`;
+      }
+    }
+
+    // 自动诊断已在initialize()函数中处理
+  </script>
+</body>
+</html>
+
