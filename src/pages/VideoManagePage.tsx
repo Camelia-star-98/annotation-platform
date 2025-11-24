@@ -1308,6 +1308,23 @@ export default function VideoManagePage() {
     selectedRowKeys,
     onChange: (keys: React.Key[]) => {
       setSelectedRowKeys(keys as string[]);
+    },
+    selections: [
+      Table.SELECTION_ALL,
+      Table.SELECTION_INVERT,
+      Table.SELECTION_NONE,
+    ]
+  };
+
+  // 全选/取消全选
+  const handleSelectAll = () => {
+    if (selectedRowKeys.length === videoList.length) {
+      // 如果已全选，则取消全选
+      setSelectedRowKeys([]);
+    } else {
+      // 否则全选
+      const allKeys = videoList.map(video => video.id);
+      setSelectedRowKeys(allKeys);
     }
   };
 
@@ -1344,6 +1361,13 @@ export default function VideoManagePage() {
                 onClick={() => setAnnotationOnlyModalVisible(true)}
               >
                 只上传标注数据
+              </Button>
+              <Button
+                type={selectedRowKeys.length === videoList.length && videoList.length > 0 ? 'default' : 'primary'}
+                icon={<CheckOutlined />}
+                onClick={handleSelectAll}
+              >
+                {selectedRowKeys.length === videoList.length && videoList.length > 0 ? '取消全选' : '全选'}
               </Button>
               <Button
                 type="primary"
