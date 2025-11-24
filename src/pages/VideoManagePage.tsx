@@ -1156,22 +1156,35 @@ export default function VideoManagePage() {
     try {
       const { supabase } = await import('../api/supabase');
       
+      console.log('📤 开始发布任务，选中的视频ID:', selectedRowKeys);
+      
       // 批量更新选中视频的发布状态
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from('videos')
         .update({ is_published: true })
-        .in('id', selectedRowKeys);
+        .in('id', selectedRowKeys)
+        .select();
       
       if (error) {
+        console.error('❌ 发布失败，错误详情:', error);
         throw error;
       }
       
-      message.success(`已发布 ${selectedRowKeys.length} 个任务`);
+      console.log('✅ 发布成功，更新的数据:', data);
+      
+      if (!data || data.length === 0) {
+        message.warning('没有视频被更新，请检查选中的视频是否存在');
+        return;
+      }
+      
+      message.success(`已发布 ${data.length} 个任务`);
       setSelectedRowKeys([]);
-      loadVideoList();
-    } catch (error) {
+      
+      // 重新加载列表
+      await loadVideoList();
+    } catch (error: any) {
       console.error('发布失败:', error);
-      message.error('发布失败');
+      message.error(`发布失败：${error?.message || '请检查网络连接或重试'}`);
     } finally {
       setLoading(false);
     }
