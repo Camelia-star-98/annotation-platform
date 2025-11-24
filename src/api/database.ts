@@ -7,7 +7,7 @@ import type { AnnotationItem, VideoInfo } from '../types';
 export async function getVideos(): Promise<VideoInfo[]> {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, name, url, subject, duration, required_annotators, created_at')
+    .select('id, name, url, subject, duration, required_annotators, created_at, is_published, is_completed')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -22,7 +22,7 @@ export async function getVideos(): Promise<VideoInfo[]> {
 export async function getVideo(videoId: string): Promise<VideoInfo | null> {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, name, url, subject, duration, required_annotators, created_at')
+    .select('id, name, url, subject, duration, required_annotators, created_at, is_published, is_completed')
     .eq('id', videoId)
     .single();
 
