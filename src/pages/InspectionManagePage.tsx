@@ -142,50 +142,22 @@ export default function InspectionManagePage() {
       
       // 如果指定了视频ID，只加载该视频的数据
       if (selectedVideoId) {
-        console.log('📹 加载视频数据:', selectedVideoId, videoName);
-        console.log('🎲 抽样比例:', samplePercentage + '%');
-        
         // 获取视频信息（包括URL）
         const allVideos = await getVideos();
         const currentVideo = allVideos.find(v => v.id === selectedVideoId);
         const videoUrl = currentVideo?.url || '';
         
-        console.log('🎬 视频URL:', videoUrl);
-        
         // 直接获取该视频的所有标注数据
         annotations = await getAnnotations(selectedVideoId);
-        console.log('📊 该视频的标注数据数量:', annotations.length);
         
-        // 过滤出待质检的数据 - 优化：使用更高效的过滤
+        // 过滤出待质检的数据 - 优化：使用更高效的过滤（移除调试日志提升性能）
         const pendingAnnotations = annotations.filter(
           item => {
             const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
             const notInspected = !item.inspector;
-            const result = hasHumanText && notInspected;
-            // 调试：如果数据被过滤掉，打印原因
-            if (!result && hasHumanText) {
-              console.log('🔍 数据被过滤（已有质检人）:', {
-                id: item.id,
-                sentenceNo: item.sentenceNo,
-                inspector: item.inspector,
-                humanAnnotatedText: item.humanAnnotatedText?.substring(0, 20) + '...'
-              });
-            }
-            if (!result && !hasHumanText) {
-              console.log('🔍 数据被过滤（无人工标注文本）:', {
-                id: item.id,
-                sentenceNo: item.sentenceNo,
-                humanAnnotatedText: item.humanAnnotatedText
-              });
-            }
-            return result;
+            return hasHumanText && notInspected;
           }
         );
-        
-        console.log('⏳ 待质检数据数量:', pendingAnnotations.length);
-        console.log('📋 总标注数据数量:', annotations.length);
-        console.log('📋 有人工标注文本的数据数量:', annotations.filter(item => item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '').length);
-        console.log('📋 已有质检人的数据数量:', annotations.filter(item => item.inspector && item.inspector.trim() !== '').length);
         
         // 实施抽样（如果不是100%）
         let sampledAnnotations = pendingAnnotations;
@@ -193,22 +165,22 @@ export default function InspectionManagePage() {
           const calculatedSize = Math.ceil(pendingAnnotations.length * samplePercentage / 100);
           const sampleSize = Math.max(1, Math.min(calculatedSize, 1000)); // 限制最大抽样数量
           
-          // 使用更高效的随机抽样
+          // 使用更高效的随机抽样（Fisher-Yates 洗牌算法）
           if (pendingAnnotations.length <= sampleSize) {
             sampledAnnotations = pendingAnnotations;
           } else {
-            const indices = new Set<number>();
-            while (indices.size < sampleSize) {
-              indices.add(Math.floor(Math.random() * pendingAnnotations.length));
+            // 使用 Fisher-Yates 洗牌算法进行随机抽样，性能更好
+            const shuffled = [...pendingAnnotations];
+            for (let i = shuffled.length - 1; i > 0; i--) {
+              const j = Math.floor(Math.random() * (i + 1));
+              [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
             }
-            sampledAnnotations = Array.from(indices).map(i => pendingAnnotations[i]);
+            sampledAnnotations = shuffled.slice(0, sampleSize);
           }
           
-          console.log('🎯 抽样后数据数量:', sampledAnnotations.length);
           setSampledCount(sampledAnnotations.length);
         } else if (samplePercentage < 100 && pendingAnnotations.length === 0) {
           // 如果没有待质检数据，但用户设置了抽样比例，显示0
-          console.log('⚠️ 没有待质检数据，抽样后为0');
           setSampledCount(0);
           sampledAnnotations = [];
         } else {
@@ -216,8 +188,9 @@ export default function InspectionManagePage() {
           setSampledCount(pendingAnnotations.length);
         }
         
-        // 限制返回的数据量，避免前端卡顿
-        const finalAnnotations = sampledAnnotations.slice(0, 1000);
+        // 限制返回的数据量，避免前端卡顿（优化：在抽样前就限制，减少处理量）
+        const maxItems = 500; // 降低最大数量，提升性能
+        const finalAnnotations = sampledAnnotations.slice(0, maxItems);
         
         // 给每条标注添加视频名称和视频URL
         const annotationsWithVideoName = finalAnnotations.map(item => ({
@@ -237,9 +210,7 @@ export default function InspectionManagePage() {
         }
       } else {
         // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据（精简字段）
-        console.log('📊 开始加载待质检数据（仅加载必要字段）...');
-        
-        // 性能优化：只查询必要的字段，不查询大文本字段
+        // 性能优化：只查询必要的字段，不查询大文本字段，并限制数量
         const { data: annotationsData, error: annotationsError } = await supabase
           .from('annotations')
           .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, created_at')
@@ -247,7 +218,7 @@ export default function InspectionManagePage() {
           .neq('human_annotated_text', '')
           .is('inspector', null)  // 只查询未质检的数据
           .order('created_at', { ascending: false })
-          .limit(500); // 限制500条，避免加载过多
+          .limit(300); // 降低限制，提升加载速度
         
         if (annotationsError) {
           console.error('加载标注数据失败:', annotationsError);
@@ -256,8 +227,6 @@ export default function InspectionManagePage() {
         }
         
         const allVideos = await getVideos();
-        console.log('📊 加载的待质检数据数量:', annotationsData?.length || 0);
-        console.log('🎬 加载的视频数据数量:', allVideos.length);
         
         // 创建视频 ID 到视频信息的映射
         const videoMap = new Map(allVideos.map(v => [v.id, { name: v.name, url: v.url }]));
@@ -372,8 +341,6 @@ export default function InspectionManagePage() {
 
   // 处理父级行的全选/取消
   const handleGroupSelect = (record: any, checked: boolean) => {
-    console.log('🎯 手动选择父级', { record, checked });
-    
     if (!record.children || record.children.length === 0) return;
     
     // 过滤出未质检的子项（isQualified 为 null 或 undefined）
@@ -381,17 +348,13 @@ export default function InspectionManagePage() {
       .filter((child: any) => child.isQualified == null) // 使用 == null 同时匹配 null 和 undefined
       .map((child: any) => child.key);
     
-    console.log('👶 可选的子项keys:', childKeys);
-    
     if (checked) {
       // 选中：添加所有可选的子项
       const newSelectedKeys = [...new Set([...selectedRows, ...childKeys])];
-      console.log('✅ 选中父级，新keys:', newSelectedKeys);
       setSelectedRows(newSelectedKeys);
     } else {
       // 取消：移除所有子项
       const newSelectedKeys = selectedRows.filter(key => !childKeys.includes(key));
-      console.log('❌ 取消父级，新keys:', newSelectedKeys);
       setSelectedRows(newSelectedKeys);
     }
   };
@@ -425,13 +388,9 @@ export default function InspectionManagePage() {
       key: 'videoName',
       width: 300,
       render: (text: string, record: any) => {
-        console.log('🎨 渲染行:', { text, isGroup: record.isGroup, record });
-        
         if (record.isGroup) {
           const allChildrenSelected = isGroupSelected(record);
           const someChildrenSelected = isGroupIndeterminate(record);
-          
-          console.log('👨‍👩‍👧 父级行状态:', { allChildrenSelected, someChildrenSelected, videoName: text });
           
           return (
             <Space>
@@ -584,21 +543,11 @@ export default function InspectionManagePage() {
   const rowSelection = {
     selectedRowKeys: selectedRows,
     onChange: (selectedRowKeys: React.Key[]) => {
-      console.log('✅ 子项选择变化:', selectedRowKeys);
       setSelectedRows(selectedRowKeys as string[]);
     },
     getCheckboxProps: (record: any) => {
       const isParent = record.isGroup === true;
       const isInspected = record.isQualified !== null && record.isQualified !== undefined;
-      
-      console.log('⚙️ getCheckboxProps:', { 
-        key: record.key, 
-        isGroup: record.isGroup,
-        isQualified: record.isQualified,
-        isParent,
-        isInspected,
-        disabled: isParent || isInspected
-      });
       
       return {
         disabled: isParent || isInspected, // 父级行和已质检的都不能选

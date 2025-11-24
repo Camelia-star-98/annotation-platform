@@ -564,7 +564,7 @@ export default function ReviewSelectPage() {
       </Header>
 
       <Content style={{ padding: '24px' }}>
-        <Card bordered={false} loading={loading}>
+        <Card variant="borderless" loading={loading}>
           <Tabs
             defaultActiveKey="pending"
             size="large"

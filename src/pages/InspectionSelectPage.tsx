@@ -243,7 +243,7 @@ export default function InspectionSelectPage() {
         {/* 统计卡片 */}
         <Row gutter={16} style={{ marginBottom: 24 }}>
           <Col span={6}>
-            <Card bordered={false}>
+            <Card variant="borderless">
               <Statistic
                 title="待质检数据"
                 value={totalPending}
@@ -254,7 +254,7 @@ export default function InspectionSelectPage() {
             </Card>
           </Col>
           <Col span={6}>
-            <Card bordered={false}>
+            <Card variant="borderless">
               <Statistic
                 title="已质检数据"
                 value={totalPassed + totalFailed}
@@ -265,7 +265,7 @@ export default function InspectionSelectPage() {
             </Card>
           </Col>
           <Col span={6}>
-            <Card bordered={false}>
+            <Card variant="borderless">
               <Statistic
                 title="质检通过"
                 value={totalPassed}
@@ -276,7 +276,7 @@ export default function InspectionSelectPage() {
             </Card>
           </Col>
           <Col span={6}>
-            <Card bordered={false}>
+            <Card variant="borderless">
               <Statistic
                 title="质检不通过"
                 value={totalFailed}
