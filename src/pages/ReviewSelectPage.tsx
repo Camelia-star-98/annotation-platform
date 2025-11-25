@@ -290,6 +290,15 @@ export default function ReviewSelectPage() {
           a.pendingCount === 0 && a.reviewedCount > 0
         );
         
+        // 重要：只有当该视频的所有标注人都没有待复检数据时，才算完全复检完成
+        const allAnnotators = Array.from(annotatorMap.values());
+        const hasPendingData = allAnnotators.some(a => a.pendingCount > 0);
+        
+        // 如果还有待复检数据，则不放入已复检列表
+        if (hasPendingData) {
+          return null;
+        }
+        
         // 计算最新复检时间用于排序
         const latestReviewTime = Math.max(
           ...completedAnnotators

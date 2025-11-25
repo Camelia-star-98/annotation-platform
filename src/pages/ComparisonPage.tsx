@@ -53,7 +53,8 @@ export default function ComparisonPage() {
   const loadComparisonData = async () => {
     setLoading(true);
     try {
-      const { getVideos, getReviewedAnnotations } = await import('../api/database');
+      const { supabase } = await import('../api/supabase');
+      const { getVideos } = await import('../api/database');
       
       // 加载视频信息
       const allVideos = await getVideos();
@@ -64,14 +65,29 @@ export default function ComparisonPage() {
         return;
       }
 
-      // 为每个视频加载数据并统计
+      console.log('📊 开始并行加载多个视频的已复检数据...');
+
+      // 为每个视频加载数据并统计（优化：直接查询指定视频，避免加载全部数据）
       const dataPromises = selectedVids.map(async (video) => {
-        const annotations = await getReviewedAnnotations([video.id]);
+        // 直接查询该视频的已复检数据
+        const { data: annotations, error } = await supabase
+          .from('annotations')
+          .select('*')
+          .eq('video_id', video.id)
+          .eq('review_status', true)
+          .order('sentence_no', { ascending: true });
+
+        if (error) {
+          console.error(`视频"${video.name}"查询失败:`, error);
+          return null;
+        }
         
-        if (annotations.length === 0) {
+        if (!annotations || annotations.length === 0) {
           message.warning(`视频"${video.name}"暂无已复检数据`);
           return null;
         }
+
+        console.log(`  - 视频"${video.name}"加载了 ${annotations.length} 条已复检数据`);
 
         // 统计问题分类
         const majorCategoryMap = new Map<string, number>();
@@ -79,31 +95,51 @@ export default function ComparisonPage() {
 
         annotations.forEach(item => {
           // 统计大类
-          if (item.majorCategory && item.majorCategory.trim()) {
-            const majors = item.majorCategory.split(',').map(c => c.trim()).filter(c => c);
+          if (item.major_category && item.major_category.trim()) {
+            const majors = item.major_category.split(',').map(c => c.trim()).filter(c => c);
             majors.forEach(major => {
               majorCategoryMap.set(major, (majorCategoryMap.get(major) || 0) + 1);
             });
           }
 
           // 统计小类
-          if (item.minorCategory && item.minorCategory.trim()) {
-            const minors = item.minorCategory.split(',').map(c => c.trim()).filter(c => c);
+          if (item.minor_category && item.minor_category.trim()) {
+            const minors = item.minor_category.split(',').map(c => c.trim()).filter(c => c);
             minors.forEach(minor => {
               minorCategoryMap.set(minor, (minorCategoryMap.get(minor) || 0) + 1);
             });
           }
         });
 
+        // 转换数据格式
+        const formattedData = annotations.map(item => ({
+          id: item.id || '',
+          videoId: item.video_id || '',
+          sentenceNo: item.sentence_no || 0,
+          timeRange: item.time_range || '',
+          startTime: item.start_time,
+          endTime: item.end_time,
+          originalText: item.original_text || '',
+          aiRewrittenText: item.ai_rewritten_text || '',
+          humanAnnotatedText: item.human_annotated_text || '',
+          majorCategory: item.major_category || '',
+          minorCategory: item.minor_category || '',
+          remark: item.remark || '',
+          status: item.status || false,
+          annotator: item.annotator || '',
+          isQualified: item.is_qualified,
+          inspector: item.inspector || '',
+          reviewer: item.reviewer || '',
+          reviewStatus: item.review_status,
+          videoName: video.name || '未命名视频',
+          videoUrl: item.video_url || '',
+          subject: item.subject || ''
+        }));
+
         return {
           videoId: video.id,
           videoName: video.name || '未命名视频',
-          data: annotations
-            .map(item => ({
-              ...item,
-              videoName: video.name || '未命名视频'
-            }))
-            .sort((a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0)), // 按句子编号排序
+          data: formattedData,
           majorCategoryStats: Array.from(majorCategoryMap.entries())
             .map(([category, count]) => ({ category, count }))
             .sort((a, b) => b.count - a.count),
@@ -117,6 +153,7 @@ export default function ComparisonPage() {
       const validResults = results.filter(r => r !== null) as ComparisonData[];
       setComparisonData(validResults);
       
+      console.log('✅ 所有视频数据加载完成');
       message.success(`数据加载完成，共 ${validResults.length} 个视频`);
     } catch (error) {
       console.error('加载对比数据失败:', error);
