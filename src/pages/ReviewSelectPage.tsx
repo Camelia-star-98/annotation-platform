@@ -50,252 +50,298 @@ export default function ReviewSelectPage() {
   const [loading, setLoading] = useState(false);
   const [pendingList, setPendingList] = useState<VideoWithAnnotators[]>([]); // 待复检列表
   const [completedList, setCompletedList] = useState<VideoWithAnnotators[]>([]); // 已复检列表
+  
+  // 分页状态
+  const [pendingPage, setPendingPage] = useState(1);
+  const [completedPage, setCompletedPage] = useState(1);
+  const [pendingTotal, setPendingTotal] = useState(0);
+  const [completedTotal, setCompletedTotal] = useState(0);
+  const pageSize = 5; // 每页显示5个视频
 
   useEffect(() => {
-    loadVideoAndAnnotators();
+    loadPendingVideos(1);
+    loadCompletedVideos(1);
   }, []);
 
-  const loadVideoAndAnnotators = async () => {
+  // 加载待复检视频（分页）
+  const loadPendingVideos = async (page: number) => {
     setLoading(true);
     try {
-      const { getVideos } = await import('../api/database');
       const { supabase } = await import('../api/supabase');
       
-      // 1. 获取所有视频
-      const videos = await getVideos();
-      console.log('📊 数据加载统计:');
-      console.log('  - 视频总数:', videos.length);
+      console.log('📊 加载待复检视频，页码:', page);
       
-      // 2. 性能优化：分页查询所有数据（避免Supabase默认分页限制）
-      let allAnnotations: any[] = [];
-      let offset = 0;
-      const limit = 1000;
-      let hasMore = true;
+      // 1. 查询所有有标注的数据（video_id 去重）
+      const { data: videoIds, error: videoError } = await supabase
+        .from('annotations')
+        .select('video_id')
+        .not('annotator', 'is', null)
+        .neq('annotator', '')
+        .neq('annotator', 'unknown')
+        .not('human_annotated_text', 'is', null)
+        .neq('human_annotated_text', '');
       
-      while (hasMore) {
-        const { data, error } = await supabase
-          .from('annotations')
-          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at')
-          .not('annotator', 'is', null)
-          .neq('annotator', '')
-          .range(offset, offset + limit - 1);
-        
-        if (error) {
-          console.error('查询标注数据失败:', error);
-          message.error('加载失败');
-          setLoading(false);
-          return;
-        }
-        
-        if (data && data.length > 0) {
-          allAnnotations = allAnnotations.concat(data);
-          offset += data.length;
-          hasMore = data.length === limit;
-          console.log(`  - 已加载 ${allAnnotations.length} 条数据...`);
-        } else {
-          hasMore = false;
-        }
+      if (videoError) {
+        console.error('查询视频ID失败:', videoError);
+        message.error('加载失败');
+        setLoading(false);
+        return;
       }
       
-      console.log('  - 标注数据总数:', allAnnotations.length);
+      // 去重视频ID
+      const uniqueVideoIds = [...new Set(videoIds?.map(item => item.video_id) || [])];
+      console.log('  - 有标注数据的视频总数:', uniqueVideoIds.length);
       
-      // 转换数据格式
-      const formattedAnnotations = allAnnotations.map(item => ({
-        videoId: item.video_id,
-        annotator: item.annotator,
-        humanAnnotatedText: item.human_annotated_text,
-        reviewStatus: item.review_status,
-        reviewer: item.reviewer,
-        inspector: item.inspector,
-        updatedAt: item.updated_at
-      }));
-      
-      // 统计标注人分布
-      const annotatorStats = new Map<string, number>();
-      let skippedCount = 0;
-      let unknownCount = 0;
-      let withHumanTextCount = 0;
-      formattedAnnotations.forEach(ann => {
-        if (!ann.annotator || ann.annotator.trim() === '') {
-          skippedCount++;
-        } else if (ann.annotator === 'unknown') {
-          unknownCount++;
-        } else {
-          const count = annotatorStats.get(ann.annotator) || 0;
-          annotatorStats.set(ann.annotator, count + 1);
-        }
-        if (ann.humanAnnotatedText && ann.humanAnnotatedText.trim() !== '') {
-          withHumanTextCount++;
-        }
-      });
-      console.log('  - 标注人分布:', Object.fromEntries(annotatorStats));
-      console.log('  - 标注人为空（跳过）:', skippedCount);
-      console.log('  - 标注人为unknown:', unknownCount);
-      console.log('  - 有人工标注文本:', withHumanTextCount);
-
-      // 按视频和标注人分组统计
-      const videoMap = new Map<string, VideoWithAnnotators>();
-
-      formattedAnnotations.forEach(annotation => {
-        const videoId = annotation.videoId;
-        // 处理标注人：如果为空、null、'unknown'，跳过这条数据（不统计）
-        let annotator = annotation.annotator;
-        if (!annotator || annotator.trim() === '' || annotator === 'unknown') {
-          return; // 跳过没有标注人或标注人为unknown的数据
-        }
+      // 2. 对每个视频统计待复检数据
+      const videoStatsPromises = uniqueVideoIds.map(async (videoId) => {
+        // 查询该视频的所有标注数据（按标注人分组）
+        const { data: annotations, error } = await supabase
+          .from('annotations')
+          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at')
+          .eq('video_id', videoId)
+          .not('annotator', 'is', null)
+          .neq('annotator', '')
+          .neq('annotator', 'unknown');
         
-        const reviewer = annotation.reviewer; // 获取复检人
-        const inspector = annotation.inspector; // 获取质检人
-        // 判断是否已标注：有人工标注文本即为已标注（不依赖status字段）
-        const hasHumanText = annotation.humanAnnotatedText && annotation.humanAnnotatedText.trim() !== '';
-        const isAnnotated = hasHumanText; // 是否已标注
+        if (error || !annotations) return null;
         
-        if (!videoMap.has(videoId)) {
-          const video = videos.find(v => v.id === videoId);
-          videoMap.set(videoId, {
-            videoId,
-            videoName: video?.name || videoId,
-            subject: video?.subject || '未知',
-            annotators: []
-          });
-        }
-
-        const videoData = videoMap.get(videoId)!;
-        let annotatorData = videoData.annotators.find(a => a.annotatorName === annotator);
-
-        if (!annotatorData) {
-          annotatorData = {
-            annotatorName: annotator,
-            totalAnnotations: 0,
-            reviewedCount: 0,
-            pendingCount: 0,
-            unannotatedCount: 0,
-            reviewers: [],
-            inspectors: [],
-            lastReviewTime: undefined
-          };
-          videoData.annotators.push(annotatorData);
-        }
-
-        annotatorData.totalAnnotations++;
+        // 按标注人分组统计
+        const annotatorMap = new Map<string, AnnotatorData>();
         
-        // 只统计已标注的数据
-        if (isAnnotated) {
-          if (annotation.reviewStatus === true) {
-            annotatorData.reviewedCount++;
-            // 添加复检人到列表（去重）
-            if (reviewer && !annotatorData.reviewers.includes(reviewer)) {
-              annotatorData.reviewers.push(reviewer);
-            }
-            // 记录最后复检时间
-            if (annotation.updatedAt) {
-              if (!annotatorData.lastReviewTime || annotation.updatedAt > annotatorData.lastReviewTime) {
-                annotatorData.lastReviewTime = annotation.updatedAt;
+        annotations.forEach(ann => {
+          const annotator = ann.annotator;
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          
+          if (!annotatorMap.has(annotator)) {
+            annotatorMap.set(annotator, {
+              annotatorName: annotator,
+              totalAnnotations: 0,
+              reviewedCount: 0,
+              pendingCount: 0,
+              unannotatedCount: 0,
+              reviewers: [],
+              inspectors: [],
+              lastReviewTime: undefined
+            });
+          }
+          
+          const annotatorData = annotatorMap.get(annotator)!;
+          annotatorData.totalAnnotations++;
+          
+          if (hasHumanText) {
+            if (ann.review_status === true) {
+              annotatorData.reviewedCount++;
+              if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
+                annotatorData.reviewers.push(ann.reviewer);
               }
+              if (ann.updated_at) {
+                if (!annotatorData.lastReviewTime || ann.updated_at > annotatorData.lastReviewTime) {
+                  annotatorData.lastReviewTime = ann.updated_at;
+                }
+              }
+            } else {
+              annotatorData.pendingCount++;
             }
           } else {
-            annotatorData.pendingCount++;
+            annotatorData.unannotatedCount++;
           }
-        } else {
-          // 未标注的数据
-          annotatorData.unannotatedCount++;
-        }
-        
-        // 添加质检人到列表（去重）
-        if (inspector && !annotatorData.inspectors.includes(inspector)) {
-          annotatorData.inspectors.push(inspector);
-        }
-      });
-
-      const result = Array.from(videoMap.values()).filter(v => v.annotators.length > 0);
-      
-      console.log('📊 视频和标注人统计:', result.map(v => ({
-        videoName: v.videoName,
-        annotators: v.annotators.map(a => ({
-          name: a.annotatorName,
-          total: a.totalAnnotations,
-          reviewed: a.reviewedCount,
-          pending: a.pendingCount,
-          unannotated: a.unannotatedCount,
-          reviewers: a.reviewers
-        }))
-      })));
-      
-      // 分离待复检和已复检
-      const pending: VideoWithAnnotators[] = [];
-      const completed: VideoWithAnnotators[] = [];
-      
-      console.log('📊 开始分离待复检和已复检，总视频数:', result.length);
-      
-      result.forEach(video => {
-        console.log(`📹 处理视频: ${video.videoName}`);
-        video.annotators.forEach(a => {
-          console.log(`  - 标注人: ${a.annotatorName}, 待复检: ${a.pendingCount}, 已复检: ${a.reviewedCount}`);
+          
+          if (ann.inspector && !annotatorData.inspectors.includes(ann.inspector)) {
+            annotatorData.inspectors.push(ann.inspector);
+          }
         });
         
-        // 待复检：有已标注但未复检的数据（排除未标注的）
-        const pendingAnnotators = video.annotators.filter(a => 
+        // 过滤出有待复检数据的标注人
+        const pendingAnnotators = Array.from(annotatorMap.values()).filter(a => 
           a.pendingCount > 0 && (a.pendingCount + a.reviewedCount) > 0
         );
-        // 已复检：所有已标注的数据都已复检完成
-        const completedAnnotators = video.annotators.filter(a => 
+        
+        return pendingAnnotators.length > 0 ? { videoId, annotators: pendingAnnotators } : null;
+      });
+      
+      const videoStatsResults = await Promise.all(videoStatsPromises);
+      const videosWithPending = videoStatsResults.filter(v => v !== null) as { videoId: string; annotators: AnnotatorData[] }[];
+      
+      console.log('  - 有待复检数据的视频数量:', videosWithPending.length);
+      setPendingTotal(videosWithPending.length);
+      
+      // 3. 分页获取视频详情
+      const startIdx = (page - 1) * pageSize;
+      const endIdx = startIdx + pageSize;
+      const paginatedVideos = videosWithPending.slice(startIdx, endIdx);
+      
+      // 4. 获取视频详细信息
+      const { getVideos } = await import('../api/database');
+      const allVideos = await getVideos();
+      
+      const result: VideoWithAnnotators[] = paginatedVideos.map(item => {
+        const video = allVideos.find(v => v.id === item.videoId);
+        return {
+          videoId: item.videoId,
+          videoName: video?.name || item.videoId,
+          subject: video?.subject || '未知',
+          annotators: item.annotators
+        };
+      });
+      
+      setPendingList(result);
+      setPendingPage(page);
+      
+      console.log('✅ 待复检视频加载完成:', result.length);
+    } catch (error) {
+      console.error('加载待复检视频失败:', error);
+      message.error('加载待复检视频失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 加载已复检视频（分页）
+  const loadCompletedVideos = async (page: number) => {
+    setLoading(true);
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      console.log('📊 加载已复检视频，页码:', page);
+      
+      // 1. 查询所有有标注的数据（video_id 去重）
+      const { data: videoIds, error: videoError } = await supabase
+        .from('annotations')
+        .select('video_id')
+        .eq('review_status', true)
+        .not('annotator', 'is', null)
+        .neq('annotator', '')
+        .neq('annotator', 'unknown')
+        .not('human_annotated_text', 'is', null)
+        .neq('human_annotated_text', '');
+      
+      if (videoError) {
+        console.error('查询视频ID失败:', videoError);
+        message.error('加载失败');
+        setLoading(false);
+        return;
+      }
+      
+      // 去重视频ID
+      const uniqueVideoIds = [...new Set(videoIds?.map(item => item.video_id) || [])];
+      console.log('  - 有已复检数据的视频总数:', uniqueVideoIds.length);
+      
+      // 2. 对每个视频统计已复检数据
+      const videoStatsPromises = uniqueVideoIds.map(async (videoId) => {
+        // 查询该视频的所有标注数据（按标注人分组）
+        const { data: annotations, error } = await supabase
+          .from('annotations')
+          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at')
+          .eq('video_id', videoId)
+          .not('annotator', 'is', null)
+          .neq('annotator', '')
+          .neq('annotator', 'unknown');
+        
+        if (error || !annotations) return null;
+        
+        // 按标注人分组统计
+        const annotatorMap = new Map<string, AnnotatorData>();
+        
+        annotations.forEach(ann => {
+          const annotator = ann.annotator;
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          
+          if (!annotatorMap.has(annotator)) {
+            annotatorMap.set(annotator, {
+              annotatorName: annotator,
+              totalAnnotations: 0,
+              reviewedCount: 0,
+              pendingCount: 0,
+              unannotatedCount: 0,
+              reviewers: [],
+              inspectors: [],
+              lastReviewTime: undefined
+            });
+          }
+          
+          const annotatorData = annotatorMap.get(annotator)!;
+          annotatorData.totalAnnotations++;
+          
+          if (hasHumanText) {
+            if (ann.review_status === true) {
+              annotatorData.reviewedCount++;
+              if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
+                annotatorData.reviewers.push(ann.reviewer);
+              }
+              if (ann.updated_at) {
+                if (!annotatorData.lastReviewTime || ann.updated_at > annotatorData.lastReviewTime) {
+                  annotatorData.lastReviewTime = ann.updated_at;
+                }
+              }
+            } else {
+              annotatorData.pendingCount++;
+            }
+          } else {
+            annotatorData.unannotatedCount++;
+          }
+          
+          if (ann.inspector && !annotatorData.inspectors.includes(ann.inspector)) {
+            annotatorData.inspectors.push(ann.inspector);
+          }
+        });
+        
+        // 过滤出已完成复检的标注人（没有待复检数据，且有已复检数据）
+        const completedAnnotators = Array.from(annotatorMap.values()).filter(a => 
           a.pendingCount === 0 && a.reviewedCount > 0
         );
         
-        console.log(`  ✅ 已复检标注人数: ${completedAnnotators.length}`, completedAnnotators.map(a => a.annotatorName));
-        console.log(`  ⏳ 待复检标注人数: ${pendingAnnotators.length}`, pendingAnnotators.map(a => a.annotatorName));
+        // 计算最新复检时间用于排序
+        const latestReviewTime = Math.max(
+          ...completedAnnotators
+            .map(a => a.lastReviewTime ? new Date(a.lastReviewTime).getTime() : 0)
+        );
         
-        if (pendingAnnotators.length > 0) {
-          pending.push({
-            ...video,
-            annotators: pendingAnnotators
-          });
-        }
-        
-        if (completedAnnotators.length > 0) {
-          completed.push({
-            ...video,
-            annotators: completedAnnotators
-          });
-        }
+        return completedAnnotators.length > 0 ? { 
+          videoId, 
+          annotators: completedAnnotators,
+          latestReviewTime 
+        } : null;
       });
       
-      console.log('⏳ 待复检列表:', pending);
-      console.log('✅ 已复检列表:', completed);
+      const videoStatsResults = await Promise.all(videoStatsPromises);
+      let videosWithCompleted = videoStatsResults.filter(v => v !== null) as { 
+        videoId: string; 
+        annotators: AnnotatorData[];
+        latestReviewTime: number;
+      }[];
       
-      // 按复检时间排序已复检列表（最新的在前）
-      completed.sort((a, b) => {
-        // 获取视频中最新的复检时间
-        const getLatestReviewTime = (video: VideoWithAnnotators) => {
-          const times = video.annotators
-            .map(ann => ann.lastReviewTime)
-            .filter(t => t)
-            .sort((t1, t2) => t2!.localeCompare(t1!));
-          return times[0] || '';
+      // 按最新复检时间排序（最新的在前）
+      videosWithCompleted.sort((a, b) => b.latestReviewTime - a.latestReviewTime);
+      
+      console.log('  - 已完成复检的视频数量:', videosWithCompleted.length);
+      setCompletedTotal(videosWithCompleted.length);
+      
+      // 3. 分页获取视频详情
+      const startIdx = (page - 1) * pageSize;
+      const endIdx = startIdx + pageSize;
+      const paginatedVideos = videosWithCompleted.slice(startIdx, endIdx);
+      
+      // 4. 获取视频详细信息
+      const { getVideos } = await import('../api/database');
+      const allVideos = await getVideos();
+      
+      const result: VideoWithAnnotators[] = paginatedVideos.map(item => {
+        const video = allVideos.find(v => v.id === item.videoId);
+        return {
+          videoId: item.videoId,
+          videoName: video?.name || item.videoId,
+          subject: video?.subject || '未知',
+          annotators: item.annotators
         };
-        
-        const timeA = getLatestReviewTime(a);
-        const timeB = getLatestReviewTime(b);
-        return timeB.localeCompare(timeA); // 降序：最新的在前
       });
       
-      setPendingList(pending);
-      setCompletedList(completed);
+      setCompletedList(result);
+      setCompletedPage(page);
       
-      if (pending.length === 0 && completed.length === 0) {
-        if (allAnnotations.length === 0) {
-          message.warning('没有找到任何标注数据，请先完成标注');
-        } else if (withHumanTextCount === 0) {
-          message.warning('没有找到已标注的数据（humanAnnotatedText为空），请先完成标注');
-        } else {
-          message.warning(`找到 ${allAnnotations.length} 条标注数据，但都没有有效的标注人信息或已标注内容`);
-        }
-      } else {
-        message.success(`加载了 ${result.length} 个视频的标注数据（待复检: ${pending.length}，已复检: ${completed.length}）`);
-      }
+      console.log('✅ 已复检视频加载完成:', result.length);
     } catch (error) {
-      console.error('加载数据失败:', error);
-      message.error('加载数据失败');
+      console.error('加载已复检视频失败:', error);
+      message.error('加载已复检视频失败');
     } finally {
       setLoading(false);
     }
@@ -337,8 +383,9 @@ export default function ReviewSelectPage() {
 
       message.success(`已删除 ${annotatorName} 在视频"${videoName}"中的所有标注数据`);
       
-      // 重新加载数据
-      loadVideoAndAnnotators();
+      // 重新加载当前页数据
+      loadPendingVideos(pendingPage);
+      loadCompletedVideos(completedPage);
     } catch (error) {
       console.error('❌ 删除异常:', error);
       message.error('删除失败');
@@ -346,8 +393,8 @@ export default function ReviewSelectPage() {
   };
 
   // 渲染视频列表（可复用组件）
-  const renderVideoList = (videoList: VideoWithAnnotators[]) => {
-    if (videoList.length === 0) {
+  const renderVideoList = (videoList: VideoWithAnnotators[], isPending: boolean) => {
+    if (videoList.length === 0 && !loading) {
       return (
         <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
           暂无数据
@@ -355,187 +402,221 @@ export default function ReviewSelectPage() {
       );
     }
 
+    const currentPage = isPending ? pendingPage : completedPage;
+    const total = isPending ? pendingTotal : completedTotal;
+    const onPageChange = isPending ? 
+      (page: number) => loadPendingVideos(page) : 
+      (page: number) => loadCompletedVideos(page);
+
     return (
-      <Collapse accordion>
-        {videoList.map((video) => (
-          <Panel
-            header={
-              <Space size="large">
-                <Text strong style={{ minWidth: 250 }}>{video.videoName}</Text>
-                <Tag color="blue">{video.subject}</Tag>
-                <Tag color="purple">{video.annotators.length} 位标注员</Tag>
-                <Tag color="green">
-                  {video.annotators.reduce((sum, a) => sum + a.reviewedCount, 0)} 已复检
-                </Tag>
-                <Tag color="orange">
-                  {video.annotators.reduce((sum, a) => sum + a.pendingCount, 0)} 待复检
-                </Tag>
-                {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0) > 0 && (
-                  <Tag color="red" icon={<ClockCircleOutlined />}>
-                    {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0)} 未标注
+      <>
+        <Collapse accordion>
+          {videoList.map((video) => (
+            <Panel
+              header={
+                <Space size="large">
+                  <Text strong style={{ minWidth: 250 }}>{video.videoName}</Text>
+                  <Tag color="blue">{video.subject}</Tag>
+                  <Tag color="purple">{video.annotators.length} 位标注员</Tag>
+                  <Tag color="green">
+                    {video.annotators.reduce((sum, a) => sum + a.reviewedCount, 0)} 已复检
                   </Tag>
-                )}
-              </Space>
-            }
-            key={video.videoId}
-          >
-            <Table
-              columns={[
-                {
-                  title: '标注人',
-                  dataIndex: 'annotatorName',
-                  key: 'annotatorName',
-                  width: 150,
-                  render: (text: string) => (
-                    <Space>
-                      <UserOutlined />
-                      <Text strong>{text}</Text>
-                    </Space>
-                  )
-                },
-                {
-                  title: '总标注数',
-                  dataIndex: 'totalAnnotations',
-                  key: 'totalAnnotations',
-                  width: 120,
-                  align: 'center' as const,
-                  render: (count: number) => <Text>{count} 条</Text>
-                },
-                {
-                  title: '已复检',
-                  dataIndex: 'reviewedCount',
-                  key: 'reviewedCount',
-                  width: 120,
-                  align: 'center' as const,
-                  render: (count: number) => (
-                    <Tag color={count > 0 ? 'success' : 'default'}>
-                      {count} 条
+                  <Tag color="orange">
+                    {video.annotators.reduce((sum, a) => sum + a.pendingCount, 0)} 待复检
+                  </Tag>
+                  {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0) > 0 && (
+                    <Tag color="red" icon={<ClockCircleOutlined />}>
+                      {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0)} 未标注
                     </Tag>
-                  )
-                },
-                {
-                  title: '待复检',
-                  dataIndex: 'pendingCount',
-                  key: 'pendingCount',
-                  width: 120,
-                  align: 'center' as const,
-                  render: (count: number) => (
-                    <Tag color={count > 0 ? 'orange' : 'default'}>
-                      {count} 条
-                    </Tag>
-                  )
-                },
-                {
-                  title: '未标注',
-                  dataIndex: 'unannotatedCount',
-                  key: 'unannotatedCount',
-                  width: 120,
-                  align: 'center' as const,
-                  render: (count: number) => (
-                    count > 0 ? (
-                      <Tag color="red" icon={<ClockCircleOutlined />}>
+                  )}
+                </Space>
+              }
+              key={video.videoId}
+            >
+              <Table
+                columns={[
+                  {
+                    title: '标注人',
+                    dataIndex: 'annotatorName',
+                    key: 'annotatorName',
+                    width: 150,
+                    render: (text: string) => (
+                      <Space>
+                        <UserOutlined />
+                        <Text strong>{text}</Text>
+                      </Space>
+                    )
+                  },
+                  {
+                    title: '总标注数',
+                    dataIndex: 'totalAnnotations',
+                    key: 'totalAnnotations',
+                    width: 120,
+                    align: 'center' as const,
+                    render: (count: number) => <Text>{count} 条</Text>
+                  },
+                  {
+                    title: '已复检',
+                    dataIndex: 'reviewedCount',
+                    key: 'reviewedCount',
+                    width: 120,
+                    align: 'center' as const,
+                    render: (count: number) => (
+                      <Tag color={count > 0 ? 'success' : 'default'}>
                         {count} 条
                       </Tag>
-                    ) : (
-                      <Tag color="default">0 条</Tag>
                     )
-                  )
-                },
-                {
-                  title: '质检人',
-                  dataIndex: 'inspectors',
-                  key: 'inspectors',
-                  width: 200,
-                  render: (inspectors: string[]) => (
-                    <Space wrap>
-                      {inspectors.length > 0 ? (
-                        inspectors.map(inspector => (
-                          <Tag key={inspector} color="blue" icon={<UserOutlined />}>
-                            {inspector}
-                          </Tag>
-                        ))
+                  },
+                  {
+                    title: '待复检',
+                    dataIndex: 'pendingCount',
+                    key: 'pendingCount',
+                    width: 120,
+                    align: 'center' as const,
+                    render: (count: number) => (
+                      <Tag color={count > 0 ? 'orange' : 'default'}>
+                        {count} 条
+                      </Tag>
+                    )
+                  },
+                  {
+                    title: '未标注',
+                    dataIndex: 'unannotatedCount',
+                    key: 'unannotatedCount',
+                    width: 120,
+                    align: 'center' as const,
+                    render: (count: number) => (
+                      count > 0 ? (
+                        <Tag color="red" icon={<ClockCircleOutlined />}>
+                          {count} 条
+                        </Tag>
+                      ) : (
+                        <Tag color="default">0 条</Tag>
+                      )
+                    )
+                  },
+                  {
+                    title: '质检人',
+                    dataIndex: 'inspectors',
+                    key: 'inspectors',
+                    width: 200,
+                    render: (inspectors: string[]) => (
+                      <Space wrap>
+                        {inspectors.length > 0 ? (
+                          inspectors.map(inspector => (
+                            <Tag key={inspector} color="blue" icon={<UserOutlined />}>
+                              {inspector}
+                            </Tag>
+                          ))
+                        ) : (
+                          <Text type="secondary">-</Text>
+                        )}
+                      </Space>
+                    )
+                  },
+                  {
+                    title: '复检人',
+                    dataIndex: 'reviewers',
+                    key: 'reviewers',
+                    width: 200,
+                    render: (reviewers: string[]) => (
+                      <Space wrap>
+                        {reviewers.length > 0 ? (
+                          reviewers.map(reviewer => (
+                            <Tag key={reviewer} color="cyan" icon={<CheckCircleOutlined />}>
+                              {reviewer}
+                            </Tag>
+                          ))
+                        ) : (
+                          <Text type="secondary">-</Text>
+                        )}
+                      </Space>
+                    )
+                  },
+                  {
+                    title: '最后复检时间',
+                    dataIndex: 'lastReviewTime',
+                    key: 'lastReviewTime',
+                    width: 180,
+                    align: 'center' as const,
+                    render: (time: string | undefined) => (
+                      time ? (
+                        <Text>{new Date(time).toLocaleString('zh-CN')}</Text>
                       ) : (
                         <Text type="secondary">-</Text>
-                      )}
-                    </Space>
-                  )
-                },
-                {
-                  title: '复检人',
-                  dataIndex: 'reviewers',
-                  key: 'reviewers',
-                  width: 200,
-                  render: (reviewers: string[]) => (
-                    <Space wrap>
-                      {reviewers.length > 0 ? (
-                        reviewers.map(reviewer => (
-                          <Tag key={reviewer} color="cyan" icon={<CheckCircleOutlined />}>
-                            {reviewer}
-                          </Tag>
-                        ))
-                      ) : (
-                        <Text type="secondary">-</Text>
-                      )}
-                    </Space>
-                  )
-                },
-                {
-                  title: '最后复检时间',
-                  dataIndex: 'lastReviewTime',
-                  key: 'lastReviewTime',
-                  width: 180,
-                  align: 'center' as const,
-                  render: (time: string | undefined) => (
-                    time ? (
-                      <Text>{new Date(time).toLocaleString('zh-CN')}</Text>
-                    ) : (
-                      <Text type="secondary">-</Text>
+                      )
                     )
-                  )
-                },
-                {
-                  title: '操作',
-                  key: 'action',
-                  width: 200,
-                  align: 'center' as const,
-                  render: (_: any, record: AnnotatorData) => (
-                    <Space>
-                      <Button
-                        type="primary"
-                        icon={<EyeOutlined />}
-                        size="small"
-                        onClick={() => handleReview(video.videoId, video.videoName, record.annotatorName)}
-                      >
-                        开始复检
-                      </Button>
-                      <Popconfirm
-                        title="确认删除"
-                        description={`确定要删除标注人"${record.annotatorName}"的所有标注数据吗？此操作不可恢复！`}
-                        onConfirm={() => handleDelete(video.videoId, video.videoName, record.annotatorName)}
-                        okText="确认删除"
-                        cancelText="取消"
-                        okButtonProps={{ danger: true }}
-                      >
+                  },
+                  {
+                    title: '操作',
+                    key: 'action',
+                    width: 200,
+                    align: 'center' as const,
+                    render: (_: any, record: AnnotatorData) => (
+                      <Space>
                         <Button
-                          danger
-                          icon={<DeleteOutlined />}
+                          type="primary"
+                          icon={<EyeOutlined />}
                           size="small"
+                          onClick={() => handleReview(video.videoId, video.videoName, record.annotatorName)}
                         >
-                          删除
+                          开始复检
                         </Button>
-                      </Popconfirm>
-                    </Space>
-                  )
-                }
-              ]}
-              dataSource={video.annotators}
-              rowKey="annotatorName"
-              pagination={false}
-              size="small"
-            />
-          </Panel>
-        ))}
-      </Collapse>
+                        <Popconfirm
+                          title="确认删除"
+                          description={`确定要删除标注人"${record.annotatorName}"的所有标注数据吗？此操作不可恢复！`}
+                          onConfirm={() => handleDelete(video.videoId, video.videoName, record.annotatorName)}
+                          okText="确认删除"
+                          cancelText="取消"
+                          okButtonProps={{ danger: true }}
+                        >
+                          <Button
+                            danger
+                            icon={<DeleteOutlined />}
+                            size="small"
+                          >
+                            删除
+                          </Button>
+                        </Popconfirm>
+                      </Space>
+                    )
+                  }
+                ]}
+                dataSource={video.annotators}
+                rowKey="annotatorName"
+                pagination={false}
+                size="small"
+              />
+            </Panel>
+          ))}
+        </Collapse>
+        
+        {/* 分页控件 */}
+        {total > pageSize && (
+          <div style={{ marginTop: 24, textAlign: 'center' }}>
+            <Space direction="vertical" align="center">
+              <Space>
+                <Button
+                  disabled={currentPage === 1 || loading}
+                  onClick={() => onPageChange(currentPage - 1)}
+                >
+                  上一页
+                </Button>
+                <Text>
+                  第 {currentPage} / {Math.ceil(total / pageSize)} 页
+                  （共 {total} 个视频）
+                </Text>
+                <Button
+                  disabled={currentPage >= Math.ceil(total / pageSize) || loading}
+                  onClick={() => onPageChange(currentPage + 1)}
+                >
+                  下一页
+                </Button>
+              </Space>
+            </Space>
+          </div>
+        )}
+      </>
     );
   };
 
@@ -575,10 +656,10 @@ export default function ReviewSelectPage() {
                   <Space>
                     <ClockCircleOutlined />
                     <span>待复检</span>
-                    <Tag color="orange">{pendingList.length} 个视频</Tag>
+                    <Tag color="orange">{pendingTotal} 个视频</Tag>
                   </Space>
                 ),
-                children: renderVideoList(pendingList)
+                children: renderVideoList(pendingList, true)
               },
               {
                 key: 'completed',
@@ -586,10 +667,10 @@ export default function ReviewSelectPage() {
                   <Space>
                     <CheckCircleOutlined />
                     <span>已复检</span>
-                    <Tag color="success">{completedList.length} 个视频</Tag>
+                    <Tag color="success">{completedTotal} 个视频</Tag>
                   </Space>
                 ),
-                children: renderVideoList(completedList)
+                children: renderVideoList(completedList, false)
               }
             ]}
           />
