@@ -323,6 +323,12 @@ export default function ReviewSelectPage() {
       videosWithCompleted.sort((a, b) => b.latestReviewTime - a.latestReviewTime);
       
       console.log('  - 已完成复检的视频数量:', videosWithCompleted.length);
+      console.log('  - 前5个视频的最新复检时间:', 
+        videosWithCompleted.slice(0, 5).map(v => ({
+          videoId: v.videoId,
+          time: new Date(v.latestReviewTime).toLocaleString('zh-CN')
+        }))
+      );
       setCompletedTotal(videosWithCompleted.length);
       
       // 3. 分页获取视频详情
