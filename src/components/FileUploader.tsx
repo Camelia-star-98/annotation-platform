@@ -84,8 +84,12 @@ export default function FileUploader({ onDataReady }: FileUploaderProps) {
       const videoName = videoFile.name.replace(/\.[^/.]+$/, ''); // 去除扩展名
       const detectedSubject = videoName.match(/数学|英语|语文|物理|化学|生物|历史|地理|政治/)?.[0] || '';
       
+      // 生成视频ID
+      const videoId = `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
       // 转换为标注数据
       const annotations = convertExcelToAnnotations(excelData, {
+        id: videoId,
         name: videoFile.name,
         url: videoUrl,
         subject: detectedSubject || '未知'

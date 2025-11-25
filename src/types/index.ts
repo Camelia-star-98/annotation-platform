@@ -2,6 +2,7 @@
 
 export interface AnnotationItem {
   id: string;
+  videoId: string; // 视频ID
   sentenceNo: number;
   timeRange: string;
   startTime: number; // 秒

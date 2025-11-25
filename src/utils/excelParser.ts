@@ -34,7 +34,7 @@ export function parseExcelFile(file: File): Promise<any[]> {
 // 将Excel数据转换为标注数据格式
 export function convertExcelToAnnotations(
   excelData: any[],
-  videoInfo: { name: string; url: string; subject: string }
+  videoInfo: { id: string; name: string; url: string; subject: string }
 ): AnnotationItem[] {
   // 假设Excel格式：
   // 第一行是表头
@@ -73,6 +73,7 @@ export function convertExcelToAnnotations(
       
       return {
         id: `${videoInfo.name}_${sentenceNo}`,
+        videoId: videoInfo.id,
         sentenceNo,
         timeRange: `${formatSeconds(startTime)} - ${formatSeconds(endTime)}`,
         startTime,

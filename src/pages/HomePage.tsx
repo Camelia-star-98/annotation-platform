@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Layout,
@@ -43,42 +43,71 @@ export default function HomePage() {
   const [pageSize, setPageSize] = useState(10); // 每页大小
   const [totalCount, setTotalCount] = useState(0); // 总数量
   const [completedVideoIds, setCompletedVideoIds] = useState<Set<string>>(new Set()); // 已完成的视频ID集合
+  const [annotatorCountMap, setAnnotatorCountMap] = useState<Map<string, number>>(new Map()); // 每个视频的标注人数
+  const [dataVersion, setDataVersion] = useState(0); // 数据版本号，用于触发重新加载
+  const isLoadingRef = useRef(false); // 防止重复加载
+
+  // 组件挂载时打印版本号
+  useEffect(() => {
+    console.log('🏠 HomePage 版本 5.1 - 禁用自动刷新，翻页时不重新加载所有数据');
+  }, []);
 
   // 初始化：加载已完成的视频ID列表
   useEffect(() => {
     loadCompletedVideoIds();
   }, []);
 
+  // 当完成视频ID加载完成后，加载第一页数据
+  useEffect(() => {
+    if (completedVideoIds.size > 0 && !isLoadingRef.current && dataVersion > 0) {
+      console.log(`🔄 数据刷新完成，加载第 ${currentPage} 页 (version=${dataVersion})`);
+      loadPageVideos(currentPage, pageSize, searchText, completedVideoIds, annotatorCountMap);
+    }
+  }, [dataVersion]); // 只监听 dataVersion，用于首次加载和刷新后加载
+
   // 当页码或搜索条件变化时，加载对应页的视频
   useEffect(() => {
-    if (completedVideoIds.size > 0) {
-      loadPageVideos(currentPage, pageSize, searchText);
+    console.log(`🔔 useEffect [currentPage, pageSize, searchText] 触发: page=${currentPage}, size=${pageSize}, search="${searchText}", completedVideoIds.size=${completedVideoIds.size}, isLoading=${isLoadingRef.current}, dataVersion=${dataVersion}`);
+    // 只有在completedVideoIds已经加载且不在加载中时才执行
+    if (completedVideoIds.size > 0 && !isLoadingRef.current && dataVersion > 0) {
+      console.log(`📄 ✅ 满足条件，开始加载页面视频`);
+      loadPageVideos(currentPage, pageSize, searchText, completedVideoIds, annotatorCountMap);
+    } else {
+      console.log(`📄 ⚠️ 不满足条件，跳过加载: completedVideoIds.size=${completedVideoIds.size}, isLoading=${isLoadingRef.current}, dataVersion=${dataVersion}`);
     }
-  }, [currentPage, pageSize, searchText, completedVideoIds]);
+  }, [currentPage, pageSize, searchText]); // dataVersion 不需要作为依赖项，因为它会导致不必要的重复加载
 
-  // 监听页面可见性，当用户返回页面时自动刷新
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log('📍 页面变为可见，重新加载数据...');
-        loadCompletedVideoIds();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, []);
+  // 监听页面可见性，当用户返回页面时自动刷新（暂时禁用，避免翻页时意外触发）
+  // useEffect(() => {
+  //   const handleVisibilityChange = () => {
+  //     if (document.visibilityState === 'visible') {
+  //       console.log('📍 页面变为可见，重新加载数据...');
+  //       loadCompletedVideoIds();
+  //     }
+  //   };
+  //
+  //   document.addEventListener('visibilitychange', handleVisibilityChange);
+  //
+  //   return () => {
+  //     document.removeEventListener('visibilitychange', handleVisibilityChange);
+  //   };
+  // }, []);
 
   // 第一步：加载已完成复检的视频ID列表（只加载ID，不加载完整视频信息）
   const loadCompletedVideoIds = async () => {
+    if (isLoadingRef.current) {
+      console.log('⏸️ 已有加载任务在进行中，跳过...');
+      return;
+    }
+    
+    // 打印调用信息和调用栈，帮助调试
+    console.log('🔄 触发完整数据刷新');
+    console.trace('🔍 开始查询已完成复检的视频ID... 调用栈：');
+    
+    isLoadingRef.current = true;
     setLoading(true);
     try {
       const { supabase } = await import('../api/supabase');
-      
-      console.log('🔍 开始查询已完成复检的视频ID...');
       
       // 1. 分页查询所有标注数据
       let allAnnotations: any[] = [];
@@ -141,39 +170,40 @@ export default function HomePage() {
         }
       });
       
-      // 3. 筛选出已完成复检的视频ID（所有标注人都完成复检）
+      // 3. 筛选出有已复检数据的视频ID（只要有任何已复检的数据就显示）
       const completedIds = new Set<string>();
       const videoAnnotatorCount = new Map<string, number>();
       
       videoAnnotatorMap.forEach((annotatorMap, videoId) => {
-        let allCompleted = true;
-        let completedAnnotators = 0;
+        let annotatorCount = 0;
+        let hasReviewedData = false;
         
         annotatorMap.forEach((stats) => {
-          if (stats.total > 0 && stats.reviewed === stats.total) {
-            completedAnnotators++;
-          } else if (stats.total > 0 && stats.reviewed < stats.total) {
-            allCompleted = false;
+          // 只要该标注人有至少一条已复检的数据，就计入
+          if (stats.reviewed > 0) {
+            hasReviewedData = true;
+            annotatorCount++;
           }
         });
         
-        if (allCompleted && completedAnnotators > 0) {
+        // 只要视频中有任何已复检的数据，就加入到已复检列表
+        if (hasReviewedData) {
           completedIds.add(videoId);
-          videoAnnotatorCount.set(videoId, completedAnnotators);
+          videoAnnotatorCount.set(videoId, annotatorCount);
         }
       });
       
       console.log('✅ 已完成复检的视频ID数量:', completedIds.size);
       
-      // 保存已完成的视频ID集合
+      // 保存已完成的视频ID集合和标注人数映射
       setCompletedVideoIds(completedIds);
+      setAnnotatorCountMap(videoAnnotatorCount);
       setTotalCount(completedIds.size);
       
-      // 加载第一页数据
-      if (completedIds.size > 0) {
-        await loadPageVideos(1, pageSize, searchText, completedIds, videoAnnotatorCount);
-        setCurrentPage(1);
-      } else {
+      // 增加数据版本号，触发 useEffect 重新加载
+      setDataVersion(prev => prev + 1);
+      
+      if (completedIds.size === 0) {
         console.warn('⚠️ 没有找到已完成复检的视频');
         setCompletedVideos([]);
       }
@@ -182,6 +212,7 @@ export default function HomePage() {
       message.error('加载视频ID列表失败');
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
@@ -193,6 +224,12 @@ export default function HomePage() {
     videoIds?: Set<string>,
     annotatorCountMap?: Map<string, number>
   ) => {
+    if (isLoadingRef.current) {
+      console.log('⏸️ 已有加载任务在进行中，跳过...');
+      return;
+    }
+    
+    isLoadingRef.current = true;
     setLoading(true);
     try {
       const { supabase } = await import('../api/supabase');
@@ -304,6 +341,7 @@ export default function HomePage() {
       message.error('加载视频页面失败');
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
@@ -340,16 +378,27 @@ export default function HomePage() {
   // 表格列定义
   const columns = [
     {
-      title: () => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Checkbox
-            checked={selectedVideos.length > 0 && selectedVideos.length === filteredCompletedVideos.length && filteredCompletedVideos.length > 0}
-            indeterminate={selectedVideos.length > 0 && selectedVideos.length < filteredCompletedVideos.length}
-            onChange={(e) => handleSelectAll(e.target.checked)}
-          />
-          <span>全选</span>
-        </div>
-      ),
+      title: () => {
+        // 获取当前页的视频ID
+        const currentPageVideoIds = completedVideos.map(video => video.id);
+        // 计算当前页有多少视频被选中
+        const selectedInCurrentPage = currentPageVideoIds.filter(id => selectedVideos.includes(id)).length;
+        // 全选状态：当前页所有视频都被选中
+        const isAllSelected = currentPageVideoIds.length > 0 && selectedInCurrentPage === currentPageVideoIds.length;
+        // 部分选中状态：当前页有部分视频被选中，但不是全部
+        const isIndeterminate = selectedInCurrentPage > 0 && selectedInCurrentPage < currentPageVideoIds.length;
+        
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Checkbox
+              checked={isAllSelected}
+              indeterminate={isIndeterminate}
+              onChange={(e) => handleSelectAll(e.target.checked)}
+            />
+            <span>全选</span>
+          </div>
+        );
+      },
       key: 'select',
       width: 80,
       render: (_: any, record: VideoInfo) => (
@@ -453,12 +502,16 @@ export default function HomePage() {
 
   // 全选/取消全选
   const handleSelectAll = (checked: boolean) => {
+    // 获取当前页的所有视频ID
+    const currentPageVideoIds = completedVideos.map(video => video.id);
+    
     if (checked) {
-      // 只全选当前页的视频ID
-      const allVideoIds = completedVideos.map(video => video.id);
-      setSelectedVideos(allVideoIds);
+      // 全选：将当前页的视频ID添加到已选择列表（去重）
+      const newSelectedVideos = [...new Set([...selectedVideos, ...currentPageVideoIds])];
+      setSelectedVideos(newSelectedVideos);
     } else {
-      setSelectedVideos([]);
+      // 取消全选：从已选择列表中移除当前页的视频ID
+      setSelectedVideos(selectedVideos.filter(id => !currentPageVideoIds.includes(id)));
     }
   };
 
@@ -466,8 +519,7 @@ export default function HomePage() {
   const handlePageChange = (page: number, size: number) => {
     setCurrentPage(page);
     setPageSize(size);
-    // 清空当前页的选择
-    setSelectedVideos([]);
+    // 保留已选择的视频，不清空
   };
 
   // 过滤后的视频列表（用于显示）

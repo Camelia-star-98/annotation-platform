@@ -60,6 +60,7 @@ export default function InspectionManagePage() {
   const [hasMore, setHasMore] = useState(true); // 是否还有更多数据
   const [totalCount, setTotalCount] = useState(0); // 总数据量
   const [isLoadingMore, setIsLoadingMore] = useState(false); // 是否正在加载更多
+  const [isLoadingData, setIsLoadingData] = useState(false); // 防止重复加载
 
   // 按视频分组数据 - 使用 useCallback 优化
   const groupByVideo = useCallback((data: AnnotationItem[]) => {
@@ -97,52 +98,16 @@ export default function InspectionManagePage() {
     return result;
   }, []);
 
-  // 加载数据（只在 selectedVideoId 变化时重新加载）
-  useEffect(() => {
-    loadData(false);
-  }, [selectedVideoId, loadData]);
-
-  // 使用 useMemo 优化过滤和分组计算
-  const filteredAndGroupedData = useMemo(() => {
-    let filtered = allAnnotations;
-    
-    switch (filterStatus) {
-      case 'pending':
-        // 待质检的：有人工标注文本且未质检（没有inspector）且未复检完成
-        filtered = allAnnotations.filter(item => {
-          const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-          const notInspected = !item.inspector;
-          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
-          return hasHumanText && notInspected && notReviewed;
-        });
-        break;
-      case 'inspected':
-        // 已质检的（有质检人）且未复检完成
-        filtered = allAnnotations.filter(item => {
-          const hasInspector = item.inspector && item.inspector.trim() !== '';
-          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
-          return hasInspector && notReviewed;
-        });
-        break;
-      case 'all':
-      default:
-        // 全部：排除已复检完成的数据
-        filtered = allAnnotations.filter(item => item.reviewStatus == null);
-        break;
-    }
-    
-    // 按视频分组
-    return groupByVideo(filtered);
-  }, [allAnnotations, filterStatus, groupByVideo]);
-  
-  // 更新状态
-  useEffect(() => {
-    setGroupedData(filteredAndGroupedData);
-    setFilteredData(filteredAndGroupedData);
-  }, [filteredAndGroupedData]);
-
   // 优化数据加载，添加分页和延迟加载（使用 useCallback 避免重复创建）
   const loadData = useCallback(async (isLoadMore = false) => {
+    // 防止重复加载
+    if (isLoadingData) {
+      console.log('⚠️ 数据正在加载中，跳过重复请求');
+      return;
+    }
+    
+    setIsLoadingData(true);
+    
     if (isLoadMore) {
       setIsLoadingMore(true);
     } else {
@@ -157,8 +122,14 @@ export default function InspectionManagePage() {
       // 如果指定了视频ID，只加载该视频的数据（优化：直接查询单个视频，不查询所有视频）
       if (selectedVideoId) {
         // 优化：直接查询单个视频，而不是查询所有视频后查找
-        const currentVideo = await getVideo(selectedVideoId);
-        const videoUrl = currentVideo?.url || '';
+        let videoUrl = '';
+        try {
+          const currentVideo = await getVideo(selectedVideoId);
+          videoUrl = currentVideo?.url || '';
+        } catch (error) {
+          console.error('获取视频信息失败，将继续使用传入的视频名称:', error);
+          // 即使获取视频失败，也继续执行，使用传入的 videoName
+        }
         
         // 计算分页参数（使用函数式更新避免闭包问题）
         let currentPage = 1;
@@ -330,12 +301,58 @@ export default function InspectionManagePage() {
       }
     } catch (error) {
       console.error('加载数据失败:', error);
-      message.error('加载数据失败，请检查后端服务');
+      message.error('加载数据失败，请检查网络连接或后端服务');
     } finally {
       setLoading(false);
       setIsLoadingMore(false);
+      setIsLoadingData(false); // 重置加载标志
     }
   }, [selectedVideoId, videoName, samplePercentage, pageSize]);
+
+  // 加载数据（只在 selectedVideoId 变化时重新加载）
+  useEffect(() => {
+    loadData(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVideoId]);
+
+  // 使用 useMemo 优化过滤和分组计算
+  const filteredAndGroupedData = useMemo(() => {
+    let filtered = allAnnotations;
+    
+    switch (filterStatus) {
+      case 'pending':
+        // 待质检的：有人工标注文本且未质检（没有inspector）且未复检完成
+        filtered = allAnnotations.filter(item => {
+          const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+          const notInspected = !item.inspector;
+          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
+          return hasHumanText && notInspected && notReviewed;
+        });
+        break;
+      case 'inspected':
+        // 已质检的（有质检人）且未复检完成
+        filtered = allAnnotations.filter(item => {
+          const hasInspector = item.inspector && item.inspector.trim() !== '';
+          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
+          return hasInspector && notReviewed;
+        });
+        break;
+      case 'all':
+      default:
+        // 全部：排除已复检完成的数据
+        filtered = allAnnotations.filter(item => item.reviewStatus == null);
+        break;
+    }
+    
+    // 按视频分组
+    return groupByVideo(filtered);
+  }, [allAnnotations, filterStatus, groupByVideo]);
+  
+  // 更新状态
+  useEffect(() => {
+    setGroupedData(filteredAndGroupedData);
+    setFilteredData(filteredAndGroupedData);
+  }, [filteredAndGroupedData]);
 
   // 开始质检 - 跳转到质检页面
   const handleStartInspection = () => {

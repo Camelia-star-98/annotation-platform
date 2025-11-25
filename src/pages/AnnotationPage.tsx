@@ -125,7 +125,10 @@ export default function AnnotationPage() {
           isQualified: item.is_qualified,
           inspector: item.inspector || '',
           reviewer: item.reviewer || '',
-          reviewStatus: item.review_status
+          reviewStatus: item.review_status,
+          videoUrl: video?.url || '',
+          videoName: video?.name || '',
+          subject: video?.subject || ''
         }));
         
         console.log('📊 格式化后的数据示例:', formattedData[0]);
@@ -198,7 +201,10 @@ export default function AnnotationPage() {
             isQualified: undefined,
             inspector: '',
             reviewer: '',
-            reviewStatus: undefined
+            reviewStatus: undefined,
+            videoUrl: video?.url || '',
+            videoName: video?.name || '',
+            subject: video?.subject || ''
           }));
           
           console.log('📋 格式化后的第一条数据:', newAnnotations[0]);

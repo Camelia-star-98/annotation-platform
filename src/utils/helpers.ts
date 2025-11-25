@@ -73,7 +73,7 @@ export function calculateStatistics(data: any[], groupBy: string) {
     return acc;
   }, {} as Record<string, { name: string; value: number }>);
 
-  return Object.values(grouped).sort((a, b) => b.value - a.value);
+  return (Object.values(grouped) as { name: string; value: number }[]).sort((a, b) => b.value - a.value);
 }
 
 // 防抖函数

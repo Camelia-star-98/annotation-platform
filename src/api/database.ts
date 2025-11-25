@@ -1,6 +1,18 @@
 import { supabase } from './supabase';
 import type { AnnotationItem, VideoInfo } from '../types';
 
+// ========== 工具函数 ==========
+
+// 超时包装器：为 Promise 添加超时控制
+function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number = 30000): Promise<T> {
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error(`请求超时 (${timeoutMs}ms)`)), timeoutMs)
+    )
+  ]);
+}
+
 // ========== 视频相关 ==========
 
 // 获取所有视频（优化：只查询必要字段，移除日志）
@@ -18,20 +30,27 @@ export async function getVideos(): Promise<VideoInfo[]> {
   return data || [];
 }
 
-// 获取单个视频（优化：避免查询所有视频）
+// 获取单个视频（优化：避免查询所有视频，添加超时控制）
 export async function getVideo(videoId: string): Promise<VideoInfo | null> {
-  const { data, error } = await supabase
-    .from('videos')
-    .select('id, name, url, subject, duration, required_annotators, created_at, is_published, is_completed')
-    .eq('id', videoId)
-    .single();
+  try {
+    const query = supabase
+      .from('videos')
+      .select('id, name, url, subject, duration, required_annotators, created_at, is_published, is_completed')
+      .eq('id', videoId)
+      .single();
+    
+    const { data, error } = await withTimeout(query, 10000); // 10秒超时
 
-  if (error) {
-    console.error('获取视频失败:', error);
+    if (error) {
+      console.error('获取视频失败:', error);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    console.error('获取视频超时或失败:', error);
     return null;
   }
-
-  return data;
 }
 
 // 添加视频
@@ -299,10 +318,10 @@ export async function getReviewedAnnotations(videoIds?: string[]): Promise<Annot
 
 // 获取指定视频的标注数据
 export async function getAnnotations(videoId: string): Promise<AnnotationItem[]> {
-  // 优化：只查询必要字段，不查询大文本字段（如 ai_rewritten_text）
+  // 优化：只查询必要字段，关联视频表获取视频信息
   const { data, error } = await supabase
     .from('annotations')
-    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status')
+    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status, videos!inner(url, name, subject)')
     .eq('video_id', videoId)
     .order('sentence_no', { ascending: true });
 
@@ -312,82 +331,97 @@ export async function getAnnotations(videoId: string): Promise<AnnotationItem[]>
   }
 
   // 转换数据格式
-  return (data || []).map(item => ({
-    id: item.id,
-    videoId: item.video_id,
-    sentenceNo: item.sentence_no,
-    timeRange: item.time_range,
-    startTime: item.start_time,
-    endTime: item.end_time,
-    originalText: item.original_text,
-    aiRewrittenText: '', // 不查询，节省带宽
-    humanAnnotatedText: item.human_annotated_text,
-    majorCategory: item.major_category,
-    minorCategory: item.minor_category,
-    remark: item.remark,
-    status: item.status,
-    annotator: item.annotator,
-    isQualified: item.is_qualified,
-    inspector: item.inspector,
-    reviewer: item.reviewer || '', // 添加复检人
-    reviewStatus: item.review_status // 添加复检状态
-  }));
+  return (data || []).map(item => {
+    const video = Array.isArray(item.videos) ? item.videos[0] : item.videos;
+    return {
+      id: item.id,
+      videoId: item.video_id,
+      sentenceNo: item.sentence_no,
+      timeRange: item.time_range,
+      startTime: item.start_time,
+      endTime: item.end_time,
+      originalText: item.original_text,
+      aiRewrittenText: '', // 不查询，节省带宽
+      humanAnnotatedText: item.human_annotated_text,
+      majorCategory: item.major_category,
+      minorCategory: item.minor_category,
+      remark: item.remark,
+      status: item.status,
+      annotator: item.annotator,
+      isQualified: item.is_qualified,
+      inspector: item.inspector,
+      reviewer: item.reviewer || '', // 添加复检人
+      reviewStatus: item.review_status, // 添加复检状态
+      videoUrl: video?.url || '',
+      videoName: video?.name || '',
+      subject: video?.subject || ''
+    };
+  });
 }
 
-// 获取指定视频的待质检数据（优化：在数据库层面直接过滤，支持分页）
+// 获取指定视频的待质检数据（优化：在数据库层面直接过滤，支持分页，添加超时控制）
 export async function getPendingInspectionAnnotations(
   videoId: string, 
   options?: { limit?: number; offset?: number }
 ): Promise<{ data: AnnotationItem[]; total: number }> {
-  // 构建查询
-  let query = supabase
-    .from('annotations')
-    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
-    .eq('video_id', videoId)
-    .not('human_annotated_text', 'is', null)
-    .neq('human_annotated_text', '')
-    .is('inspector', null)  // 未质检
-    .is('review_status', null)  // 未复检
-    .order('sentence_no', { ascending: true });
+  try {
+    // 构建查询
+    let query = supabase
+      .from('annotations')
+      .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
+      .eq('video_id', videoId)
+      .not('human_annotated_text', 'is', null)
+      .neq('human_annotated_text', '')
+      .is('inspector', null)  // 未质检
+      .is('review_status', null)  // 未复检
+      .order('sentence_no', { ascending: true });
 
-  // 应用分页
-  if (options?.limit) {
-    query = query.limit(options.limit);
-  }
-  if (options?.offset) {
-    query = query.range(options.offset, options.offset + (options.limit || 1000) - 1);
-  }
+    // 应用分页
+    if (options?.limit) {
+      query = query.limit(options.limit);
+    }
+    if (options?.offset) {
+      query = query.range(options.offset, options.offset + (options.limit || 1000) - 1);
+    }
 
-  const { data, error, count } = await query;
+    const { data, error, count } = await withTimeout(query, 15000); // 15秒超时
 
-  if (error) {
-    console.error('获取待质检数据失败:', error);
+    if (error) {
+      console.error('获取待质检数据失败:', error);
+      return { data: [], total: 0 };
+    }
+
+    // 转换数据格式
+    const annotations = (data || []).map(item => ({
+      id: item.id,
+      videoId: item.video_id,
+      sentenceNo: item.sentence_no,
+      timeRange: item.time_range,
+      startTime: item.start_time,
+      endTime: item.end_time,
+      originalText: item.original_text,
+      aiRewrittenText: '', // 不查询，节省带宽
+      humanAnnotatedText: item.human_annotated_text,
+      majorCategory: item.major_category,
+      minorCategory: item.minor_category,
+      remark: item.remark,
+      status: item.status,
+      annotator: item.annotator,
+      isQualified: item.is_qualified,
+      inspector: item.inspector,
+      reviewer: item.reviewer || '',
+      reviewStatus: item.review_status,
+      // 添加缺少的字段
+      videoUrl: '',
+      videoName: '',
+      subject: ''
+    }));
+
+    return { data: annotations, total: count || 0 };
+  } catch (error) {
+    console.error('获取待质检数据超时或失败:', error);
     return { data: [], total: 0 };
   }
-
-  // 转换数据格式
-  const annotations = (data || []).map(item => ({
-    id: item.id,
-    videoId: item.video_id,
-    sentenceNo: item.sentence_no,
-    timeRange: item.time_range,
-    startTime: item.start_time,
-    endTime: item.end_time,
-    originalText: item.original_text,
-    aiRewrittenText: '', // 不查询，节省带宽
-    humanAnnotatedText: item.human_annotated_text,
-    majorCategory: item.major_category,
-    minorCategory: item.minor_category,
-    remark: item.remark,
-    status: item.status,
-    annotator: item.annotator,
-    isQualified: item.is_qualified,
-    inspector: item.inspector,
-    reviewer: item.reviewer || '',
-    reviewStatus: item.review_status
-  }));
-
-  return { data: annotations, total: count || 0 };
 }
 
 // 批量保存标注数据

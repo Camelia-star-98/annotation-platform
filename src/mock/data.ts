@@ -92,6 +92,7 @@ export const generateMockAnnotations = (videoId: string): AnnotationItem[] => {
     
     return {
       id: `${videoId}_${index + 1}`,
+      videoId: videoId,
       sentenceNo: index + 1,
       timeRange: `${formatTime(startTime)} - ${formatTime(endTime)}`,
       startTime,
@@ -122,6 +123,7 @@ function formatTime(seconds: number): string {
 export const MOCK_ANNOTATED_DATA: AnnotationItem[] = [
   {
     id: 'anno_1',
+    videoId: 'video_1',
     sentenceNo: 1,
     timeRange: '00:15 - 00:30',
     startTime: 15,
@@ -140,6 +142,7 @@ export const MOCK_ANNOTATED_DATA: AnnotationItem[] = [
   },
   {
     id: 'anno_2',
+    videoId: 'video_1',
     sentenceNo: 5,
     timeRange: '01:20 - 01:35',
     startTime: 80,
@@ -158,6 +161,7 @@ export const MOCK_ANNOTATED_DATA: AnnotationItem[] = [
   },
   {
     id: 'anno_3',
+    videoId: 'video_1',
     sentenceNo: 8,
     timeRange: '02:10 - 02:25',
     startTime: 130,

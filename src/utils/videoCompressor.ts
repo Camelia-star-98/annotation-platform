@@ -140,7 +140,7 @@ export async function compressVideo(
 
     // 读取压缩后的文件
     const data = await ffmpeg.readFile(outputFileName);
-    const compressedBlob = new Blob([data], { type: 'video/mp4' });
+    const compressedBlob = new Blob([data as BlobPart], { type: 'video/mp4' });
     
     // 创建新的 File 对象
     const compressedFile = new File(

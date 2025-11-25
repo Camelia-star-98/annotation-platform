@@ -47,6 +47,7 @@ interface VideoWithAnnotators {
 }
 
 export default function ReviewSelectPage() {
+  console.log('✨ ReviewSelectPage 组件加载 - 版本 3.0 (稳定版)');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   
@@ -89,7 +90,7 @@ export default function ReviewSelectPage() {
     }
   };
   
-  // 全选/取消全选当前页
+  // 全选/取消全选当前页（跨页保留选中状态）
   const toggleSelectAll = (isPending: boolean) => {
     // 获取所有数据和当前页码
     const allVideos = isPending ? allPendingVideos : allCompletedVideos;

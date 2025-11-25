@@ -579,7 +579,10 @@ export default function AnalysisPage() {
     
     // 计算每个科目的总数
     const subjectTotals = availableSubjects.reduce((acc, subject) => {
-      acc[subject] = subjectDetailStats.reduce((sum, row) => sum + (row[subject] || 0), 0);
+      acc[subject] = subjectDetailStats.reduce((sum, row) => {
+        const value = row[subject];
+        return sum + (typeof value === 'number' ? value : 0);
+      }, 0);
       return acc;
     }, {} as Record<string, number>);
     
@@ -835,7 +838,6 @@ export default function AnalysisPage() {
                 showTotal: (total) => `共 ${total} 项`
               }}
               scroll={{ x: 'max-content' }}
-              variant="outlined"
               size="middle"
             />
           </Card>
@@ -861,7 +863,6 @@ export default function AnalysisPage() {
                 showTotal: (total) => `共 ${total} 项`
               }}
               scroll={{ x: 'max-content' }}
-              variant="outlined"
               size="middle"
             />
           </Card>
@@ -1024,7 +1025,6 @@ export default function AnalysisPage() {
                 showTotal: (total) => `共 ${total} 条`
               }}
               scroll={{ x: 'max-content' }}
-              variant="outlined"
               size="small"
             />
           </Card>
