@@ -1309,7 +1309,6 @@ export default function VideoManagePage() {
     onChange: (keys: React.Key[]) => {
       setSelectedRowKeys(keys as string[]);
     },
-    columnTitle: () => <span style={{ fontWeight: 500 }}>选择</span>,
     selections: [
       Table.SELECTION_ALL,
       Table.SELECTION_INVERT,
