@@ -11,7 +11,8 @@ import {
   Typography,
   Collapse,
   Tabs,
-  Popconfirm
+  Popconfirm,
+  Checkbox
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -57,11 +58,65 @@ export default function ReviewSelectPage() {
   const [pendingTotal, setPendingTotal] = useState(0);
   const [completedTotal, setCompletedTotal] = useState(0);
   const pageSize = 5; // 每页显示5个视频
+  
+  // 选中状态（跨页保留）
+  const [selectedPendingVideoIds, setSelectedPendingVideoIds] = useState<Set<string>>(new Set());
+  const [selectedCompletedVideoIds, setSelectedCompletedVideoIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadPendingVideos(1);
     loadCompletedVideos(1);
   }, []);
+
+  // 切换视频选中状态
+  const toggleVideoSelection = (videoId: string, isPending: boolean) => {
+    if (isPending) {
+      const newSelected = new Set(selectedPendingVideoIds);
+      if (newSelected.has(videoId)) {
+        newSelected.delete(videoId);
+      } else {
+        newSelected.add(videoId);
+      }
+      setSelectedPendingVideoIds(newSelected);
+    } else {
+      const newSelected = new Set(selectedCompletedVideoIds);
+      if (newSelected.has(videoId)) {
+        newSelected.delete(videoId);
+      } else {
+        newSelected.add(videoId);
+      }
+      setSelectedCompletedVideoIds(newSelected);
+    }
+  };
+  
+  // 全选/取消全选当前页
+  const toggleSelectAll = (isPending: boolean) => {
+    const currentList = isPending ? pendingList : completedList;
+    const currentSelected = isPending ? selectedPendingVideoIds : selectedCompletedVideoIds;
+    const setSelected = isPending ? setSelectedPendingVideoIds : setSelectedCompletedVideoIds;
+    
+    const currentPageVideoIds = currentList.map(v => v.videoId);
+    const allSelected = currentPageVideoIds.every(id => currentSelected.has(id));
+    
+    const newSelected = new Set(currentSelected);
+    if (allSelected) {
+      // 取消全选当前页
+      currentPageVideoIds.forEach(id => newSelected.delete(id));
+    } else {
+      // 全选当前页
+      currentPageVideoIds.forEach(id => newSelected.add(id));
+    }
+    setSelected(newSelected);
+  };
+  
+  // 清空选中
+  const clearSelection = (isPending: boolean) => {
+    if (isPending) {
+      setSelectedPendingVideoIds(new Set());
+    } else {
+      setSelectedCompletedVideoIds(new Set());
+    }
+  };
 
   // 加载待复检视频（分页）
   const loadPendingVideos = async (page: number) => {
@@ -248,38 +303,38 @@ export default function ReviewSelectPage() {
           
           if (!annotatorMap.has(annotator)) {
             annotatorMap.set(annotator, {
-              annotatorName: annotator,
-              totalAnnotations: 0,
-              reviewedCount: 0,
-              pendingCount: 0,
-              unannotatedCount: 0,
-              reviewers: [],
-              inspectors: [],
-              lastReviewTime: undefined
+            annotatorName: annotator,
+            totalAnnotations: 0,
+            reviewedCount: 0,
+            pendingCount: 0,
+            unannotatedCount: 0,
+            reviewers: [],
+            inspectors: [],
+            lastReviewTime: undefined
             });
-          }
-          
+        }
+
           const annotatorData = annotatorMap.get(annotator)!;
-          annotatorData.totalAnnotations++;
-          
+        annotatorData.totalAnnotations++;
+        
           if (hasHumanText) {
             if (ann.review_status === true) {
-              annotatorData.reviewedCount++;
+            annotatorData.reviewedCount++;
               if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
                 annotatorData.reviewers.push(ann.reviewer);
               }
               if (ann.updated_at) {
                 if (!annotatorData.lastReviewTime || ann.updated_at > annotatorData.lastReviewTime) {
                   annotatorData.lastReviewTime = ann.updated_at;
-                }
               }
-            } else {
-              annotatorData.pendingCount++;
             }
           } else {
-            annotatorData.unannotatedCount++;
+            annotatorData.pendingCount++;
           }
-          
+        } else {
+          annotatorData.unannotatedCount++;
+        }
+        
           if (ann.inspector && !annotatorData.inspectors.includes(ann.inspector)) {
             annotatorData.inspectors.push(ann.inspector);
           }
@@ -422,189 +477,235 @@ export default function ReviewSelectPage() {
     const onPageChange = isPending ? 
       (page: number) => loadPendingVideos(page) : 
       (page: number) => loadCompletedVideos(page);
+    
+    const selectedVideoIds = isPending ? selectedPendingVideoIds : selectedCompletedVideoIds;
+    const currentPageVideoIds = videoList.map(v => v.videoId);
+    const allSelected = currentPageVideoIds.length > 0 && currentPageVideoIds.every(id => selectedVideoIds.has(id));
+    const someSelected = currentPageVideoIds.some(id => selectedVideoIds.has(id)) && !allSelected;
 
     return (
       <>
-        <Collapse accordion>
-          {videoList.map((video) => (
-            <Panel
-              header={
-                <Space size="large">
-                  <Text strong style={{ minWidth: 250 }}>{video.videoName}</Text>
-                  <Tag color="blue">{video.subject}</Tag>
-                  <Tag color="purple">{video.annotators.length} 位标注员</Tag>
-                  <Tag color="green">
-                    {video.annotators.reduce((sum, a) => sum + a.reviewedCount, 0)} 已复检
-                  </Tag>
-                  <Tag color="orange">
-                    {video.annotators.reduce((sum, a) => sum + a.pendingCount, 0)} 待复检
-                  </Tag>
-                  {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0) > 0 && (
-                    <Tag color="red" icon={<ClockCircleOutlined />}>
-                      {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0)} 未标注
-                    </Tag>
-                  )}
-                </Space>
-              }
-              key={video.videoId}
+        {/* 批量操作栏 */}
+        <div style={{ 
+          marginBottom: 16, 
+          padding: '12px 16px', 
+          background: '#f5f5f5', 
+          borderRadius: 8,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <Space>
+            <Checkbox
+              checked={allSelected}
+              indeterminate={someSelected}
+              onChange={() => toggleSelectAll(isPending)}
             >
-              <Table
-                columns={[
-                  {
-                    title: '标注人',
-                    dataIndex: 'annotatorName',
-                    key: 'annotatorName',
-                    width: 150,
-                    render: (text: string) => (
-                      <Space>
-                        <UserOutlined />
-                        <Text strong>{text}</Text>
-                      </Space>
-                    )
-                  },
-                  {
-                    title: '总标注数',
-                    dataIndex: 'totalAnnotations',
-                    key: 'totalAnnotations',
-                    width: 120,
-                    align: 'center' as const,
-                    render: (count: number) => <Text>{count} 条</Text>
-                  },
-                  {
-                    title: '已复检',
-                    dataIndex: 'reviewedCount',
-                    key: 'reviewedCount',
-                    width: 120,
-                    align: 'center' as const,
-                    render: (count: number) => (
-                      <Tag color={count > 0 ? 'success' : 'default'}>
+              全选当前页
+            </Checkbox>
+            <Text type="secondary">
+              已选中 {selectedVideoIds.size} 个视频
+            </Text>
+          </Space>
+          <Space>
+            {selectedVideoIds.size > 0 && (
+              <Button
+                size="small"
+                onClick={() => clearSelection(isPending)}
+              >
+                清空选择
+              </Button>
+            )}
+          </Space>
+        </div>
+        
+      <Collapse accordion>
+        {videoList.map((video) => (
+          <Panel
+            header={
+                <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                  <Checkbox
+                    checked={selectedVideoIds.has(video.videoId)}
+                    onChange={() => toggleVideoSelection(video.videoId, isPending)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+              <Space size="large">
+                <Text strong style={{ minWidth: 250 }}>{video.videoName}</Text>
+                <Tag color="blue">{video.subject}</Tag>
+                <Tag color="purple">{video.annotators.length} 位标注员</Tag>
+                <Tag color="green">
+                  {video.annotators.reduce((sum, a) => sum + a.reviewedCount, 0)} 已复检
+                </Tag>
+                <Tag color="orange">
+                  {video.annotators.reduce((sum, a) => sum + a.pendingCount, 0)} 待复检
+                </Tag>
+                {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0) > 0 && (
+                  <Tag color="red" icon={<ClockCircleOutlined />}>
+                    {video.annotators.reduce((sum, a) => sum + a.unannotatedCount, 0)} 未标注
+                  </Tag>
+                )}
+              </Space>
+                </div>
+            }
+            key={video.videoId}
+          >
+            <Table
+              columns={[
+                {
+                  title: '标注人',
+                  dataIndex: 'annotatorName',
+                  key: 'annotatorName',
+                  width: 150,
+                  render: (text: string) => (
+                    <Space>
+                      <UserOutlined />
+                      <Text strong>{text}</Text>
+                    </Space>
+                  )
+                },
+                {
+                  title: '总标注数',
+                  dataIndex: 'totalAnnotations',
+                  key: 'totalAnnotations',
+                  width: 120,
+                  align: 'center' as const,
+                  render: (count: number) => <Text>{count} 条</Text>
+                },
+                {
+                  title: '已复检',
+                  dataIndex: 'reviewedCount',
+                  key: 'reviewedCount',
+                  width: 120,
+                  align: 'center' as const,
+                  render: (count: number) => (
+                    <Tag color={count > 0 ? 'success' : 'default'}>
+                      {count} 条
+                    </Tag>
+                  )
+                },
+                {
+                  title: '待复检',
+                  dataIndex: 'pendingCount',
+                  key: 'pendingCount',
+                  width: 120,
+                  align: 'center' as const,
+                  render: (count: number) => (
+                    <Tag color={count > 0 ? 'orange' : 'default'}>
+                      {count} 条
+                    </Tag>
+                  )
+                },
+                {
+                  title: '未标注',
+                  dataIndex: 'unannotatedCount',
+                  key: 'unannotatedCount',
+                  width: 120,
+                  align: 'center' as const,
+                  render: (count: number) => (
+                    count > 0 ? (
+                      <Tag color="red" icon={<ClockCircleOutlined />}>
                         {count} 条
                       </Tag>
+                    ) : (
+                      <Tag color="default">0 条</Tag>
                     )
-                  },
-                  {
-                    title: '待复检',
-                    dataIndex: 'pendingCount',
-                    key: 'pendingCount',
-                    width: 120,
-                    align: 'center' as const,
-                    render: (count: number) => (
-                      <Tag color={count > 0 ? 'orange' : 'default'}>
-                        {count} 条
-                      </Tag>
-                    )
-                  },
-                  {
-                    title: '未标注',
-                    dataIndex: 'unannotatedCount',
-                    key: 'unannotatedCount',
-                    width: 120,
-                    align: 'center' as const,
-                    render: (count: number) => (
-                      count > 0 ? (
-                        <Tag color="red" icon={<ClockCircleOutlined />}>
-                          {count} 条
-                        </Tag>
-                      ) : (
-                        <Tag color="default">0 条</Tag>
-                      )
-                    )
-                  },
-                  {
-                    title: '质检人',
-                    dataIndex: 'inspectors',
-                    key: 'inspectors',
-                    width: 200,
-                    render: (inspectors: string[]) => (
-                      <Space wrap>
-                        {inspectors.length > 0 ? (
-                          inspectors.map(inspector => (
-                            <Tag key={inspector} color="blue" icon={<UserOutlined />}>
-                              {inspector}
-                            </Tag>
-                          ))
-                        ) : (
-                          <Text type="secondary">-</Text>
-                        )}
-                      </Space>
-                    )
-                  },
-                  {
-                    title: '复检人',
-                    dataIndex: 'reviewers',
-                    key: 'reviewers',
-                    width: 200,
-                    render: (reviewers: string[]) => (
-                      <Space wrap>
-                        {reviewers.length > 0 ? (
-                          reviewers.map(reviewer => (
-                            <Tag key={reviewer} color="cyan" icon={<CheckCircleOutlined />}>
-                              {reviewer}
-                            </Tag>
-                          ))
-                        ) : (
-                          <Text type="secondary">-</Text>
-                        )}
-                      </Space>
-                    )
-                  },
-                  {
-                    title: '最后复检时间',
-                    dataIndex: 'lastReviewTime',
-                    key: 'lastReviewTime',
-                    width: 180,
-                    align: 'center' as const,
-                    render: (time: string | undefined) => (
-                      time ? (
-                        <Text>{new Date(time).toLocaleString('zh-CN')}</Text>
+                  )
+                },
+                {
+                  title: '质检人',
+                  dataIndex: 'inspectors',
+                  key: 'inspectors',
+                  width: 200,
+                  render: (inspectors: string[]) => (
+                    <Space wrap>
+                      {inspectors.length > 0 ? (
+                        inspectors.map(inspector => (
+                          <Tag key={inspector} color="blue" icon={<UserOutlined />}>
+                            {inspector}
+                          </Tag>
+                        ))
                       ) : (
                         <Text type="secondary">-</Text>
-                      )
+                      )}
+                    </Space>
+                  )
+                },
+                {
+                  title: '复检人',
+                  dataIndex: 'reviewers',
+                  key: 'reviewers',
+                  width: 200,
+                  render: (reviewers: string[]) => (
+                    <Space wrap>
+                      {reviewers.length > 0 ? (
+                        reviewers.map(reviewer => (
+                          <Tag key={reviewer} color="cyan" icon={<CheckCircleOutlined />}>
+                            {reviewer}
+                          </Tag>
+                        ))
+                      ) : (
+                        <Text type="secondary">-</Text>
+                      )}
+                    </Space>
+                  )
+                },
+                {
+                  title: '最后复检时间',
+                  dataIndex: 'lastReviewTime',
+                  key: 'lastReviewTime',
+                  width: 180,
+                  align: 'center' as const,
+                  render: (time: string | undefined) => (
+                    time ? (
+                      <Text>{new Date(time).toLocaleString('zh-CN')}</Text>
+                    ) : (
+                      <Text type="secondary">-</Text>
                     )
-                  },
-                  {
-                    title: '操作',
-                    key: 'action',
-                    width: 200,
-                    align: 'center' as const,
-                    render: (_: any, record: AnnotatorData) => (
-                      <Space>
+                  )
+                },
+                {
+                  title: '操作',
+                  key: 'action',
+                  width: 200,
+                  align: 'center' as const,
+                  render: (_: any, record: AnnotatorData) => (
+                    <Space>
+                      <Button
+                        type="primary"
+                        icon={<EyeOutlined />}
+                        size="small"
+                        onClick={() => handleReview(video.videoId, video.videoName, record.annotatorName)}
+                      >
+                        开始复检
+                      </Button>
+                      <Popconfirm
+                        title="确认删除"
+                        description={`确定要删除标注人"${record.annotatorName}"的所有标注数据吗？此操作不可恢复！`}
+                        onConfirm={() => handleDelete(video.videoId, video.videoName, record.annotatorName)}
+                        okText="确认删除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                      >
                         <Button
-                          type="primary"
-                          icon={<EyeOutlined />}
+                          danger
+                          icon={<DeleteOutlined />}
                           size="small"
-                          onClick={() => handleReview(video.videoId, video.videoName, record.annotatorName)}
                         >
-                          开始复检
+                          删除
                         </Button>
-                        <Popconfirm
-                          title="确认删除"
-                          description={`确定要删除标注人"${record.annotatorName}"的所有标注数据吗？此操作不可恢复！`}
-                          onConfirm={() => handleDelete(video.videoId, video.videoName, record.annotatorName)}
-                          okText="确认删除"
-                          cancelText="取消"
-                          okButtonProps={{ danger: true }}
-                        >
-                          <Button
-                            danger
-                            icon={<DeleteOutlined />}
-                            size="small"
-                          >
-                            删除
-                          </Button>
-                        </Popconfirm>
-                      </Space>
-                    )
-                  }
-                ]}
-                dataSource={video.annotators}
-                rowKey="annotatorName"
-                pagination={false}
-                size="small"
-              />
-            </Panel>
-          ))}
-        </Collapse>
+                      </Popconfirm>
+                    </Space>
+                  )
+                }
+              ]}
+              dataSource={video.annotators}
+              rowKey="annotatorName"
+              pagination={false}
+              size="small"
+            />
+          </Panel>
+        ))}
+      </Collapse>
         
         {/* 分页控件 */}
         {total > pageSize && (
