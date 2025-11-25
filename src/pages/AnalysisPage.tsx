@@ -835,7 +835,7 @@ export default function AnalysisPage() {
                 showTotal: (total) => `共 ${total} 项`
               }}
               scroll={{ x: 'max-content' }}
-              bordered
+              variant="outlined"
               size="middle"
             />
           </Card>
@@ -861,7 +861,7 @@ export default function AnalysisPage() {
                 showTotal: (total) => `共 ${total} 项`
               }}
               scroll={{ x: 'max-content' }}
-              bordered
+              variant="outlined"
               size="middle"
             />
           </Card>
@@ -1024,7 +1024,7 @@ export default function AnalysisPage() {
                 showTotal: (total) => `共 ${total} 条`
               }}
               scroll={{ x: 'max-content' }}
-              bordered
+              variant="outlined"
               size="small"
             />
           </Card>

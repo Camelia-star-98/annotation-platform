@@ -296,7 +296,7 @@ export default function InspectionSelectPage() {
               <Tag color="blue">{videos.length} 个视频</Tag>
             </Space>
           }
-          bordered={false}
+          variant="borderless"
         >
           <Table
             columns={columns}
