@@ -49,14 +49,14 @@ interface VideoWithAnnotators {
 export default function ReviewSelectPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [pendingList, setPendingList] = useState<VideoWithAnnotators[]>([]); // 待复检列表
-  const [completedList, setCompletedList] = useState<VideoWithAnnotators[]>([]); // 已复检列表
   
-  // 分页状态
+  // 存储所有数据（不分页）
+  const [allPendingVideos, setAllPendingVideos] = useState<VideoWithAnnotators[]>([]);
+  const [allCompletedVideos, setAllCompletedVideos] = useState<VideoWithAnnotators[]>([]);
+  
+  // 分页状态（仅用于前端显示）
   const [pendingPage, setPendingPage] = useState(1);
   const [completedPage, setCompletedPage] = useState(1);
-  const [pendingTotal, setPendingTotal] = useState(0);
-  const [completedTotal, setCompletedTotal] = useState(0);
   const pageSize = 5; // 每页显示5个视频
   
   // 选中状态（跨页保留）
@@ -64,8 +64,8 @@ export default function ReviewSelectPage() {
   const [selectedCompletedVideoIds, setSelectedCompletedVideoIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    loadPendingVideos(1);
-    loadCompletedVideos(1);
+    loadAllPendingVideos();
+    loadAllCompletedVideos();
   }, []);
 
   // 切换视频选中状态
@@ -118,13 +118,13 @@ export default function ReviewSelectPage() {
     }
   };
 
-  // 加载待复检视频（分页）
-  const loadPendingVideos = async (page: number) => {
+  // 加载待复检视频（一次性加载所有数据）
+  const loadAllPendingVideos = async () => {
     setLoading(true);
     try {
       const { supabase } = await import('../api/supabase');
       
-      console.log('📊 加载待复检视频，页码:', page);
+      console.log('📊 加载所有待复检视频...');
       
       // 1. 查询所有有标注的数据（video_id 去重）
       const { data: videoIds, error: videoError } = await supabase
@@ -218,18 +218,12 @@ export default function ReviewSelectPage() {
       const videosWithPending = videoStatsResults.filter(v => v !== null) as { videoId: string; annotators: AnnotatorData[] }[];
       
       console.log('  - 有待复检数据的视频数量:', videosWithPending.length);
-      setPendingTotal(videosWithPending.length);
       
-      // 3. 分页获取视频详情
-      const startIdx = (page - 1) * pageSize;
-      const endIdx = startIdx + pageSize;
-      const paginatedVideos = videosWithPending.slice(startIdx, endIdx);
-      
-      // 4. 获取视频详细信息
+      // 3. 获取所有视频详细信息
       const { getVideos } = await import('../api/database');
       const allVideos = await getVideos();
       
-      const result: VideoWithAnnotators[] = paginatedVideos.map(item => {
+      const result: VideoWithAnnotators[] = videosWithPending.map(item => {
         const video = allVideos.find(v => v.id === item.videoId);
         return {
           videoId: item.videoId,
@@ -239,10 +233,10 @@ export default function ReviewSelectPage() {
         };
       });
       
-      setPendingList(result);
-      setPendingPage(page);
+      setAllPendingVideos(result);
+      setPendingPage(1); // 重置到第一页
       
-      console.log('✅ 待复检视频加载完成:', result.length);
+      console.log('✅ 所有待复检视频加载完成:', result.length);
     } catch (error) {
       console.error('加载待复检视频失败:', error);
       message.error('加载待复检视频失败');
@@ -251,13 +245,13 @@ export default function ReviewSelectPage() {
     }
   };
 
-  // 加载已复检视频（分页）
-  const loadCompletedVideos = async (page: number) => {
+  // 加载已复检视频（一次性加载所有数据）
+  const loadAllCompletedVideos = async () => {
     setLoading(true);
     try {
       const { supabase } = await import('../api/supabase');
       
-      console.log('📊 加载已复检视频，页码:', page);
+      console.log('📊 加载所有已复检视频...');
       
       // 1. 查询所有有标注的数据（video_id 去重）
       const { data: videoIds, error: videoError } = await supabase
@@ -384,18 +378,12 @@ export default function ReviewSelectPage() {
           time: new Date(v.latestReviewTime).toLocaleString('zh-CN')
         }))
       );
-      setCompletedTotal(videosWithCompleted.length);
       
-      // 3. 分页获取视频详情
-      const startIdx = (page - 1) * pageSize;
-      const endIdx = startIdx + pageSize;
-      const paginatedVideos = videosWithCompleted.slice(startIdx, endIdx);
-      
-      // 4. 获取视频详细信息
+      // 3. 获取所有视频详细信息
       const { getVideos } = await import('../api/database');
       const allVideos = await getVideos();
       
-      const result: VideoWithAnnotators[] = paginatedVideos.map(item => {
+      const result: VideoWithAnnotators[] = videosWithCompleted.map(item => {
         const video = allVideos.find(v => v.id === item.videoId);
         return {
           videoId: item.videoId,
@@ -405,10 +393,10 @@ export default function ReviewSelectPage() {
         };
       });
       
-      setCompletedList(result);
-      setCompletedPage(page);
+      setAllCompletedVideos(result);
+      setCompletedPage(1); // 重置到第一页
       
-      console.log('✅ 已复检视频加载完成:', result.length);
+      console.log('✅ 所有已复检视频加载完成:', result.length);
     } catch (error) {
       console.error('加载已复检视频失败:', error);
       message.error('加载已复检视频失败');
@@ -453,18 +441,26 @@ export default function ReviewSelectPage() {
 
       message.success(`已删除 ${annotatorName} 在视频"${videoName}"中的所有标注数据`);
       
-      // 重新加载当前页数据
-      loadPendingVideos(pendingPage);
-      loadCompletedVideos(completedPage);
+      // 重新加载所有数据
+      loadAllPendingVideos();
+      loadAllCompletedVideos();
     } catch (error) {
       console.error('❌ 删除异常:', error);
       message.error('删除失败');
     }
   };
 
-  // 渲染视频列表（可复用组件）
-  const renderVideoList = (videoList: VideoWithAnnotators[], isPending: boolean) => {
-    if (videoList.length === 0 && !loading) {
+  // 渲染视频列表（可复用组件 - 前端分页）
+  const renderVideoList = (allVideos: VideoWithAnnotators[], isPending: boolean) => {
+    const currentPage = isPending ? pendingPage : completedPage;
+    const setCurrentPage = isPending ? setPendingPage : setCompletedPage;
+    
+    // 前端分页：根据当前页码切片数据
+    const startIdx = (currentPage - 1) * pageSize;
+    const endIdx = startIdx + pageSize;
+    const displayVideos = allVideos.slice(startIdx, endIdx);
+    
+    if (allVideos.length === 0 && !loading) {
       return (
         <div style={{ padding: '40px', textAlign: 'center', color: '#999' }}>
           暂无数据
@@ -472,14 +468,11 @@ export default function ReviewSelectPage() {
       );
     }
 
-    const currentPage = isPending ? pendingPage : completedPage;
-    const total = isPending ? pendingTotal : completedTotal;
-    const onPageChange = isPending ? 
-      (page: number) => loadPendingVideos(page) : 
-      (page: number) => loadCompletedVideos(page);
+    const total = allVideos.length;
+    const totalPages = Math.ceil(total / pageSize);
     
     const selectedVideoIds = isPending ? selectedPendingVideoIds : selectedCompletedVideoIds;
-    const currentPageVideoIds = videoList.map(v => v.videoId);
+    const currentPageVideoIds = displayVideos.map(v => v.videoId);
     const allSelected = currentPageVideoIds.length > 0 && currentPageVideoIds.every(id => selectedVideoIds.has(id));
     const someSelected = currentPageVideoIds.some(id => selectedVideoIds.has(id)) && !allSelected;
 
@@ -520,7 +513,7 @@ export default function ReviewSelectPage() {
         </div>
         
       <Collapse accordion>
-        {videoList.map((video) => (
+        {displayVideos.map((video) => (
           <Panel
             header={
                 <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
@@ -707,24 +700,24 @@ export default function ReviewSelectPage() {
         ))}
       </Collapse>
         
-        {/* 分页控件 */}
+        {/* 分页控件 - 仅更新页码，不重新加载数据 */}
         {total > pageSize && (
           <div style={{ marginTop: 24, textAlign: 'center' }}>
             <Space direction="vertical" align="center">
               <Space>
                 <Button
-                  disabled={currentPage === 1 || loading}
-                  onClick={() => onPageChange(currentPage - 1)}
+                  disabled={currentPage === 1}
+                  onClick={() => setCurrentPage(currentPage - 1)}
                 >
                   上一页
                 </Button>
                 <Text>
-                  第 {currentPage} / {Math.ceil(total / pageSize)} 页
+                  第 {currentPage} / {totalPages} 页
                   （共 {total} 个视频）
                 </Text>
                 <Button
-                  disabled={currentPage >= Math.ceil(total / pageSize) || loading}
-                  onClick={() => onPageChange(currentPage + 1)}
+                  disabled={currentPage >= totalPages}
+                  onClick={() => setCurrentPage(currentPage + 1)}
                 >
                   下一页
                 </Button>
@@ -772,10 +765,10 @@ export default function ReviewSelectPage() {
                   <Space>
                     <ClockCircleOutlined />
                     <span>待复检</span>
-                    <Tag color="orange">{pendingTotal} 个视频</Tag>
+                    <Tag color="orange">{allPendingVideos.length} 个视频</Tag>
                   </Space>
                 ),
-                children: renderVideoList(pendingList, true)
+                children: renderVideoList(allPendingVideos, true)
               },
               {
                 key: 'completed',
@@ -783,10 +776,10 @@ export default function ReviewSelectPage() {
                   <Space>
                     <CheckCircleOutlined />
                     <span>已复检</span>
-                    <Tag color="success">{completedTotal} 个视频</Tag>
+                    <Tag color="success">{allCompletedVideos.length} 个视频</Tag>
                   </Space>
                 ),
-                children: renderVideoList(completedList, false)
+                children: renderVideoList(allCompletedVideos, false)
               }
             ]}
           />
