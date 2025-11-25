@@ -44,6 +44,7 @@ interface VideoWithAnnotators {
   videoName: string;
   subject: string;
   annotators: AnnotatorData[];
+  reviewCompletedAt?: string; // 复检完成时间
 }
 
 export default function ReviewSelectPage() {
@@ -58,7 +59,8 @@ export default function ReviewSelectPage() {
   // 分页状态（仅用于前端显示）
   const [pendingPage, setPendingPage] = useState(1);
   const [completedPage, setCompletedPage] = useState(1);
-  const pageSize = 5; // 每页显示5个视频
+  const pendingPageSize = 5; // 待复检每页显示5个视频
+  const completedPageSize = 20; // 已复检每页显示20个视频
   
   // 选中状态（跨页保留）
   const [selectedPendingVideoIds, setSelectedPendingVideoIds] = useState<Set<string>>(new Set());
@@ -95,6 +97,7 @@ export default function ReviewSelectPage() {
     // 获取所有数据和当前页码
     const allVideos = isPending ? allPendingVideos : allCompletedVideos;
     const currentPage = isPending ? pendingPage : completedPage;
+    const pageSize = isPending ? pendingPageSize : completedPageSize;
     
     // 计算当前页的视频切片
     const startIdx = (currentPage - 1) * pageSize;
@@ -155,6 +158,7 @@ export default function ReviewSelectPage() {
       // 去重视频ID
       const uniqueVideoIds = [...new Set(videoIds?.map(item => item.video_id) || [])];
       console.log('  - 有标注数据的视频总数:', uniqueVideoIds.length);
+      console.log('  ℹ️  注意：部分复检完成的视频会同时出现在"待复检"和"已复检"两个标签页');
       
       // 2. 对每个视频统计待复检数据
       const videoStatsPromises = uniqueVideoIds.map(async (videoId) => {
@@ -227,6 +231,7 @@ export default function ReviewSelectPage() {
       const videosWithPending = videoStatsResults.filter(v => v !== null) as { videoId: string; annotators: AnnotatorData[] }[];
       
       console.log('  - 有待复检数据的视频数量:', videosWithPending.length);
+      console.log('  ℹ️  包括【完全待复检】和【部分复检完成】的视频');
       
       // 3. 获取所有视频详细信息
       const { getVideos } = await import('../api/database');
@@ -260,37 +265,40 @@ export default function ReviewSelectPage() {
     try {
       const { supabase } = await import('../api/supabase');
       
-      console.log('📊 加载所有已复检视频...');
+      console.log('📊 加载所有已复检视频（is_completed = true 的视频）...');
       
-      // 1. 查询所有有标注的数据（video_id 去重）
-      const { data: videoIds, error: videoError } = await supabase
-        .from('annotations')
-        .select('video_id')
-        .eq('review_status', true)
-        .not('annotator', 'is', null)
-        .neq('annotator', '')
-        .neq('annotator', 'unknown')
-        .not('human_annotated_text', 'is', null)
-        .neq('human_annotated_text', '');
+      // 1. 查询所有标记为已完成的视频
+      const { data: completedVideos, error: videoError } = await supabase
+        .from('videos')
+        .select('id, name, subject, review_completed_at')
+        .eq('is_completed', true)
+        .order('review_completed_at', { ascending: false });
       
       if (videoError) {
-        console.error('查询视频ID失败:', videoError);
+        console.error('查询已完成视频失败:', videoError);
         message.error('加载失败');
         setLoading(false);
         return;
       }
       
-      // 去重视频ID
-      const uniqueVideoIds = [...new Set(videoIds?.map(item => item.video_id) || [])];
-      console.log('  - 有已复检数据的视频总数:', uniqueVideoIds.length);
+      if (!completedVideos || completedVideos.length === 0) {
+        console.log('  - 没有已完成复检的视频');
+        setAllCompletedVideos([]);
+        setCompletedPage(1);
+        setLoading(false);
+        return;
+      }
       
-      // 2. 对每个视频统计已复检数据
-      const videoStatsPromises = uniqueVideoIds.map(async (videoId) => {
+      console.log('  - 已完成复检的视频数量:', completedVideos.length);
+      console.log('  ℹ️  这些视频已点击过"完成复检"按钮');
+      
+      // 2. 对每个已完成的视频，统计标注人的复检情况
+      const videoStatsPromises = completedVideos.map(async (video) => {
         // 查询该视频的所有标注数据（按标注人分组）
         const { data: annotations, error } = await supabase
           .from('annotations')
           .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at')
-          .eq('video_id', videoId)
+          .eq('video_id', video.id)
           .not('annotator', 'is', null)
           .neq('annotator', '')
           .neq('annotator', 'unknown');
@@ -306,101 +314,64 @@ export default function ReviewSelectPage() {
           
           if (!annotatorMap.has(annotator)) {
             annotatorMap.set(annotator, {
-            annotatorName: annotator,
-            totalAnnotations: 0,
-            reviewedCount: 0,
-            pendingCount: 0,
-            unannotatedCount: 0,
-            reviewers: [],
-            inspectors: [],
-            lastReviewTime: undefined
+              annotatorName: annotator,
+              totalAnnotations: 0,
+              reviewedCount: 0,
+              pendingCount: 0,
+              unannotatedCount: 0,
+              reviewers: [],
+              inspectors: [],
+              lastReviewTime: undefined
             });
-        }
+          }
 
           const annotatorData = annotatorMap.get(annotator)!;
-        annotatorData.totalAnnotations++;
+          annotatorData.totalAnnotations++;
         
           if (hasHumanText) {
             if (ann.review_status === true) {
-            annotatorData.reviewedCount++;
+              annotatorData.reviewedCount++;
               if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
                 annotatorData.reviewers.push(ann.reviewer);
               }
               if (ann.updated_at) {
                 if (!annotatorData.lastReviewTime || ann.updated_at > annotatorData.lastReviewTime) {
                   annotatorData.lastReviewTime = ann.updated_at;
+                }
               }
+            } else {
+              annotatorData.pendingCount++;
             }
           } else {
-            annotatorData.pendingCount++;
+            annotatorData.unannotatedCount++;
           }
-        } else {
-          annotatorData.unannotatedCount++;
-        }
         
           if (ann.inspector && !annotatorData.inspectors.includes(ann.inspector)) {
             annotatorData.inspectors.push(ann.inspector);
           }
         });
         
-        // 过滤出已完成复检的标注人（没有待复检数据，且有已复检数据）
-        const completedAnnotators = Array.from(annotatorMap.values()).filter(a => 
-          a.pendingCount === 0 && a.reviewedCount > 0
-        );
-        
-        // 重要：只有当该视频的所有标注人都没有待复检数据时，才算完全复检完成
+        // 显示所有标注人的信息（不管是否完成复检）
         const allAnnotators = Array.from(annotatorMap.values());
-        const hasPendingData = allAnnotators.some(a => a.pendingCount > 0);
         
-        // 如果还有待复检数据，则不放入已复检列表
-        if (hasPendingData) {
-          return null;
-        }
-        
-        // 计算最新复检时间用于排序
-        const latestReviewTime = Math.max(
-          ...completedAnnotators
-            .map(a => a.lastReviewTime ? new Date(a.lastReviewTime).getTime() : 0)
-        );
-        
-        return completedAnnotators.length > 0 ? { 
-          videoId, 
-          annotators: completedAnnotators,
-          latestReviewTime 
-        } : null;
+        return { 
+          videoId: video.id,
+          videoName: video.name,
+          subject: video.subject || '未知',
+          annotators: allAnnotators,
+          reviewCompletedAt: video.review_completed_at
+        };
       });
       
       const videoStatsResults = await Promise.all(videoStatsPromises);
-      let videosWithCompleted = videoStatsResults.filter(v => v !== null) as { 
-        videoId: string; 
-        annotators: AnnotatorData[];
-        latestReviewTime: number;
-      }[];
+      const result = videoStatsResults.filter(v => v !== null) as VideoWithAnnotators[];
       
-      // 按最新复检时间排序（最新的在前）
-      videosWithCompleted.sort((a, b) => b.latestReviewTime - a.latestReviewTime);
-      
-      console.log('  - 已完成复检的视频数量:', videosWithCompleted.length);
-      console.log('  - 前5个视频的最新复检时间:', 
-        videosWithCompleted.slice(0, 5).map(v => ({
-          videoId: v.videoId,
-          time: new Date(v.latestReviewTime).toLocaleString('zh-CN')
+      console.log('  - 前5个视频的复检完成时间:', 
+        result.slice(0, 5).map(v => ({
+          videoName: v.videoName,
+          time: v.reviewCompletedAt ? new Date(v.reviewCompletedAt).toLocaleString('zh-CN') : '未知'
         }))
       );
-      
-      // 3. 获取所有视频详细信息
-      const { getVideos } = await import('../api/database');
-      const allVideos = await getVideos();
-      
-      const result: VideoWithAnnotators[] = videosWithCompleted.map(item => {
-        const video = allVideos.find(v => v.id === item.videoId);
-        return {
-          videoId: item.videoId,
-          videoName: video?.name || item.videoId,
-          subject: video?.subject || '未知',
-          annotators: item.annotators
-        };
-      });
       
       setAllCompletedVideos(result);
       setCompletedPage(1); // 重置到第一页
@@ -463,6 +434,7 @@ export default function ReviewSelectPage() {
   const renderVideoList = (allVideos: VideoWithAnnotators[], isPending: boolean) => {
     const currentPage = isPending ? pendingPage : completedPage;
     const setCurrentPage = isPending ? setPendingPage : setCompletedPage;
+    const pageSize = isPending ? pendingPageSize : completedPageSize;
     
     // 前端分页：根据当前页码切片数据
     const startIdx = (currentPage - 1) * pageSize;
