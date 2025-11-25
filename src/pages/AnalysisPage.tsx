@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -15,6 +15,7 @@ import {
 import { ArrowLeftOutlined, DownloadOutlined, BarChartOutlined, PieChartOutlined, TableOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import type { AnnotationItem } from '../types';
+import type { TableProps } from 'antd';
 import './AnalysisPage.css';
 
 const { Header, Content } = Layout;
@@ -59,6 +60,10 @@ export default function AnalysisPage() {
   const [availableSubjects, setAvailableSubjects] = useState<string[]>([]);
   const [availableVideos, setAvailableVideos] = useState<string[]>([]); // 可用视频列表
   const [rawData, setRawData] = useState<AnnotationItem[]>([]); // 添加原始数据状态
+  
+  // 详细数据表格的筛选状态
+  const [detailTableFilters, setDetailTableFilters] = useState<Record<string, any>>({});
+  const detailTableRef = useRef<HTMLDivElement>(null);
 
   // 加载数据
   useEffect(() => {
@@ -621,6 +626,23 @@ export default function AnalysisPage() {
     return columns;
   };
 
+  // 点击占比跳转到详细数据并筛选
+  const handlePercentageClick = (videoName: string, majorCategory: string, minorCategory: string) => {
+    // 设置筛选条件
+    setDetailTableFilters({
+      videoName: [videoName],
+      majorCategory: [majorCategory],
+      minorCategory: [minorCategory]
+    });
+    
+    // 滚动到详细数据表格
+    setTimeout(() => {
+      detailTableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 100);
+    
+    message.info(`已筛选：${videoName} - ${majorCategory} - ${minorCategory}`);
+  };
+
   // 按视频分类统计表格列配置
   const getVideoTableColumns = () => {
     const columns = [
@@ -665,12 +687,28 @@ export default function AnalysisPage() {
             dataIndex: videoName,
             key: `${videoName}_percentage`,
             width: 80,
-            render: (value: number) => {
+            render: (value: number, record: VideoDetailStats) => {
               if (value === 0 || total === 0) {
                 return <span style={{ color: '#ccc' }}>0%</span>;
               }
               const percentage = ((value / total) * 100).toFixed(1);
-              return <span style={{ color: '#1890ff' }}>{percentage}%</span>;
+              return (
+                <span 
+                  style={{ 
+                    color: '#1890ff', 
+                    cursor: 'pointer',
+                    textDecoration: 'underline'
+                  }}
+                  onClick={() => handlePercentageClick(
+                    videoName, 
+                    record.majorCategory as string, 
+                    record.minorCategory as string
+                  )}
+                  title="点击查看详细数据"
+                >
+                  {percentage}%
+                </span>
+              );
             }
           }
         ]
@@ -868,136 +906,150 @@ export default function AnalysisPage() {
           </Card>
 
           {/* 5. 原始数据明细 */}
-          <Card 
-            title={
-              <Space>
-                <TableOutlined />
-                <span>原始数据明细</span>
-                <Tag color="blue">{rawData.length} 条</Tag>
-              </Space>
-            }
-            loading={loading}
-          >
-            <Table
-              columns={[
-                {
-                  title: '句子编号',
-                  dataIndex: 'sentenceNo',
-                  key: 'sentenceNo',
-                  width: 100,
-                  sorter: (a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0)
-                },
-                {
-                  title: '科目',
-                  dataIndex: 'subject',
-                  key: 'subject',
-                  width: 100,
-                  render: (subject: string) => (
-                    <Tag color={subject === '未知' ? 'red' : 'green'}>
-                      {subject}
-                    </Tag>
-                  ),
-                  filters: availableSubjects.map(s => ({ text: s, value: s })),
-                  onFilter: (value, record) => record.subject === value
-                },
-                {
-                  title: '视频名称',
-                  dataIndex: 'videoName',
-                  key: 'videoName',
-                  width: 200,
-                  ellipsis: true
-                },
-                {
-                  title: '时间范围',
-                  dataIndex: 'timeRange',
-                  key: 'timeRange',
-                  width: 120
-                },
-                {
-                  title: '原文文本',
-                  dataIndex: 'originalText',
-                  key: 'originalText',
-                  width: 250,
-                  ellipsis: true
-                },
-                {
-                  title: '大模型改写文本',
-                  dataIndex: 'aiRewrittenText',
-                  key: 'aiRewrittenText',
-                  width: 250,
-                  ellipsis: true
-                },
-                {
-                  title: '人工标注文本',
-                  dataIndex: 'humanAnnotatedText',
-                  key: 'humanAnnotatedText',
-                  width: 250,
-                  ellipsis: true
-                },
-                {
-                  title: '问题大类',
-                  dataIndex: 'majorCategory',
-                  key: 'majorCategory',
-                  width: 150,
-                  render: (text: string) => (
-                    <Space direction="vertical" size={2}>
-                      {text.split(',').filter(Boolean).map((cat, idx) => (
-                        <Tag key={idx} color="blue">{cat}</Tag>
-                      ))}
-                    </Space>
-                  ),
-                  filters: (() => {
-                    // 提取所有唯一的问题大类
-                    const allMajorCategories = new Set<string>();
-                    rawData.forEach(item => {
-                      if (item.majorCategory) {
-                        item.majorCategory.split(',').filter(Boolean).forEach(cat => {
-                          allMajorCategories.add(cat.trim());
-                        });
-                      }
-                    });
-                    return Array.from(allMajorCategories).sort().map(cat => ({
-                      text: cat,
-                      value: cat
-                    }));
-                  })(),
-                  onFilter: (value, record) => {
-                    if (!record.majorCategory) return false;
-                    return record.majorCategory.split(',').some(cat => cat.trim() === value);
-                  }
-                },
-                {
-                  title: '问题小类',
-                  dataIndex: 'minorCategory',
-                  key: 'minorCategory',
-                  width: 150,
-                  render: (text: string) => (
-                    <Space direction="vertical" size={2}>
-                      {text.split(',').filter(Boolean).map((cat, idx) => (
-                        <Tag key={idx} color="cyan">{cat}</Tag>
-                      ))}
-                    </Space>
-                  ),
-                  filters: (() => {
-                    // 提取所有唯一的问题小类
-                    const allMinorCategories = new Set<string>();
-                    rawData.forEach(item => {
-                      if (item.minorCategory) {
-                        item.minorCategory.split(',').filter(Boolean).forEach(cat => {
-                          allMinorCategories.add(cat.trim());
-                        });
-                      }
-                    });
-                    return Array.from(allMinorCategories).sort().map(cat => ({
-                      text: cat,
-                      value: cat
-                    }));
-                  })(),
-                  onFilter: (value, record) => {
-                    if (!record.minorCategory) return false;
-                    return record.minorCategory.split(',').some(cat => cat.trim() === value);
-                  }
-                },
+          <div ref={detailTableRef}>
+            <Card 
+              title={
+                <Space>
+                  <TableOutlined />
+                  <span>原始数据明细</span>
+                  <Tag color="blue">{rawData.length} 条</Tag>
+                  {(detailTableFilters.videoName || detailTableFilters.majorCategory || detailTableFilters.minorCategory) && (
+                    <Button 
+                      size="small" 
+                      onClick={() => setDetailTableFilters({})}
+                    >
+                      清除筛选
+                    </Button>
+                  )}
+                </Space>
+              }
+              loading={loading}
+            >
+              <Table
+                columns={[
+                  {
+                    title: '句子编号',
+                    dataIndex: 'sentenceNo',
+                    key: 'sentenceNo',
+                    width: 100,
+                    sorter: (a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0)
+                  },
+                  {
+                    title: '科目',
+                    dataIndex: 'subject',
+                    key: 'subject',
+                    width: 100,
+                    render: (subject: string) => (
+                      <Tag color={subject === '未知' ? 'red' : 'green'}>
+                        {subject}
+                      </Tag>
+                    ),
+                    filters: availableSubjects.map(s => ({ text: s, value: s })),
+                    onFilter: (value, record) => record.subject === value
+                  },
+                  {
+                    title: '视频名称',
+                    dataIndex: 'videoName',
+                    key: 'videoName',
+                    width: 200,
+                    ellipsis: true,
+                    filters: availableVideos.map(v => ({ text: v, value: v })),
+                    filteredValue: detailTableFilters.videoName || null,
+                    onFilter: (value, record) => record.videoName === value
+                  },
+                  {
+                    title: '时间范围',
+                    dataIndex: 'timeRange',
+                    key: 'timeRange',
+                    width: 120
+                  },
+                  {
+                    title: '原文文本',
+                    dataIndex: 'originalText',
+                    key: 'originalText',
+                    width: 250,
+                    ellipsis: true
+                  },
+                  {
+                    title: '大模型改写文本',
+                    dataIndex: 'aiRewrittenText',
+                    key: 'aiRewrittenText',
+                    width: 250,
+                    ellipsis: true
+                  },
+                  {
+                    title: '人工标注文本',
+                    dataIndex: 'humanAnnotatedText',
+                    key: 'humanAnnotatedText',
+                    width: 250,
+                    ellipsis: true
+                  },
+                  {
+                    title: '问题大类',
+                    dataIndex: 'majorCategory',
+                    key: 'majorCategory',
+                    width: 150,
+                    render: (text: string) => (
+                      <Space direction="vertical" size={2}>
+                        {text.split(',').filter(Boolean).map((cat, idx) => (
+                          <Tag key={idx} color="blue">{cat}</Tag>
+                        ))}
+                      </Space>
+                    ),
+                    filters: (() => {
+                      // 提取所有唯一的问题大类
+                      const allMajorCategories = new Set<string>();
+                      rawData.forEach(item => {
+                        if (item.majorCategory) {
+                          item.majorCategory.split(',').filter(Boolean).forEach(cat => {
+                            allMajorCategories.add(cat.trim());
+                          });
+                        }
+                      });
+                      return Array.from(allMajorCategories).sort().map(cat => ({
+                        text: cat,
+                        value: cat
+                      }));
+                    })(),
+                    filteredValue: detailTableFilters.majorCategory || null,
+                    onFilter: (value, record) => {
+                      if (!record.majorCategory) return false;
+                      return record.majorCategory.split(',').some(cat => cat.trim() === value);
+                    }
+                  },
+                  {
+                    title: '问题小类',
+                    dataIndex: 'minorCategory',
+                    key: 'minorCategory',
+                    width: 150,
+                    render: (text: string) => (
+                      <Space direction="vertical" size={2}>
+                        {text.split(',').filter(Boolean).map((cat, idx) => (
+                          <Tag key={idx} color="cyan">{cat}</Tag>
+                        ))}
+                      </Space>
+                    ),
+                    filters: (() => {
+                      // 提取所有唯一的问题小类
+                      const allMinorCategories = new Set<string>();
+                      rawData.forEach(item => {
+                        if (item.minorCategory) {
+                          item.minorCategory.split(',').filter(Boolean).forEach(cat => {
+                            allMinorCategories.add(cat.trim());
+                          });
+                        }
+                      });
+                      return Array.from(allMinorCategories).sort().map(cat => ({
+                        text: cat,
+                        value: cat
+                      }));
+                    })(),
+                    filteredValue: detailTableFilters.minorCategory || null,
+                    onFilter: (value, record) => {
+                      if (!record.minorCategory) return false;
+                      return record.minorCategory.split(',').some(cat => cat.trim() === value);
+                    }
+                  },
                 {
                   title: '标注人',
                   dataIndex: 'annotator',
@@ -1026,8 +1078,13 @@ export default function AnalysisPage() {
               }}
               scroll={{ x: 'max-content' }}
               size="small"
+              onChange={(pagination, filters) => {
+                // 当用户手动更改筛选器时，更新状态
+                setDetailTableFilters(filters as Record<string, any>);
+              }}
             />
           </Card>
+          </div>
         </div>
       </Content>
     </Layout>
