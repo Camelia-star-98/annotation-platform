@@ -38,18 +38,30 @@ export default function HomePage() {
   const [userName, setUserName] = useState('');
   const [completedVideos, setCompletedVideos] = useState<VideoInfo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searchText, setSearchText] = useState(''); // 搜索文本
+  const [currentPage, setCurrentPage] = useState(1); // 当前页码
+  const [pageSize, setPageSize] = useState(10); // 每页大小
+  const [totalCount, setTotalCount] = useState(0); // 总数量
+  const [completedVideoIds, setCompletedVideoIds] = useState<Set<string>>(new Set()); // 已完成的视频ID集合
 
-  // 加载已完成的视频列表
+  // 初始化：加载已完成的视频ID列表
   useEffect(() => {
-    loadCompletedVideos();
+    loadCompletedVideoIds();
   }, []);
+
+  // 当页码或搜索条件变化时，加载对应页的视频
+  useEffect(() => {
+    if (completedVideoIds.size > 0) {
+      loadPageVideos(currentPage, pageSize, searchText);
+    }
+  }, [currentPage, pageSize, searchText, completedVideoIds]);
 
   // 监听页面可见性，当用户返回页面时自动刷新
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         console.log('📍 页面变为可见，重新加载数据...');
-        loadCompletedVideos();
+        loadCompletedVideoIds();
       }
     };
 
@@ -60,17 +72,15 @@ export default function HomePage() {
     };
   }, []);
 
-  const loadCompletedVideos = async () => {
+  // 第一步：加载已完成复检的视频ID列表（只加载ID，不加载完整视频信息）
+  const loadCompletedVideoIds = async () => {
     setLoading(true);
     try {
-      const { getVideos } = await import('../api/database');
       const { supabase } = await import('../api/supabase');
       
-      // 1. 获取所有视频
-      const allVideos = await getVideos();
-      console.log('🎬 所有视频数量:', allVideos.length);
+      console.log('🔍 开始查询已完成复检的视频ID...');
       
-      // 2. 分页查询所有标注数据（避免Supabase默认分页限制）
+      // 1. 分页查询所有标注数据
       let allAnnotations: any[] = [];
       let offset = 0;
       const limit = 1000;
@@ -96,7 +106,7 @@ export default function HomePage() {
           allAnnotations = allAnnotations.concat(data);
           offset += data.length;
           hasMore = data.length === limit;
-          console.log(`  - 已加载 ${allAnnotations.length} 条数据...`);
+          console.log(`  - 已加载 ${allAnnotations.length} 条标注数据...`);
         } else {
           hasMore = false;
         }
@@ -104,7 +114,7 @@ export default function HomePage() {
       
       console.log('📊 查询到的标注数据总数:', allAnnotations.length);
       
-      // 3. 按视频和标注人分组，统计每个标注人的复检状态
+      // 2. 按视频和标注人分组，统计每个标注人的复检状态
       const videoAnnotatorMap = new Map<string, Map<string, { total: number; reviewed: number }>>();
       
       allAnnotations.forEach(item => {
@@ -131,50 +141,167 @@ export default function HomePage() {
         }
       });
       
-      // 4. 筛选出已完成复检的视频（所有标注人都完成复检）
-      const completedVideoIds = new Set<string>();
+      // 3. 筛选出已完成复检的视频ID（所有标注人都完成复检）
+      const completedIds = new Set<string>();
       const videoAnnotatorCount = new Map<string, number>();
       
       videoAnnotatorMap.forEach((annotatorMap, videoId) => {
         let allCompleted = true;
         let completedAnnotators = 0;
         
-        annotatorMap.forEach((stats, annotator) => {
+        annotatorMap.forEach((stats) => {
           if (stats.total > 0 && stats.reviewed === stats.total) {
-            // 这个标注人完成了所有复检
             completedAnnotators++;
           } else if (stats.total > 0 && stats.reviewed < stats.total) {
-            // 这个标注人还有未复检的数据
             allCompleted = false;
           }
         });
         
-        // 只有所有标注人都完成复检，才算完成
         if (allCompleted && completedAnnotators > 0) {
-          completedVideoIds.add(videoId);
+          completedIds.add(videoId);
           videoAnnotatorCount.set(videoId, completedAnnotators);
         }
       });
       
-      console.log('✅ 已完成复检的视频ID数量:', completedVideoIds.size);
+      console.log('✅ 已完成复检的视频ID数量:', completedIds.size);
       
-      // 5. 筛选出已完成复检的视频
-      const completed = allVideos
-        .filter(video => completedVideoIds.has(video.id))
-        .map(video => ({
-          ...video,
-          completedAnnotators: videoAnnotatorCount.get(video.id) || 0
-        }));
+      // 保存已完成的视频ID集合
+      setCompletedVideoIds(completedIds);
+      setTotalCount(completedIds.size);
       
-      console.log('✅ 已完成复检的视频数量:', completed.length);
-      setCompletedVideos(completed);
-      
-      if (completed.length === 0) {
+      // 加载第一页数据
+      if (completedIds.size > 0) {
+        await loadPageVideos(1, pageSize, searchText, completedIds, videoAnnotatorCount);
+        setCurrentPage(1);
+      } else {
         console.warn('⚠️ 没有找到已完成复检的视频');
+        setCompletedVideos([]);
       }
     } catch (error) {
-      console.error('加载视频列表失败:', error);
-      message.error('加载视频列表失败');
+      console.error('加载视频ID列表失败:', error);
+      message.error('加载视频ID列表失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 第二步：按页加载视频详细信息
+  const loadPageVideos = async (
+    page: number, 
+    size: number, 
+    search: string,
+    videoIds?: Set<string>,
+    annotatorCountMap?: Map<string, number>
+  ) => {
+    setLoading(true);
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      // 使用传入的videoIds或state中的completedVideoIds
+      const idsToUse = videoIds || completedVideoIds;
+      if (idsToUse.size === 0) {
+        setCompletedVideos([]);
+        setLoading(false);
+        return;
+      }
+
+      console.log(`📄 加载第 ${page} 页视频，每页 ${size} 条`);
+      
+      // 将Set转为数组
+      const idsArray = Array.from(idsToUse);
+      
+      // 构建查询
+      let query = supabase
+        .from('videos')
+        .select('*')
+        .in('id', idsArray);
+      
+      // 如果有搜索条件，添加搜索过滤
+      if (search && search.trim()) {
+        const searchLower = search.toLowerCase();
+        // 先查询所有匹配的视频
+        const { data: allMatchedVideos, error: searchError } = await query;
+        
+        if (searchError) {
+          console.error('搜索视频失败:', searchError);
+          message.error('搜索失败');
+          setLoading(false);
+          return;
+        }
+        
+        // 在客户端进行搜索过滤
+        const filteredVideos = (allMatchedVideos || []).filter(video => 
+          video.name?.toLowerCase().includes(searchLower) ||
+          video.subject?.toLowerCase().includes(searchLower) ||
+          video.id?.toLowerCase().includes(searchLower)
+        );
+        
+        // 更新总数
+        setTotalCount(filteredVideos.length);
+        
+        // 分页
+        const startIndex = (page - 1) * size;
+        const endIndex = startIndex + size;
+        const pageVideos = filteredVideos.slice(startIndex, endIndex);
+        
+        // 添加标注人数信息
+        const videosWithCount = pageVideos.map(video => ({
+          ...video,
+          completedAnnotators: annotatorCountMap?.get(video.id) || 0
+        }));
+        
+        setCompletedVideos(videosWithCount);
+        console.log(`✅ 加载了 ${videosWithCount.length} 个视频（搜索后）`);
+      } else {
+        // 无搜索条件，直接分页查询
+        const startIndex = (page - 1) * size;
+        const endIndex = startIndex + size - 1;
+        const pageIds = idsArray.slice(startIndex, startIndex + size);
+        
+        const { data: pageVideos, error } = await supabase
+          .from('videos')
+          .select('*')
+          .in('id', pageIds);
+        
+        if (error) {
+          console.error('加载视频失败:', error);
+          message.error('加载视频失败');
+          setLoading(false);
+          return;
+        }
+        
+        // 从annotations表查询每个视频的标注人数
+        const videoIdsInPage = pageVideos?.map(v => v.id) || [];
+        const { data: annotationData } = await supabase
+          .from('annotations')
+          .select('video_id, annotator')
+          .in('video_id', videoIdsInPage)
+          .not('annotator', 'is', null)
+          .neq('annotator', '')
+          .neq('annotator', 'unknown');
+        
+        // 统计每个视频的标注人数
+        const annotatorCount = new Map<string, Set<string>>();
+        annotationData?.forEach(item => {
+          if (!annotatorCount.has(item.video_id)) {
+            annotatorCount.set(item.video_id, new Set());
+          }
+          annotatorCount.get(item.video_id)?.add(item.annotator);
+        });
+        
+        // 添加标注人数信息
+        const videosWithCount = (pageVideos || []).map(video => ({
+          ...video,
+          completedAnnotators: annotatorCount.get(video.id)?.size || 0
+        }));
+        
+        setCompletedVideos(videosWithCount);
+        setTotalCount(idsToUse.size);
+        console.log(`✅ 加载了 ${videosWithCount.length} 个视频`);
+      }
+    } catch (error) {
+      console.error('加载视频页面失败:', error);
+      message.error('加载视频页面失败');
     } finally {
       setLoading(false);
     }
@@ -213,9 +340,18 @@ export default function HomePage() {
   // 表格列定义
   const columns = [
     {
-      title: '选择',
+      title: () => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Checkbox
+            checked={selectedVideos.length > 0 && selectedVideos.length === filteredCompletedVideos.length && filteredCompletedVideos.length > 0}
+            indeterminate={selectedVideos.length > 0 && selectedVideos.length < filteredCompletedVideos.length}
+            onChange={(e) => handleSelectAll(e.target.checked)}
+          />
+          <span>全选</span>
+        </div>
+      ),
       key: 'select',
-      width: 60,
+      width: 80,
       render: (_: any, record: VideoInfo) => (
         <Checkbox
           checked={selectedVideos.includes(record.id)}
@@ -314,6 +450,28 @@ export default function HomePage() {
       setSelectedVideos(selectedVideos.filter(id => id !== videoId));
     }
   };
+
+  // 全选/取消全选
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      // 只全选当前页的视频ID
+      const allVideoIds = completedVideos.map(video => video.id);
+      setSelectedVideos(allVideoIds);
+    } else {
+      setSelectedVideos([]);
+    }
+  };
+
+  // 处理分页变化
+  const handlePageChange = (page: number, size: number) => {
+    setCurrentPage(page);
+    setPageSize(size);
+    // 清空当前页的选择
+    setSelectedVideos([]);
+  };
+
+  // 过滤后的视频列表（用于显示）
+  const filteredCompletedVideos = completedVideos;
 
   // 打开弹窗
   const openModal = (type: 'annotation' | 'inspection') => {
@@ -463,12 +621,12 @@ export default function HomePage() {
               <Space>
                 <CheckCircleOutlined style={{ color: '#52c41a' }} />
                 <span>已完成视频列表</span>
-                <Tag color="success">{completedVideos.length} 个视频</Tag>
+                <Tag color="success">{totalCount} 个视频</Tag>
                 <Button 
                   type="text" 
                   size="small" 
                   icon={<ReloadOutlined />}
-                  onClick={loadCompletedVideos}
+                  onClick={loadCompletedVideoIds}
                   loading={loading}
                   title="刷新列表"
                 />
@@ -500,18 +658,36 @@ export default function HomePage() {
             <Typography.Paragraph type="secondary" style={{ marginBottom: 16 }}>
               这些视频已完成：教研标注 → 抽样质检 → 产品复检，可进行结果分析或对比（选择2-6个视频）
             </Typography.Paragraph>
+            
+            {/* 搜索框 */}
+            <div style={{ marginBottom: 16 }}>
+              <Input.Search
+                placeholder="搜索视频名称、科目或ID"
+                allowClear
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                onSearch={(value) => setSearchText(value)}
+                style={{ width: 400 }}
+                size="large"
+              />
+            </div>
+
             <Table
               columns={columns}
-              dataSource={completedVideos}
+              dataSource={filteredCompletedVideos}
               rowKey="id"
               loading={loading}
               pagination={{
-                pageSize: 10,
+                current: currentPage,
+                pageSize: pageSize,
+                total: totalCount,
                 showSizeChanger: true,
-                showTotal: (total) => `共 ${total} 个视频`
+                showTotal: (total) => `共 ${total} 个视频`,
+                onChange: handlePageChange,
+                onShowSizeChange: handlePageChange
               }}
               locale={{
-                emptyText: '暂无已完成的视频'
+                emptyText: searchText ? '未找到匹配的视频' : '暂无已完成的视频'
               }}
               scroll={{ x: 1000 }}
             />
