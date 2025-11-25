@@ -64,6 +64,12 @@ export default function InspectionSelectPage() {
       const videoStats: VideoInspectionData[] = [];
       
       for (const video of allVideos) {
+        // 过滤掉已完成复检的视频（is_completed = true）
+        if (video.is_completed === true) {
+          console.log(`⏭️ 跳过已完成复检的视频: ${video.name}`);
+          continue;
+        }
+        
         const annotations = await getAnnotations(video.id);
         
         if (annotations.length > 0) {
