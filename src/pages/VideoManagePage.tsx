@@ -786,7 +786,7 @@ export default function VideoManagePage() {
   };
 
   // 解析Excel文件
-  const parseExcel = async (file: File): Promise<any[]> => {
+  const parseExcel = async (file: Blob): Promise<any[]> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = (e) => {
