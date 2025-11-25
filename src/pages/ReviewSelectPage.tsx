@@ -91,11 +91,19 @@ export default function ReviewSelectPage() {
   
   // 全选/取消全选当前页
   const toggleSelectAll = (isPending: boolean) => {
-    const currentList = isPending ? pendingList : completedList;
+    // 获取所有数据和当前页码
+    const allVideos = isPending ? allPendingVideos : allCompletedVideos;
+    const currentPage = isPending ? pendingPage : completedPage;
+    
+    // 计算当前页的视频切片
+    const startIdx = (currentPage - 1) * pageSize;
+    const endIdx = startIdx + pageSize;
+    const currentPageVideos = allVideos.slice(startIdx, endIdx);
+    
     const currentSelected = isPending ? selectedPendingVideoIds : selectedCompletedVideoIds;
     const setSelected = isPending ? setSelectedPendingVideoIds : setSelectedCompletedVideoIds;
     
-    const currentPageVideoIds = currentList.map(v => v.videoId);
+    const currentPageVideoIds = currentPageVideos.map(v => v.videoId);
     const allSelected = currentPageVideoIds.every(id => currentSelected.has(id));
     
     const newSelected = new Set(currentSelected);
