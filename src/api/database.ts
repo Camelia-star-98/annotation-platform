@@ -286,7 +286,7 @@ export async function getReviewedAnnotations(videoIds?: string[]): Promise<Annot
 
     console.log('📊 getReviewedAnnotations 返回数据总量:', allData.length);
 
-    // 转换数据格式
+    // 转换数据格式（保留 created_at 字段用于排序）
     return allData.map(item => ({
       id: item.id || '',
       videoId: item.video_id || '',
@@ -308,7 +308,8 @@ export async function getReviewedAnnotations(videoIds?: string[]): Promise<Annot
       reviewStatus: item.review_status,
       videoName: item.video_name || '',
       videoUrl: item.video_url || '',
-      subject: item.subject || ''
+      subject: item.subject || '',
+      created_at: item.created_at || '' // 保留创建时间字段
     }));
   } catch (error) {
     console.error('获取已复检标注数据异常:', error);

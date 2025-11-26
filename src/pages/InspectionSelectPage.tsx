@@ -90,6 +90,13 @@ export default function InspectionSelectPage() {
         }
       }
       
+      // 按上传时间降序排序（最新的在最上面）
+      videoStats.sort((a, b) => {
+        const timeA = a.uploadTime || '';
+        const timeB = b.uploadTime || '';
+        return timeB.localeCompare(timeA);
+      });
+      
       setVideos(videoStats);
       message.success(`加载了 ${videoStats.length} 个视频的质检数据`);
     } catch (error) {

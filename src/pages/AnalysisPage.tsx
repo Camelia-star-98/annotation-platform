@@ -153,8 +153,9 @@ export default function AnalysisPage() {
         return;
       }
       
-      // 保存原始数据（包含科目信息），按句子编号排序
-      setRawData(filteredData.sort((a, b) => (a.sentenceNo || 0) - (b.sentenceNo || 0)));
+      // 保存原始数据（包含科目信息），按创建时间降序排序（最新的在最上面）
+      // getReviewedAnnotations 已经按 created_at 降序排序，这里保持顺序即可
+      setRawData(filteredData);
       
       // 统计数据
       calculateStatistics(filteredData);
@@ -189,11 +190,26 @@ export default function AnalysisPage() {
     
     console.log('📊 大类统计结果:', majorStats);
     
-    // 2. 统计全学科问题小类（包含所属大类）
+      // 2. 统计全学科问题小类（包含所属大类）
     const minorMap = new Map<string, { majorCategory: string; count: number }>();
     data.forEach(item => {
-      const majors = item.majorCategory.split(',').map(m => m.trim()).filter(m => m);
-      const minors = item.minorCategory.split(',').map(m => m.trim()).filter(m => m);
+      const majors = (item.majorCategory || '').split(',').map(m => m.trim()).filter(m => m);
+      const minors = (item.minorCategory || '').split(',').map(m => m.trim()).filter(m => m);
+      
+      // 调试：打印"第四轮语文-4"的识别问题
+      if (item.videoName && item.videoName.includes('第四轮语文-4')) {
+        const hasAsrMajor = item.majorCategory && (item.majorCategory.includes('asr') || item.majorCategory.includes('识别'));
+        const hasAsrMinor = item.minorCategory && item.minorCategory.includes('识别');
+        if (hasAsrMajor || hasAsrMinor) {
+          console.log('🔍 [第四轮语文-4] ASR识别问题数据:', {
+            videoName: item.videoName,
+            majorCategory: item.majorCategory,
+            minorCategory: item.minorCategory,
+            majors,
+            minors
+          });
+        }
+      }
       
       // 调试：打印大类和小类数量不匹配的情况
       if (majors.length > 0 && minors.length === 0) {
@@ -328,7 +344,47 @@ export default function AnalysisPage() {
     const videoNames = Array.from(new Set(data.map(item => item.videoName).filter(v => v && v !== '未知视频')));
     setAvailableVideos(videoNames);
     
-    console.log('📹 可用视频列表:', videoNames);
+    console.log('📹 可用视频列表（共' + videoNames.length + '个）:', videoNames);
+    
+    // 额外调试：查找所有包含"语文"的视频
+    const chineseVideos = data.filter(item => item.videoName && item.videoName.includes('语文'));
+    const chineseVideoNames = Array.from(new Set(chineseVideos.map(v => v.videoName)));
+    console.log('🔍 [调试] 所有包含"语文"的视频名称:', chineseVideoNames);
+    
+    // 查找"第四轮语文-4"的所有数据
+    const video4Data = data.filter(item => item.videoName && item.videoName.includes('第四轮语文-4'));
+    console.log(`🔍 [第四轮语文-4] 总数据量: ${video4Data.length}`);
+    if (video4Data.length > 0) {
+      console.log('🔍 [第四轮语文-4] 前5条数据样例:', video4Data.slice(0, 5).map(item => ({
+        majorCategory: item.majorCategory,
+        minorCategory: item.minorCategory
+      })));
+      
+      // 统计第四轮语文-4的问题分类
+      const video4CategoryMap = new Map<string, number>();
+      video4Data.forEach(item => {
+        const majors = (item.majorCategory || '').split(',').map(m => m.trim()).filter(m => m);
+        const minors = (item.minorCategory || '').split(',').map(m => m.trim()).filter(m => m);
+        minors.forEach((minor, index) => {
+          const major = majors[index] || majors[0] || '未知';
+          const key = `${major}|${minor}`;
+          video4CategoryMap.set(key, (video4CategoryMap.get(key) || 0) + 1);
+        });
+      });
+      console.log('🔍 [第四轮语文-4] 问题分类统计:');
+      video4CategoryMap.forEach((count, key) => {
+        const [major, minor] = key.split('|');
+        console.log(`  - 大类: ${major}, 小类: ${minor}, 数量: ${count}`);
+      });
+    }
+    
+    // 查找所有ASR相关问题的视频
+    const asrData = data.filter(item => 
+      (item.majorCategory && item.majorCategory.toLowerCase().includes('asr')) ||
+      (item.minorCategory && item.minorCategory.toLowerCase().includes('asr'))
+    );
+    const asrVideoNames = Array.from(new Set(asrData.map(v => v.videoName)));
+    console.log('🔍 [调试] 包含ASR问题的视频名称:', asrVideoNames);
     
     // 统计每个视频的每个小类问题数量
     const videoDetailStatsMap = new Map<string, VideoDetailStats>();
@@ -362,6 +418,11 @@ export default function AnalysisPage() {
             if (itemMajor === major && itemMinor === minor) {
               const row = videoDetailStatsMap.get(key)!;
               row[item.videoName] = (row[item.videoName] as number) + 1;
+              
+              // 调试日志：针对ASR类问题和特定视频
+              if (itemMajor === 'asr' || itemMinor.includes('asr') || item.videoName.includes('第四轮语文-4')) {
+                console.log(`🔍 [视频统计] 视频: ${item.videoName}, 大类: ${itemMajor}, 小类: ${itemMinor}, 当前计数: ${row[item.videoName]}`);
+              }
             }
           });
         });

@@ -87,15 +87,37 @@ export default function AnnotationTaskListPage() {
       const videoIds = publishedVideos.map(v => v.id);
       const completedCountMap = await getBatchCompletedAnnotatorsCount(videoIds);
       
-      // 查询当前标注员在这些视频中的标注情况
-      const { data: myAnnotations, error } = await supabase
+      // 1. 先查询每个视频的总句子数（包含所有记录，包括模板，按 video_id 和 sentence_no 去重）
+      // 这样可以获取视频的真实总句子数
+      const { data: allVideoSentences, error: totalError } = await supabase
         .from('annotations')
-        .select('video_id, human_annotated_text, sentence_no')
-        .in('video_id', videoIds)
-        .eq('annotator', annotatorName);
+        .select('video_id, sentence_no')
+        .in('video_id', videoIds);
+      
+      if (totalError) {
+        console.error('查询视频总句子数失败:', totalError);
+        message.error('查询视频总句子数失败');
+        setLoading(false);
+        return;
+      }
+      
+      // 统计每个视频的总句子数（按 video_id 和 sentence_no 去重）
+      const videoTotalSentences = new Map<string, Set<number>>();
+      allVideoSentences?.forEach(item => {
+        if (!videoTotalSentences.has(item.video_id)) {
+          videoTotalSentences.set(item.video_id, new Set());
+        }
+        videoTotalSentences.get(item.video_id)!.add(item.sentence_no);
+      });
+      
+      // 2. 查询所有标注员在这些视频中的标注情况（不限制标注人）
+      const { data: allAnnotations, error } = await supabase
+        .from('annotations')
+        .select('video_id, annotator, human_annotated_text, sentence_no')
+        .in('video_id', videoIds);
       
       if (error) {
-        console.error('查询当前标注员的标注情况失败:', error);
+        console.error('查询标注情况失败:', error);
         // 如果查询失败，显示所有已发布的视频（不过滤）
         const publishedTasks = publishedVideos.map(video => ({
           id: video.id,
@@ -112,54 +134,104 @@ export default function AnnotationTaskListPage() {
         return;
       }
       
-      // 统计每个视频当前标注员的标注情况
-      const myVideoStats = new Map<string, { total: number; annotated: number }>();
-      myAnnotations?.forEach(item => {
-        if (!myVideoStats.has(item.video_id)) {
-          myVideoStats.set(item.video_id, { total: 0, annotated: 0 });
+      // 3. 统计每个视频每个标注员的标注情况（按 video_id + annotator + sentence_no 去重）
+      // Map<videoId, Map<annotator, Set<sentence_no>>> - 记录每个标注员已标注的句子
+      const videoAnnotatorSentences = new Map<string, Map<string, Set<number>>>();
+      allAnnotations?.forEach(item => {
+        if (!videoAnnotatorSentences.has(item.video_id)) {
+          videoAnnotatorSentences.set(item.video_id, new Map());
         }
-        const stats = myVideoStats.get(item.video_id)!;
-        stats.total++;
+        const annotatorMap = videoAnnotatorSentences.get(item.video_id)!;
+        if (!annotatorMap.has(item.annotator)) {
+          annotatorMap.set(item.annotator, new Set());
+        }
+        const sentenceSet = annotatorMap.get(item.annotator)!;
+        // 只有当 human_annotated_text 不为空时，才记录该句子已被标注
         if (item.human_annotated_text && item.human_annotated_text.trim() !== '') {
-          stats.annotated++;
+          sentenceSet.add(item.sentence_no);
         }
       });
       
-      // 判断当前标注员已完成的视频（所有句子都已标注）
-      const myCompletedVideos = new Set<string>();
-      myVideoStats.forEach((stats, videoId) => {
-        if (stats.total > 0 && stats.annotated === stats.total) {
-          myCompletedVideos.add(videoId);
+      // 4. 判断是否有任何标注员完成了视频（已标注的句子数 = 视频的总句子数）
+      const completedVideos = new Set<string>();
+      
+      // 遍历所有已发布的视频，检查是否有标注员完成
+      publishedVideos.forEach(video => {
+        const videoId = video.id;
+        const totalSentences = videoTotalSentences.get(videoId)?.size || 0; // 视频的总句子数
+        
+        // 如果视频没有任何标注记录，跳过（显示在列表中）
+        if (totalSentences === 0) {
+          console.log(`⏭️  视频 ${video.name} (${videoId}) 没有任何标注记录，保留在列表中`);
+          return;
+        }
+        
+        const annotatorMap = videoAnnotatorSentences.get(videoId) || new Map();
+        
+        // 检查是否有任何标注员完成了该视频
+        let foundCompleted = false;
+        for (const [annotator, annotatedSentences] of annotatorMap.entries()) {
+          const annotatedCount = annotatedSentences.size; // 该标注员已标注的不同句子数
+          // 如果某个标注员已标注的句子数 = 视频的总句子数，则认为该视频已完成
+          if (totalSentences > 0 && annotatedCount === totalSentences) {
+            completedVideos.add(videoId);
+            console.log(`✅ 视频 ${video.name} (${videoId}) 已被标注员 ${annotator} 完成 (${annotatedCount}/${totalSentences})`);
+            foundCompleted = true;
+            break; // 找到一个完成的标注员就够了
+          } else {
+            console.log(`  - 标注员 ${annotator}: ${annotatedCount}/${totalSentences} (未完成)`);
+          }
+        }
+        
+        if (!foundCompleted && annotatorMap.size === 0) {
+          console.log(`  - 视频 ${video.name} (${videoId}): 无任何标注员有标注记录`);
         }
       });
       
-      console.log(`📊 当前标注员 ${annotatorName} 已完成的视频数量:`, myCompletedVideos.size);
+      console.log(`📊 已完成的视频数量: ${completedVideos.size} / ${publishedVideos.length}`);
       
       // 打印调试信息
       console.log('📊 标注完成情况详情:');
-      myVideoStats.forEach((stats, videoId) => {
-        const video = publishedVideos.find(v => v.id === videoId);
-        const videoName = video?.name || videoId;
-        const isCompleted = myCompletedVideos.has(videoId);
-        console.log(`  - ${videoName}: ${stats.annotated}/${stats.total} ${isCompleted ? '✅已完成' : '⏳未完成'}`);
+      publishedVideos.forEach(video => {
+        const videoId = video.id;
+        const sentenceNos = videoTotalSentences.get(videoId);
+        const totalSentences = sentenceNos?.size || 0;
+        const annotatorMap = videoAnnotatorSentences.get(videoId) || new Map();
+        const isCompleted = completedVideos.has(videoId);
+        
+        // 打印每个标注员的情况
+        const annotatorInfo: string[] = [];
+        annotatorMap.forEach((annotatedSentences, annotator) => {
+          const annotatedCount = annotatedSentences.size;
+          annotatorInfo.push(`${annotator}: ${annotatedCount}/${totalSentences}`);
+        });
+        const infoStr = annotatorInfo.length > 0 ? annotatorInfo.join(', ') : '无标注记录';
+        console.log(`  - ${video.name}: ${infoStr} ${isCompleted ? '✅已完成' : '⏳未完成'}`);
       });
       
-      // 只显示当前标注员还未完成且视频未达到标注人数要求的视频
+      // 只显示没有任何标注员完成、视频未达到标注人数要求、且未完成复检的视频，按创建时间降序排序（最新的在最上面）
       const publishedTasks = publishedVideos
         .filter(video => {
           const completedCount = completedCountMap[video.id] || 0;
           const requiredCount = video.required_annotators || 1;
-          const isMyCompleted = myCompletedVideos.has(video.id);
+          const hasAnyCompleted = completedVideos.has(video.id); // 是否有任何标注员完成了
           const isVideoFull = completedCount >= requiredCount;
+          const isReviewCompleted = video.is_completed === true; // 是否已完成复检
           
-          // 过滤条件：当前标注员已完成 OR 视频已达到要求人数
-          const shouldFilter = isMyCompleted || isVideoFull;
+          // 过滤条件：有任何标注员已完成 OR 视频已达到要求人数 OR 已完成复检
+          const shouldFilter = hasAnyCompleted || isVideoFull || isReviewCompleted;
           
           if (shouldFilter) {
-            console.log(`🚫 过滤视频: ${video.name} (我已完成:${isMyCompleted}, 视频已满:${isVideoFull}, ${completedCount}/${requiredCount})`);
+            console.log(`🚫 过滤视频: ${video.name} (有标注员已完成:${hasAnyCompleted}, 视频已满:${isVideoFull}, 复检完成:${isReviewCompleted}, ${completedCount}/${requiredCount})`);
           }
           
           return !shouldFilter;
+        })
+        .sort((a, b) => {
+          // 按创建时间降序排序（最新的在最上面）
+          const timeA = a.created_at || '';
+          const timeB = b.created_at || '';
+          return timeB.localeCompare(timeA);
         })
         .map(video => ({
           id: video.id,
@@ -188,13 +260,39 @@ export default function AnnotationTaskListPage() {
       
       console.log('🔍 调试信息 - 当前标注人:', annotatorName);
       
-      // 性能优化：直接在数据库查询当前标注人的被打回数据
-      const { data: allAnnotations, error } = await supabase
+      // 先查询所有当前标注人的数据，看看实际情况
+      const { data: allMyAnnotations, error: debugError } = await supabase
         .from('annotations')
-        .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, updated_at, created_at')
+        .select('id, video_id, annotator, is_qualified, inspector')
         .eq('annotator', annotatorName)
-        .eq('is_qualified', false)
-        .not('inspector', 'is', null);
+        .limit(100);
+      
+      console.log('📊 当前标注人的所有数据数量:', allMyAnnotations?.length || 0);
+      if (allMyAnnotations && allMyAnnotations.length > 0) {
+        const withInspector = allMyAnnotations.filter(a => a.inspector);
+        const withFalseQualified = allMyAnnotations.filter(a => a.is_qualified === false);
+        const withNullQualified = allMyAnnotations.filter(a => a.is_qualified === null);
+        const withTrueQualified = allMyAnnotations.filter(a => a.is_qualified === true);
+        console.log('  - 有质检人的数据:', withInspector.length);
+        console.log('  - is_qualified = false 的数据:', withFalseQualified.length);
+        console.log('  - is_qualified = null 的数据:', withNullQualified.length);
+        console.log('  - is_qualified = true 的数据:', withTrueQualified.length);
+        console.log('  - 前5条数据样例:', allMyAnnotations.slice(0, 5).map(a => ({
+          id: a.id,
+          inspector: a.inspector,
+          is_qualified: a.is_qualified
+        })));
+      }
+      
+      // 性能优化：直接在数据库查询当前标注人的被打回数据
+      // 查询条件：当前标注人 + 有质检人 + 质检不通过
+      let { data: allAnnotations, error } = await supabase
+        .from('annotations')
+        .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
+        .eq('annotator', annotatorName)
+        .not('inspector', 'is', null)
+        .neq('inspector', '')
+        .eq('is_qualified', false);
       
       if (error) {
         console.error('查询被打回数据失败:', error);
@@ -202,28 +300,51 @@ export default function AnnotationTaskListPage() {
         return;
       }
       
-      console.log('📊 被打回数据数量:', allAnnotations?.length || 0);
+      console.log('📊 被打回数据数量（is_qualified=false）:', allAnnotations?.length || 0);
+      
+      // 如果查询结果为空，尝试查询 is_qualified 为 null 但有质检人的数据（可能是旧数据）
+      if (!allAnnotations || allAnnotations.length === 0) {
+        console.log('⚠️ 未找到 is_qualified=false 的数据，尝试查询 is_qualified=null 但有质检人的数据...');
+        const { data: nullQualifiedData, error: nullError } = await supabase
+          .from('annotations')
+          .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
+          .eq('annotator', annotatorName)
+          .not('inspector', 'is', null)
+          .neq('inspector', '')
+          .is('is_qualified', null);
+        
+        if (!nullError && nullQualifiedData && nullQualifiedData.length > 0) {
+          console.log('📊 找到 is_qualified=null 但有质检人的数据:', nullQualifiedData.length);
+          // 使用这些数据作为被打回的数据
+          allAnnotations = nullQualifiedData;
+        }
+      }
       
       // 创建视频ID到视频信息的映射
       const videoMap = new Map(allVideos.map(v => [v.id, v]));
       
-      // 转换数据格式
-      const rejected = (allAnnotations || []).map(item => {
-        const video = videoMap.get(item.video_id);
-        return {
-          id: item.id,
-          videoId: item.video_id,
-          videoName: video?.name || '未知视频',
-          subject: video?.subject || '未知',
-          originalText: item.original_text || '',
-          annotatedText: item.human_annotated_text || '', // 修正字段名
-          majorCategory: item.major_category || '',
-          minorCategory: item.minor_category || '',
-          inspector: item.inspector || '未知',
-          annotator: item.annotator || '',
-          rejectedTime: item.updated_at || item.created_at || ''
-        };
-      });
+      // 转换数据格式，按打回时间降序排序（最新的在最上面）
+      const rejected = (allAnnotations || [])
+        .map(item => {
+          const video = videoMap.get(item.video_id);
+          return {
+            id: item.id,
+            videoId: item.video_id,
+            videoName: video?.name || '未知视频',
+            subject: video?.subject || '未知',
+            originalText: item.original_text || '',
+            annotatedText: item.human_annotated_text || '', // 修正字段名
+            majorCategory: item.major_category || '',
+            minorCategory: item.minor_category || '',
+            inspector: item.inspector || '未知',
+            annotator: item.annotator || '',
+            rejectedTime: item.updated_at || item.created_at || ''
+          };
+        })
+        .sort((a, b) => {
+          // 按打回时间降序排序（最新的在最上面）
+          return b.rejectedTime.localeCompare(a.rejectedTime);
+        });
       
       setRejectedItems(rejected);
       console.log(`✅ 加载了 ${rejected.length} 条被打回的数据`);

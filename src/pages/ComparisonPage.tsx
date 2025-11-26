@@ -75,7 +75,7 @@ export default function ComparisonPage() {
           .select('*')
           .eq('video_id', video.id)
           .eq('review_status', true)
-          .order('sentence_no', { ascending: true });
+          .order('created_at', { ascending: false });
 
         if (error) {
           console.error(`视频"${video.name}"查询失败:`, error);
