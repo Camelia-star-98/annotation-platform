@@ -322,7 +322,7 @@ export async function getAnnotations(videoId: string): Promise<AnnotationItem[]>
   // 优化：只查询必要字段，关联视频表获取视频信息
   const { data, error } = await supabase
     .from('annotations')
-    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status, videos!inner(url, name, subject)')
+    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status, videos!inner(url, name, subject)')
     .eq('video_id', videoId)
     .order('sentence_no', { ascending: true });
 
@@ -342,7 +342,7 @@ export async function getAnnotations(videoId: string): Promise<AnnotationItem[]>
       startTime: item.start_time,
       endTime: item.end_time,
       originalText: item.original_text,
-      aiRewrittenText: '', // 不查询，节省带宽
+      aiRewrittenText: item.ai_rewritten_text || '', // 修复：查询并返回大模型改写文本
       humanAnnotatedText: item.human_annotated_text,
       majorCategory: item.major_category,
       minorCategory: item.minor_category,
@@ -369,7 +369,7 @@ export async function getPendingInspectionAnnotations(
     // 构建查询
     let query = supabase
       .from('annotations')
-      .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
+      .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
       .eq('video_id', videoId)
       .not('human_annotated_text', 'is', null)
       .neq('human_annotated_text', '')
@@ -401,7 +401,7 @@ export async function getPendingInspectionAnnotations(
       startTime: item.start_time,
       endTime: item.end_time,
       originalText: item.original_text,
-      aiRewrittenText: '', // 不查询，节省带宽
+      aiRewrittenText: item.ai_rewritten_text || '', // 修复：查询并返回大模型改写文本
       humanAnnotatedText: item.human_annotated_text,
       majorCategory: item.major_category,
       minorCategory: item.minor_category,
