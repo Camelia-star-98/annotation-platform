@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>返工记录分析工具</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1600px;
+            margin: 20px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 15px;
+            margin-bottom: 25px;
+        }
+        .search-box {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+        }
+        input {
+            padding: 10px 15px;
+            width: 500px;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        button {
+            padding: 10px 20px;
+            margin-left: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        .results {
+            margin-top: 30px;
+        }
+        .insight-card {
+            padding: 20px;
+            margin: 15px 0;
+            border-radius: 8px;
+            border-left: 5px solid;
+        }
+        .insight-warning {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+        }
+        .insight-info {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+        }
+        .insight-success {
+            background: #d4edda;
+            border-left-color: #28a745;
+        }
+        .insight-danger {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 13px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #dee2e6;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+        tr:hover {
+            background: #e9ecef;
+        }
+        .empty {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .badge-warning {
+            background: #ffc107;
+            color: #333;
+        }
+        .badge-success {
+            background: #28a745;
+            color: white;
+        }
+        .badge-info {
+            background: #17a2b8;
+            color: white;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #667eea;
+            font-size: 18px;
+        }
+        .error {
+            color: #dc3545;
+            padding: 15px;
+            background: #f8d7da;
+            border-left: 5px solid #dc3545;
+            margin: 10px 0;
+            border-radius: 6px;
+        }
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 返工记录分析工具</h1>
+        
+        <div class="search-box">
+            <input 
+                type="text" 
+                id="videoInput" 
+                placeholder="输入视频文件名（例如：第5批第一轮-语文-1.mp4）"
+                value="第5批第一轮-语文-1.mp4"
+            >
+            <button onclick="analyzeRework()">🔍 深度分析</button>
+        </div>
+
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        // Supabase 配置
+        const SUPABASE_URL = 'https://mcncrrkeqsmjckpgimtb.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1jbmNycmtlcXNtamNrcGdpbXRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzU1Mzk5NzUsImV4cCI6MjA1MTExNTk3NX0.1SIB0UXTMDmALr5kXqcZZYKk7G-0hHdh8Bq4P_Y_Y4w';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function analyzeRework() {
+            const videoName = document.getElementById('videoInput').value.trim();
+            const resultsDiv = document.getElementById('results');
+            
+            if (!videoName) {
+                resultsDiv.innerHTML = '<div class="error">❌ 请输入视频文件名</div>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '<div class="loading">⏳ 正在深度分析返工记录...</div>';
+
+            try {
+                // 1. 查找视频
+                const { data: videos, error: videoError } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .ilike('name', `%${videoName}%`);
+
+                if (videoError) throw videoError;
+                if (!videos || videos.length === 0) {
+                    resultsDiv.innerHTML = '<div class="error">❌ 未找到匹配的视频</div>';
+                    return;
+                }
+
+                const video = videos[0];
+                
+                // 2. 获取该视频的所有标注记录
+                const { data: annotations, error: annotationsError } = await supabase
+                    .from('annotations')
+                    .select('*')
+                    .eq('video_id', video.id)
+                    .order('sentence_no', { ascending: true });
+
+                if (annotationsError) throw annotationsError;
+
+                // 3. 分析数据
+                const analysis = analyzeAnnotations(annotations, video);
+                
+                // 4. 显示结果
+                displayResults(analysis, video);
+
+            } catch (error) {
+                console.error('分析失败:', error);
+                resultsDiv.innerHTML = `<div class="error">❌ 分析失败: ${error.message}</div>`;
+            }
+        }
+
+        function analyzeAnnotations(annotations, video) {
+            const emptyAnnotator = annotations.filter(a => !a.annotator || a.annotator === '');
+            const withAnnotator = annotations.filter(a => a.annotator && a.annotator !== 'unknown');
+            const unknownAnnotator = annotations.filter(a => a.annotator === 'unknown');
+            
+            // 分析标注人为空的记录
+            const emptyWithContent = emptyAnnotator.filter(a => a.human_annotated_text && a.human_annotated_text.trim() !== '');
+            const emptyWithQC = emptyAnnotator.filter(a => a.inspector && a.inspector.trim() !== '');
+            const emptyRejected = emptyAnnotator.filter(a => a.is_qualified === false);
+            const emptyQualified = emptyAnnotator.filter(a => a.is_qualified === true);
+            const emptyPending = emptyAnnotator.filter(a => a.is_qualified === null);
+            
+            // 分析被打回次数
+            const withRejectionCount = annotations.filter(a => a.rejection_count && a.rejection_count > 0);
+            const maxRejectionCount = Math.max(...annotations.map(a => a.rejection_count || 0));
+            
+            // 按标注人分组（包括空值）
+            const annotatorGroups = {};
+            annotations.forEach(a => {
+                const annotator = a.annotator || '(空)';
+                if (!annotatorGroups[annotator]) {
+                    annotatorGroups[annotator] = [];
+                }
+                annotatorGroups[annotator].push(a);
+            });
+
+            // 分析每个句子的标注历史（可能有多次提交）
+            const sentenceGroups = {};
+            annotations.forEach(a => {
+                const sentenceNo = a.sentence_no;
+                if (!sentenceGroups[sentenceNo]) {
+                    sentenceGroups[sentenceNo] = [];
+                }
+                sentenceGroups[sentenceNo].push(a);
+            });
+
+            // 找出有多次标注的句子（返工的证据）
+            const multipleAnnotations = Object.entries(sentenceGroups)
+                .filter(([_, items]) => items.length > 1)
+                .map(([sentenceNo, items]) => ({
+                    sentenceNo: parseInt(sentenceNo),
+                    count: items.length,
+                    items: items.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+                }));
+
+            return {
+                total: annotations.length,
+                emptyAnnotator,
+                withAnnotator,
+                unknownAnnotator,
+                emptyWithContent,
+                emptyWithQC,
+                emptyRejected,
+                emptyQualified,
+                emptyPending,
+                withRejectionCount,
+                maxRejectionCount,
+                annotatorGroups,
+                multipleAnnotations
+            };
+        }
+
+        function displayResults(analysis, video) {
+            const resultsDiv = document.getElementById('results');
+            
+            // 计算关键指标
+            const emptyRate = ((analysis.emptyAnnotator.length / analysis.total) * 100).toFixed(1);
+            const reworkRate = ((analysis.withRejectionCount.length / analysis.total) * 100).toFixed(1);
+            
+            let html = `
+                <h2>📊 视频信息</h2>
+                <div class="insight-card insight-info">
+                    <strong>视频：</strong>${video.name || '未知'}<br>
+                    <strong>视频ID：</strong>${video.id}<br>
+                    <strong>科目：</strong>${video.subject || '未知'}<br>
+                    <strong>上传时间：</strong>${video.created_at ? new Date(video.created_at).toLocaleString('zh-CN') : '未知'}
+                </div>
+
+                <h2>🔢 统计概览</h2>
+                <div class="stat-grid">
+                    <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                        <div class="stat-label" style="color: rgba(255,255,255,0.9);">总记录数</div>
+                        <div class="stat-value">${analysis.total}</div>
+                    </div>
+                    <div class="stat-card" style="background: #fff3cd;">
+                        <div class="stat-label">标注人为空</div>
+                        <div class="stat-value" style="color: #856404;">${analysis.emptyAnnotator.length}</div>
+                        <div class="stat-label">${emptyRate}%</div>
+                    </div>
+                    <div class="stat-card" style="background: #d4edda;">
+                        <div class="stat-label">有标注人</div>
+                        <div class="stat-value" style="color: #155724;">${analysis.withAnnotator.length}</div>
+                        <div class="stat-label">${((analysis.withAnnotator.length / analysis.total) * 100).toFixed(1)}%</div>
+                    </div>
+                    <div class="stat-card" style="background: #f8d7da;">
+                        <div class="stat-label">被打回记录</div>
+                        <div class="stat-value" style="color: #721c24;">${analysis.withRejectionCount.length}</div>
+                        <div class="stat-label">${reworkRate}%</div>
+                    </div>
+                </div>
+
+                <h2>🔍 返工分析</h2>
+            `;
+
+            // 核心洞察
+            if (analysis.emptyAnnotator.length > 0) {
+                html += `<div class="insight-card insight-warning">
+                    <h3>⚠️ 核心发现：标注人为空的记录</h3>
+                    <ul>
+                        <li><strong>${analysis.emptyAnnotator.length}</strong> 条记录的标注人字段为空</li>
+                        <li>其中 <strong>${analysis.emptyWithContent.length}</strong> 条有人工标注内容（${((analysis.emptyWithContent.length/analysis.emptyAnnotator.length)*100).toFixed(1)}%）</li>
+                        <li>其中 <strong>${analysis.emptyWithQC.length}</strong> 条有质检人记录</li>
+                        <li>质检状态分布：
+                            <span class="badge badge-success">通过 ${analysis.emptyQualified.length}</span>
+                            <span class="badge badge-danger">不通过 ${analysis.emptyRejected.length}</span>
+                            <span class="badge badge-warning">待质检 ${analysis.emptyPending.length}</span>
+                        </li>
+                    </ul>
+                </div>`;
+            }
+
+            if (analysis.withRejectionCount.length > 0) {
+                html += `<div class="insight-card insight-danger">
+                    <h3>🔄 打回重做记录</h3>
+                    <ul>
+                        <li><strong>${analysis.withRejectionCount.length}</strong> 条记录被打回过（有 rejection_count 字段）</li>
+                        <li>最多被打回次数：<strong>${analysis.maxRejectionCount}</strong> 次</li>
+                        <li>平均被打回：<strong>${(analysis.withRejectionCount.reduce((sum, a) => sum + (a.rejection_count || 0), 0) / analysis.withRejectionCount.length).toFixed(2)}</strong> 次</li>
+                    </ul>
+                </div>`;
+            }
+
+            if (analysis.multipleAnnotations.length > 0) {
+                html += `<div class="insight-card insight-info">
+                    <h3>📝 多次标注的句子</h3>
+                    <p>发现 <strong>${analysis.multipleAnnotations.length}</strong> 个句子有多条记录（可能是返工产生的）</p>
+                    <details>
+                        <summary style="cursor: pointer; color: #667eea; font-weight: bold;">点击查看详情</summary>
+                        <table>
+                            <tr>
+                                <th>句子编号</th>
+                                <th>记录数</th>
+                                <th>标注人列表</th>
+                                <th>质检状态</th>
+                            </tr>
+                            ${analysis.multipleAnnotations.slice(0, 20).map(s => `
+                                <tr>
+                                    <td>${s.sentenceNo}</td>
+                                    <td>${s.count}</td>
+                                    <td>${s.items.map(i => i.annotator || '<span class="empty">(空)</span>').join(', ')}</td>
+                                    <td>${s.items.map(i => {
+                                        if (i.is_qualified === true) return '<span class="badge badge-success">通过</span>';
+                                        if (i.is_qualified === false) return '<span class="badge badge-danger">不通过</span>';
+                                        return '<span class="badge badge-warning">待检</span>';
+                                    }).join(' ')}</td>
+                                </tr>
+                            `).join('')}
+                            ${analysis.multipleAnnotations.length > 20 ? `<tr><td colspan="4" style="text-align: center; color: #6c757d;">... 还有 ${analysis.multipleAnnotations.length - 20} 条</td></tr>` : ''}
+                        </table>
+                    </details>
+                </div>`;
+            }
+
+            // 按标注人分组统计
+            html += `<h2>👥 标注人分布</h2>
+                <table>
+                    <tr>
+                        <th>标注人</th>
+                        <th>记录数</th>
+                        <th>占比</th>
+                        <th>有内容</th>
+                        <th>质检通过</th>
+                        <th>被打回</th>
+                    </tr>`;
+            
+            Object.entries(analysis.annotatorGroups)
+                .sort(([_, a], [__, b]) => b.length - a.length)
+                .forEach(([annotator, items]) => {
+                    const withContent = items.filter(i => i.human_annotated_text && i.human_annotated_text.trim()).length;
+                    const qualified = items.filter(i => i.is_qualified === true).length;
+                    const rejected = items.filter(i => i.is_qualified === false).length;
+                    const isEmpty = annotator === '(空)';
+                    
+                    html += `
+                        <tr ${isEmpty ? 'style="background: #fff3cd;"' : ''}>
+                            <td>${isEmpty ? '<span class="empty">标注人为空</span>' : annotator}</td>
+                            <td><strong>${items.length}</strong></td>
+                            <td>${((items.length / analysis.total) * 100).toFixed(1)}%</td>
+                            <td>${withContent} <span style="color: #6c757d;">(${((withContent/items.length)*100).toFixed(0)}%)</span></td>
+                            <td>${qualified > 0 ? `<span class="badge badge-success">${qualified}</span>` : '-'}</td>
+                            <td>${rejected > 0 ? `<span class="badge badge-danger">${rejected}</span>` : '-'}</td>
+                        </tr>
+                    `;
+                });
+            
+            html += `</table>`;
+
+            // 标注人为空的详细记录
+            if (analysis.emptyAnnotator.length > 0) {
+                html += `
+                    <h2>📋 标注人为空的记录详情（前50条）</h2>
+                    <table>
+                        <tr>
+                            <th>句子</th>
+                            <th>人工标注文本</th>
+                            <th>大类</th>
+                            <th>小类</th>
+                            <th>质检人</th>
+                            <th>质检结果</th>
+                            <th>打回次数</th>
+                        </tr>
+                        ${analysis.emptyAnnotator.slice(0, 50).map(a => `
+                            <tr>
+                                <td>${a.sentence_no}</td>
+                                <td>${a.human_annotated_text ? (a.human_annotated_text.substring(0, 40) + (a.human_annotated_text.length > 40 ? '...' : '')) : '<span style="color: #999;">无</span>'}</td>
+                                <td>${a.major_category || '-'}</td>
+                                <td>${a.minor_category || '-'}</td>
+                                <td>${a.inspector || '-'}</td>
+                                <td>${a.is_qualified === true ? '<span class="badge badge-success">通过</span>' : 
+                                      a.is_qualified === false ? '<span class="badge badge-danger">不通过</span>' : 
+                                      '<span class="badge badge-warning">待检</span>'}</td>
+                                <td>${a.rejection_count ? `<span class="badge badge-danger">${a.rejection_count}次</span>` : '-'}</td>
+                            </tr>
+                        `).join('')}
+                        ${analysis.emptyAnnotator.length > 50 ? `<tr><td colspan="7" style="text-align: center; color: #6c757d;">... 还有 ${analysis.emptyAnnotator.length - 50} 条记录</td></tr>` : ''}
+                    </table>
+                `;
+            }
+
+            // 结论和建议
+            html += `
+                <h2>💡 结论与建议</h2>
+                <div class="insight-card insight-success">
+                    <h3>分析结论：</h3>
+                    <ol>
+                        <li><strong>标注人为空的原因推测：</strong></li>
+                        <ul>
+                            <li>这些记录中 <strong>${((analysis.emptyWithContent.length/analysis.emptyAnnotator.length)*100).toFixed(1)}%</strong> 有标注内容</li>
+                            <li>${analysis.emptyWithQC.length > 0 ? `有 ${analysis.emptyWithQC.length} 条记录经过质检，说明这些是真实的标注数据` : '部分记录未经过质检'}</li>
+                            <li>${analysis.withRejectionCount.length > 0 ? `<strong>关键发现：</strong>有 ${analysis.withRejectionCount.length} 条记录有 rejection_count 字段，证明这些是被打回后重新提交的数据` : ''}</li>
+                        </ul>
+                        <li><strong>可能的技术原因：</strong></li>
+                        <ul>
+                            <li>代码在重新提交时可能没有正确保留标注人信息</li>
+                            <li>质检打回流程中可能丢失了 annotator 字段</li>
+                            <li>数据库更新时可能清空了该字段</li>
+                        </ul>
+                        <li><strong>建议措施：</strong></li>
+                        <ul>
+                            <li>🔧 检查代码：查看 <code>saveAnnotations</code> 函数在处理返工数据时是否正确设置 annotator</li>
+                            <li>🔧 检查打回流程：确认质检打回时是否保留了原标注人信息</li>
+                            <li>📝 数据修复：如果能从系统日志或其他表中找到原标注人，可以批量更新这些记录</li>
+                            <li>⚠️ 流程改进：在代码中添加必填校验，确保 annotator 不会为空</li>
+                        </ul>
+                    </ol>
+                </div>
+            `;
+
+            resultsDiv.innerHTML = html;
+        }
+
+        // 页面加载时自动执行一次
+        window.onload = () => {
+            setTimeout(analyzeRework, 500);
+        };
+    </script>
+</body>
+</html>
+
