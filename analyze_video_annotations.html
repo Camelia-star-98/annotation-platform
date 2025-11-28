@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>分析视频标注数据 - 第5批第一轮-语文-1.mp4</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 30px;
+      max-width: 1400px;
+      margin: 0 auto;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #555;
+      margin-top: 30px;
+      border-left: 4px solid #4CAF50;
+      padding-left: 10px;
+    }
+    .info-box {
+      background-color: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .warning {
+      background-color: #fff3cd;
+      border-left: 4px solid #ffc107;
+      padding: 15px;
+      margin: 15px 0;
+    }
+    .loading {
+      color: #2196F3;
+      font-weight: bold;
+      text-align: center;
+      padding: 40px;
+      font-size: 18px;
+    }
+    .error {
+      color: #f44336;
+      background-color: #ffebee;
+      padding: 15px;
+      border-radius: 4px;
+      border-left: 4px solid #f44336;
+      margin: 15px 0;
+    }
+    pre {
+      background-color: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      line-height: 1.4;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      background-color: white;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 8px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+      font-weight: bold;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    tr:hover {
+      background-color: #e3f2fd;
+    }
+    .highlight {
+      background-color: #fff3cd;
+      padding: 2px 5px;
+      border-radius: 3px;
+      font-weight: bold;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .stat-card h3 {
+      margin: 0;
+      font-size: 32px;
+      font-weight: bold;
+    }
+    .stat-card p {
+      margin: 5px 0 0 0;
+      font-size: 13px;
+      opacity: 0.9;
+    }
+    .duplicate {
+      background-color: #ffebee !important;
+    }
+    .chart-container {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .bar {
+      display: flex;
+      align-items: center;
+      margin: 5px 0;
+    }
+    .bar-label {
+      width: 150px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+    .bar-visual {
+      height: 25px;
+      background: linear-gradient(90deg, #4CAF50, #8BC34A);
+      margin: 0 10px;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding-right: 8px;
+      color: white;
+      font-size: 12px;
+      font-weight: bold;
+    }
+    .table-container {
+      max-height: 600px;
+      overflow-y: auto;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 深度分析：第5批第一轮-语文-1.mp4（210条标注）</h1>
+  
+  <div id="result" class="loading">
+    ⏳ 正在查询并分析数据...<br>
+    <small>请稍候...</small>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+
+    async function analyzeAnnotations() {
+      const resultDiv = document.getElementById('result');
+      
+      try {
+        console.log('初始化 Supabase 客户端...');
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false
+          }
+        });
+
+        // 1. 先查找这个视频
+        console.log('查找视频：第5批第一轮-语文-1.mp4');
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .ilike('name', '%第5批第一轮-语文-1.mp4%');
+
+        if (videoError) throw videoError;
+
+        if (!videos || videos.length === 0) {
+          resultDiv.innerHTML = `
+            <div class="error">
+              <h3>❌ 未找到视频</h3>
+              <p>数据库中没有找到名为"第5批第一轮-语文-1.mp4"的视频</p>
+            </div>
+          `;
+          return;
+        }
+
+        const video = videos[0];
+        const videoId = video.id;
+        console.log('找到视频:', video);
+
+        // 2. 查询所有标注数据
+        console.log('查询标注数据...');
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .eq('video_id', videoId)
+          .select('*')
+          .order('start_time', { ascending: true });
+
+        if (annError) throw annError;
+
+        console.log('标注数据:', annotations);
+
+        // 开始分析
+        let html = '';
+
+        // 基本信息
+        html += '<div class="info-box">';
+        html += `<h2>📹 视频信息</h2>`;
+        html += `<p><strong>视频 ID:</strong> <span class="highlight">${video.id}</span></p>`;
+        html += `<p><strong>文件名:</strong> ${video.name || '无'}</p>`;
+        html += `<p><strong>时长:</strong> ${video.duration ? video.duration.toFixed(2) + ' 秒' : '未知'}</p>`;
+        html += `<p><strong>上传时间:</strong> ${video.created_at ? new Date(video.created_at).toLocaleString('zh-CN') : '未知'}</p>`;
+        html += `</div>`;
+
+        // 统计分析
+        const totalAnnotations = annotations.length;
+        const annotatorMap = {};
+        const categoryMap = {};
+        const timeMap = {};
+        const duplicates = [];
+        
+        annotations.forEach((ann, idx) => {
+          // 按标注人统计
+          const annotator = ann.annotator_name || ann.annotator_id || '未知';
+          annotatorMap[annotator] = (annotatorMap[annotator] || 0) + 1;
+          
+          // 按类别统计
+          const category = ann.category || '无类别';
+          categoryMap[category] = (categoryMap[category] || 0) + 1;
+          
+          // 检查重复（相同的开始和结束时间）
+          const timeKey = `${ann.start_time}-${ann.end_time}`;
+          if (timeMap[timeKey]) {
+            timeMap[timeKey].push(ann);
+            if (timeMap[timeKey].length === 2) {
+              duplicates.push({
+                time: timeKey,
+                annotations: timeMap[timeKey]
+              });
+            }
+          } else {
+            timeMap[timeKey] = [ann];
+          }
+        });
+
+        // 统计卡片
+        html += '<div class="stats">';
+        html += `
+          <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <h3>${totalAnnotations}</h3>
+            <p>总标注数</p>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+            <h3>${Object.keys(annotatorMap).length}</h3>
+            <p>标注人数</p>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+            <h3>${Object.keys(categoryMap).length}</h3>
+            <p>问题类别数</p>
+          </div>
+          <div class="stat-card" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+            <h3>${duplicates.length}</h3>
+            <p>疑似重复片段</p>
+          </div>
+        `;
+        html += '</div>';
+
+        // 可能的原因分析
+        html += '<div class="warning">';
+        html += '<h2>⚠️ 为什么会有 210 条标注？</h2>';
+        html += '<p><strong>可能的原因：</strong></p>';
+        html += '<ul>';
+        
+        if (Object.keys(annotatorMap).length > 1) {
+          html += `<li><strong>多人标注：</strong>有 ${Object.keys(annotatorMap).length} 个人标注了这个视频，可能存在重复标注</li>`;
+        }
+        
+        if (duplicates.length > 0) {
+          html += `<li><strong>重复保存：</strong>发现 ${duplicates.length} 个时间段有多条标注记录</li>`;
+        }
+        
+        const avgPerAnnotator = totalAnnotations / Object.keys(annotatorMap).length;
+        if (avgPerAnnotator > 50) {
+          html += `<li><strong>标注粒度细：</strong>平均每人标注 ${avgPerAnnotator.toFixed(0)} 条，可能标注非常细致</li>`;
+        }
+        
+        html += '<li><strong>数据同步问题：</strong>可能在保存时发生了重复提交</li>';
+        html += '<li><strong>未清理旧数据：</strong>可能包含了之前的测试或重新标注的数据</li>';
+        html += '</ul>';
+        html += '</div>';
+
+        // 按标注人统计
+        html += '<div class="chart-container">';
+        html += '<h2>👥 各标注人贡献统计</h2>';
+        const maxCount = Math.max(...Object.values(annotatorMap));
+        Object.entries(annotatorMap)
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([annotator, count]) => {
+            const percentage = (count / totalAnnotations * 100).toFixed(1);
+            const barWidth = (count / maxCount * 100);
+            html += `
+              <div class="bar">
+                <div class="bar-label">${annotator}</div>
+                <div class="bar-visual" style="width: ${barWidth}%">${count} 条 (${percentage}%)</div>
+              </div>
+            `;
+          });
+        html += '</div>';
+
+        // 按类别统计
+        html += '<div class="chart-container">';
+        html += '<h2>📊 问题类别分布</h2>';
+        const maxCatCount = Math.max(...Object.values(categoryMap));
+        Object.entries(categoryMap)
+          .sort((a, b) => b[1] - a[1])
+          .forEach(([category, count]) => {
+            const percentage = (count / totalAnnotations * 100).toFixed(1);
+            const barWidth = (count / maxCatCount * 100);
+            html += `
+              <div class="bar">
+                <div class="bar-label">${category}</div>
+                <div class="bar-visual" style="width: ${barWidth}%; background: linear-gradient(90deg, #ff6b6b, #feca57);">${count} 条 (${percentage}%)</div>
+              </div>
+            `;
+          });
+        html += '</div>';
+
+        // 重复标注详情
+        if (duplicates.length > 0) {
+          html += '<div class="info-box">';
+          html += `<h2>🔄 重复标注详情（${duplicates.length} 处）</h2>`;
+          html += '<p>以下时间段有多条标注记录，可能是重复数据：</p>';
+          html += '<div class="table-container">';
+          html += '<table>';
+          html += '<tr><th>#</th><th>时间段</th><th>重复次数</th><th>标注人</th><th>类别</th><th>ID</th></tr>';
+          duplicates.slice(0, 50).forEach((dup, idx) => {
+            const anns = dup.annotations;
+            html += `<tr class="duplicate">`;
+            html += `<td rowspan="${anns.length}">${idx + 1}</td>`;
+            html += `<td rowspan="${anns.length}">${dup.time}</td>`;
+            html += `<td rowspan="${anns.length}">${anns.length}</td>`;
+            html += `<td>${anns[0].annotator_name || anns[0].annotator_id || '未知'}</td>`;
+            html += `<td>${anns[0].category || '无'}</td>`;
+            html += `<td style="font-size: 10px;">${anns[0].id}</td>`;
+            html += `</tr>`;
+            
+            for (let i = 1; i < anns.length; i++) {
+              html += `<tr class="duplicate">`;
+              html += `<td>${anns[i].annotator_name || anns[i].annotator_id || '未知'}</td>`;
+              html += `<td>${anns[i].category || '无'}</td>`;
+              html += `<td style="font-size: 10px;">${anns[i].id}</td>`;
+              html += `</tr>`;
+            }
+          });
+          html += '</table>';
+          html += '</div>';
+          if (duplicates.length > 50) {
+            html += `<p style="color: #666; margin-top: 10px;">仅显示前 50 个重复片段，共有 ${duplicates.length} 个</p>`;
+          }
+          html += '</div>';
+        }
+
+        // 所有标注列表
+        html += '<div class="info-box">';
+        html += `<h2>📝 所有标注数据（${totalAnnotations} 条）</h2>`;
+        html += '<div class="table-container">';
+        html += '<table>';
+        html += '<tr><th>#</th><th>开始时间</th><th>结束时间</th><th>时长</th><th>类别</th><th>标注人</th><th>创建时间</th><th>ID</th></tr>';
+        
+        annotations.forEach((ann, idx) => {
+          const duration = (ann.end_time - ann.start_time).toFixed(2);
+          const isDup = duplicates.some(d => d.annotations.includes(ann));
+          html += `<tr ${isDup ? 'class="duplicate"' : ''}>`;
+          html += `<td>${idx + 1}</td>`;
+          html += `<td>${ann.start_time.toFixed(2)}s</td>`;
+          html += `<td>${ann.end_time.toFixed(2)}s</td>`;
+          html += `<td>${duration}s</td>`;
+          html += `<td>${ann.category || '无'}</td>`;
+          html += `<td>${ann.annotator_name || ann.annotator_id || '未知'}</td>`;
+          html += `<td>${ann.created_at ? new Date(ann.created_at).toLocaleString('zh-CN') : '未知'}</td>`;
+          html += `<td style="font-size: 10px;">${ann.id}</td>`;
+          html += `</tr>`;
+        });
+        
+        html += '</table>';
+        html += '</div>';
+        html += `<details style="margin-top: 15px;"><summary style="cursor: pointer; color: #4CAF50; font-weight: bold;">📊 查看完整 JSON 数据</summary>`;
+        html += `<pre>${JSON.stringify(annotations, null, 2)}</pre></details>`;
+        html += `</div>`;
+
+        resultDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('分析失败:', error);
+        resultDiv.innerHTML = `
+          <div class="error">
+            <h3>❌ 分析失败</h3>
+            <p><strong>错误信息:</strong> ${error.message}</p>
+            <pre>${JSON.stringify(error, null, 2)}</pre>
+          </div>
+        `;
+      }
+    }
+
+    // 页面加载后自动运行
+    window.addEventListener('DOMContentLoaded', () => {
+      console.log('页面加载完成，开始分析...');
+      analyzeAnnotations();
+    });
+  </script>
+</body>
+</html>
+

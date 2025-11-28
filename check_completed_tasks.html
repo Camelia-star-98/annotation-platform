@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查已标注任务</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        .input-group {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f0f7ff;
+            border-radius: 5px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+        input {
+            width: 300px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .results {
+            margin-top: 30px;
+        }
+        .summary {
+            padding: 15px;
+            background: #e6f7ff;
+            border-left: 4px solid #1890ff;
+            margin: 20px 0;
+        }
+        .video-item {
+            padding: 15px;
+            margin: 10px 0;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: #fafafa;
+        }
+        .video-item.completed {
+            border-left: 4px solid #52c41a;
+            background: #f6ffed;
+        }
+        .video-item.partial {
+            border-left: 4px solid #faad14;
+            background: #fffbe6;
+        }
+        .video-name {
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .stats {
+            display: flex;
+            gap: 20px;
+            margin-top: 10px;
+        }
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+        .stat-value.completed {
+            color: #52c41a;
+        }
+        .stat-value.partial {
+            color: #faad14;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #1890ff;
+            transition: width 0.3s;
+        }
+        .progress-fill.completed {
+            background: #52c41a;
+        }
+        .progress-fill.partial {
+            background: #faad14;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            padding: 15px;
+            background: #fff2f0;
+            border: 1px solid #ffccc7;
+            border-radius: 4px;
+            color: #cf1322;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #fafafa;
+            font-weight: bold;
+            color: #333;
+        }
+        tr:hover {
+            background: #f5f5f5;
+        }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .badge.completed {
+            background: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+        }
+        .badge.partial {
+            background: #fffbe6;
+            color: #faad14;
+            border: 1px solid #ffe58f;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 检查已标注任务</h1>
+        
+        <div class="input-group">
+            <label for="annotatorName">输入标注员姓名：</label>
+            <input type="text" id="annotatorName" placeholder="请输入标注员姓名" />
+            <button onclick="checkCompletedTasks()">检查</button>
+        </div>
+        
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://vhaykscygzvzpowbcjaz.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoYXlrc2N5Z3p2enBvd2JjamF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIyNTU4OTYsImV4cCI6MjA0NzgzMTg5Nn0.VCc_aEKw4BkJGVzCe2sXbg1a9L2HQVb5WM6vgPh7LlI';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function checkCompletedTasks() {
+            const annotatorName = document.getElementById('annotatorName').value.trim();
+            const resultsDiv = document.getElementById('results');
+            
+            if (!annotatorName) {
+                resultsDiv.innerHTML = '<div class="error">请输入标注员姓名</div>';
+                return;
+            }
+            
+            resultsDiv.innerHTML = '<div class="loading">正在加载数据...</div>';
+            
+            try {
+                console.log('🔍 检查标注员:', annotatorName);
+                
+                // 1. 获取所有视频信息
+                const { data: videos, error: videoError } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (videoError) throw videoError;
+                
+                console.log('📊 视频总数:', videos.length);
+                
+                // 2. 查询该标注员的所有标注数据
+                const { data: myAnnotations, error: annotationError } = await supabase
+                    .from('annotations')
+                    .select('video_id, sentence_no, human_annotated_text, updated_at, original_text')
+                    .eq('annotator', annotatorName);
+                
+                if (annotationError) throw annotationError;
+                
+                console.log('📊 标注员的标注数据总数:', myAnnotations?.length || 0);
+                
+                if (!myAnnotations || myAnnotations.length === 0) {
+                    resultsDiv.innerHTML = '<div class="summary">该标注员还没有任何标注数据</div>';
+                    return;
+                }
+                
+                // 3. 统计每个视频的标注情况
+                const videoStatsMap = new Map();
+                
+                myAnnotations.forEach(item => {
+                    if (!videoStatsMap.has(item.video_id)) {
+                        videoStatsMap.set(item.video_id, {
+                            sentenceSet: new Set(),
+                            maxUpdateTime: item.updated_at || '',
+                            annotationCount: 0,
+                            allAnnotations: []
+                        });
+                    }
+                    const stats = videoStatsMap.get(item.video_id);
+                    
+                    // 只有当 human_annotated_text 不为空时，才记录该句子已被标注
+                    if (item.human_annotated_text && item.human_annotated_text.trim() !== '') {
+                        stats.sentenceSet.add(item.sentence_no);
+                        stats.annotationCount++;
+                        stats.allAnnotations.push(item);
+                        // 更新最新的标注时间
+                        if (item.updated_at && item.updated_at > stats.maxUpdateTime) {
+                            stats.maxUpdateTime = item.updated_at;
+                        }
+                    }
+                });
+                
+                console.log('📊 标注过的视频数:', videoStatsMap.size);
+                
+                // 4. 查询这些视频的总句子数
+                const videoIds = Array.from(videoStatsMap.keys());
+                const { data: allVideoSentences, error: totalError } = await supabase
+                    .from('annotations')
+                    .select('video_id, sentence_no')
+                    .in('video_id', videoIds);
+                
+                if (totalError) throw totalError;
+                
+                // 统计每个视频的总句子数
+                const videoTotalSentences = new Map();
+                allVideoSentences?.forEach(item => {
+                    if (!videoTotalSentences.has(item.video_id)) {
+                        videoTotalSentences.set(item.video_id, new Set());
+                    }
+                    videoTotalSentences.get(item.video_id).add(item.sentence_no);
+                });
+                
+                // 5. 创建视频ID到视频信息的映射
+                const videoMap = new Map(videos.map(v => [v.id, v]));
+                
+                // 6. 分类统计
+                const completedVideos = [];
+                const partialVideos = [];
+                
+                videoStatsMap.forEach((stats, videoId) => {
+                    const totalSentences = videoTotalSentences.get(videoId)?.size || 0;
+                    const annotatedSentences = stats.sentenceSet.size;
+                    const video = videoMap.get(videoId);
+                    
+                    if (!video) return;
+                    
+                    const percentage = totalSentences > 0 ? (annotatedSentences / totalSentences * 100).toFixed(1) : 0;
+                    
+                    const videoInfo = {
+                        id: videoId,
+                        name: video.name || '未命名视频',
+                        subject: video.subject || '未知',
+                        duration: video.duration || 0,
+                        totalSentences,
+                        annotatedSentences,
+                        annotationCount: stats.annotationCount,
+                        percentage,
+                        completedTime: stats.maxUpdateTime,
+                        isCompleted: totalSentences > 0 && annotatedSentences === totalSentences
+                    };
+                    
+                    if (videoInfo.isCompleted) {
+                        completedVideos.push(videoInfo);
+                    } else {
+                        partialVideos.push(videoInfo);
+                    }
+                });
+                
+                // 按完成时间降序排序
+                completedVideos.sort((a, b) => b.completedTime.localeCompare(a.completedTime));
+                partialVideos.sort((a, b) => b.completedTime.localeCompare(a.completedTime));
+                
+                // 7. 显示结果
+                let html = `
+                    <div class="summary">
+                        <h2>📊 标注统计</h2>
+                        <p><strong>标注员：</strong>${annotatorName}</p>
+                        <p><strong>已完全标注的视频：</strong>${completedVideos.length} 个</p>
+                        <p><strong>部分标注的视频：</strong>${partialVideos.length} 个</p>
+                        <p><strong>总标注数据：</strong>${myAnnotations.length} 条</p>
+                    </div>
+                `;
+                
+                if (completedVideos.length > 0) {
+                    html += `
+                        <h2>✅ 已完全标注的视频（${completedVideos.length}个）</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>视频名称</th>
+                                    <th>科目</th>
+                                    <th>进度</th>
+                                    <th>标注条数</th>
+                                    <th>完成时间</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    completedVideos.forEach(video => {
+                        const timeStr = new Date(video.completedTime).toLocaleString('zh-CN');
+                        html += `
+                            <tr>
+                                <td><strong>${video.name}</strong></td>
+                                <td>${video.subject}</td>
+                                <td>${video.annotatedSentences} / ${video.totalSentences} (${video.percentage}%)</td>
+                                <td>${video.annotationCount} 条</td>
+                                <td>${timeStr}</td>
+                                <td><span class="badge completed">✅ 已完成</span></td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                            </tbody>
+                        </table>
+                    `;
+                }
+                
+                if (partialVideos.length > 0) {
+                    html += `
+                        <h2 style="margin-top: 40px;">⏳ 部分标注的视频（${partialVideos.length}个）</h2>
+                        <p style="color: #666; margin-bottom: 15px;">
+                            <em>这些视频还没有完成所有句子的标注，因此不会显示在"已标注任务"列表中</em>
+                        </p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>视频名称</th>
+                                    <th>科目</th>
+                                    <th>进度</th>
+                                    <th>标注条数</th>
+                                    <th>最后标注时间</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    partialVideos.forEach(video => {
+                        const timeStr = new Date(video.completedTime).toLocaleString('zh-CN');
+                        html += `
+                            <tr>
+                                <td><strong>${video.name}</strong></td>
+                                <td>${video.subject}</td>
+                                <td>${video.annotatedSentences} / ${video.totalSentences} (${video.percentage}%)</td>
+                                <td>${video.annotationCount} 条</td>
+                                <td>${timeStr}</td>
+                                <td><span class="badge partial">⏳ 未完成</span></td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                            </tbody>
+                        </table>
+                    `;
+                }
+                
+                resultsDiv.innerHTML = html;
+                
+                console.log('✅ 已完成视频:', completedVideos.length);
+                console.log('⏳ 部分标注视频:', partialVideos.length);
+                
+            } catch (error) {
+                console.error('检查失败:', error);
+                resultsDiv.innerHTML = `<div class="error">检查失败: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
+

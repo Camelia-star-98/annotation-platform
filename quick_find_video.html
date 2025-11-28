@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>快速查找视频</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 30px;
+      max-width: 1200px;
+      margin: 0 auto;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    .info-box {
+      background-color: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .config-box {
+      background-color: #fff3cd;
+      border-left: 4px solid #ffc107;
+    }
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 10px;
+      margin: 8px 0;
+      border: 2px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 10px 5px 10px 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    .success {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+    .error {
+      color: #f44336;
+      background-color: #ffebee;
+      padding: 15px;
+      border-radius: 4px;
+      border-left: 4px solid #f44336;
+      margin: 15px 0;
+    }
+    .loading {
+      color: #2196F3;
+      font-weight: bold;
+    }
+    pre {
+      background-color: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      background-color: white;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+      font-weight: bold;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    .highlight {
+      background-color: #fff3cd;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 快速查找视频标注数据</h1>
+  
+  <div class="info-box config-box">
+    <h3>⚙️ Supabase 配置</h3>
+    <p>请输入你的 Supabase 连接信息：</p>
+    <label><strong>Supabase URL:</strong></label>
+    <input type="text" id="supabaseUrl" value="https://dcqwxvekgxgjujurpipg.supabase.co" placeholder="https://xxx.supabase.co">
+    
+    <label><strong>Supabase Anon Key:</strong></label>
+    <input type="password" id="supabaseKey" value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
+    
+    <button onclick="testConnection()">🔗 测试连接</button>
+    <div id="connectionStatus"></div>
+  </div>
+
+  <div class="info-box">
+    <h3>🎯 查找视频</h3>
+    <p style="color: #666; margin-bottom: 15px;">
+      <small>支持多种查询方式：视频ID、完整URL、文件名等</small>
+    </p>
+    
+    <label><strong>输入查询内容：</strong></label>
+    <input type="text" id="searchInput" placeholder="例如: https://...supabase.co/storage/v1/object/public/videos/video_1763956911507.mp4">
+    
+    <button onclick="findVideo()" id="searchBtn" disabled>🔍 查找</button>
+    <div id="searchResult"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    let supabaseClient = null;
+
+    async function testConnection() {
+      const url = document.getElementById('supabaseUrl').value.trim();
+      const key = document.getElementById('supabaseKey').value.trim();
+      const statusDiv = document.getElementById('connectionStatus');
+      
+      if (!url || !key) {
+        statusDiv.innerHTML = '<p class="error">❌ 请填写 URL 和 Key</p>';
+        return;
+      }
+
+      statusDiv.innerHTML = '<p class="loading">⏳ 正在测试连接...</p>';
+
+      try {
+        supabaseClient = window.supabase.createClient(url, key, {
+          auth: {
+            persistSession: false,
+            autoRefreshToken: false
+          }
+        });
+
+        console.log('测试查询 videos 表...');
+        const { data, error, count } = await supabaseClient
+          .from('videos')
+          .select('*', { count: 'exact', head: true });
+
+        if (error) {
+          console.error('查询错误:', error);
+          throw error;
+        }
+
+        console.log('连接成功！视频数量:', count);
+        
+        statusDiv.innerHTML = `
+          <p class="success">✅ 连接成功！</p>
+          <p>数据库中共有 <strong>${count}</strong> 个视频</p>
+        `;
+        
+        document.getElementById('searchBtn').disabled = false;
+
+      } catch (error) {
+        console.error('连接失败:', error);
+        statusDiv.innerHTML = `
+          <div class="error">
+            <h4>❌ 连接失败</h4>
+            <p><strong>错误:</strong> ${error.message}</p>
+            <p><strong>可能原因:</strong></p>
+            <ul>
+              <li>Anon Key 不正确</li>
+              <li>URL 不正确</li>
+              <li>网络连接问题</li>
+              <li>Supabase 项目未启用 API 访问</li>
+            </ul>
+            <p><strong>如何获取正确的配置:</strong></p>
+            <ol>
+              <li>登录 <a href="https://supabase.com/dashboard" target="_blank">Supabase Dashboard</a></li>
+              <li>选择你的项目</li>
+              <li>进入 Settings → API</li>
+              <li>复制 "Project URL" 和 "anon public" key</li>
+            </ol>
+          </div>
+        `;
+      }
+    }
+
+    async function findVideo() {
+      if (!supabaseClient) {
+        alert('请先测试连接！');
+        return;
+      }
+
+      const input = document.getElementById('searchInput').value.trim();
+      if (!input) {
+        alert('请输入查询内容');
+        return;
+      }
+
+      const resultDiv = document.getElementById('searchResult');
+      resultDiv.innerHTML = '<p class="loading">🔍 正在查询...</p>';
+
+      try {
+        let videoId = null;
+        let videoInfo = null;
+        let searchMethod = '';
+
+        // 方法1: 如果是完整 URL
+        if (input.includes('supabase.co/storage')) {
+          searchMethod = 'URL 查询';
+          console.log('通过 URL 查询:', input);
+          
+          const { data: videos, error } = await supabaseClient
+            .from('videos')
+            .select('*')
+            .eq('storage_url', input);
+          
+          if (error) throw error;
+          
+          if (videos && videos.length > 0) {
+            videoInfo = videos[0];
+            videoId = videos[0].id;
+          } else {
+            // 尝试提取文件名再查
+            const filename = input.split('/').pop();
+            console.log('URL查询失败，尝试通过文件名查询:', filename);
+            
+            const { data: videos2, error: error2 } = await supabaseClient
+              .from('videos')
+              .select('*')
+              .ilike('storage_url', `%${filename}%`);
+            
+            if (error2) throw error2;
+            
+            if (videos2 && videos2.length > 0) {
+              videoInfo = videos2[0];
+              videoId = videos2[0].id;
+              searchMethod = 'URL文件名模糊查询';
+            }
+          }
+        }
+        // 方法2: 如果是文件名
+        else if (input.endsWith('.mp4')) {
+          searchMethod = '文件名查询';
+          console.log('通过文件名查询:', input);
+          
+          // 先尝试精确匹配 name
+          let { data: videos, error } = await supabaseClient
+            .from('videos')
+            .select('*')
+            .eq('name', input);
+          
+          if (error) throw error;
+          
+          if (!videos || videos.length === 0) {
+            // 尝试模糊匹配 name
+            console.log('精确查询失败，尝试模糊查询 name...');
+            const { data: videos2, error: error2 } = await supabaseClient
+              .from('videos')
+              .select('*')
+              .ilike('name', `%${input}%`);
+            
+            if (error2) throw error2;
+            videos = videos2;
+          }
+          
+          if (!videos || videos.length === 0) {
+            // 尝试通过 storage_url 查询
+            console.log('name查询失败，尝试查询 storage_url...');
+            const { data: videos3, error: error3 } = await supabaseClient
+              .from('videos')
+              .select('*')
+              .ilike('storage_url', `%${input}%`);
+            
+            if (error3) throw error3;
+            videos = videos3;
+            searchMethod = '文件名在URL中查询';
+          }
+          
+          if (videos && videos.length > 0) {
+            videoInfo = videos[0];
+            videoId = videos[0].id;
+          }
+        }
+        // 方法3: 假设是 video_id
+        else {
+          searchMethod = 'Video ID 查询';
+          console.log('通过 video_id 查询:', input);
+          videoId = input;
+          
+          const { data: videos, error } = await supabaseClient
+            .from('videos')
+            .select('*')
+            .eq('id', videoId);
+          
+          if (error) throw error;
+          
+          if (videos && videos.length > 0) {
+            videoInfo = videos[0];
+          }
+        }
+
+        // 如果没找到视频
+        if (!videoId) {
+          resultDiv.innerHTML = `
+            <div class="error">
+              <h3>❌ 未找到视频</h3>
+              <p><strong>查询方式:</strong> ${searchMethod}</p>
+              <p><strong>输入内容:</strong> ${input}</p>
+              <p>请检查输入是否正确，或尝试其他查询方式。</p>
+            </div>
+          `;
+          return;
+        }
+
+        console.log('找到视频 ID:', videoId);
+
+        // 查询标注数据
+        console.log('查询标注数据...');
+        const { data: annotations, error: annError } = await supabaseClient
+          .from('annotations')
+          .select('*')
+          .eq('video_id', videoId)
+          .order('start_time', { ascending: true });
+
+        if (annError) throw annError;
+
+        // 查询复检数据
+        console.log('查询复检数据...');
+        const { data: reviews, error: reviewError } = await supabaseClient
+          .from('review_annotations')
+          .select('*')
+          .eq('video_id', videoId)
+          .order('start_time', { ascending: true });
+
+        if (reviewError) throw reviewError;
+
+        // 显示结果
+        let html = '<div class="info-box" style="background-color: #e8f5e9;">';
+        html += `<h3>✅ 找到视频！</h3>`;
+        html += `<p><small style="color: #666;">查询方式: ${searchMethod}</small></p>`;
+        
+        if (videoInfo) {
+          html += `<h4>📹 视频信息:</h4>`;
+          html += `<p><strong>ID:</strong> <span class="highlight">${videoInfo.id}</span></p>`;
+          html += `<p><strong>名称:</strong> ${videoInfo.name || '无'}</p>`;
+          html += `<p><strong>URL:</strong> <a href="${videoInfo.storage_url}" target="_blank">${videoInfo.storage_url}</a></p>`;
+          html += `<p><strong>上传时间:</strong> ${videoInfo.created_at || '未知'}</p>`;
+        } else {
+          html += `<p><strong>视频 ID:</strong> <span class="highlight">${videoId}</span></p>`;
+        }
+
+        html += `<hr>`;
+        html += `<h4>📝 标注数据: ${annotations ? annotations.length : 0} 条</h4>`;
+        
+        if (annotations && annotations.length > 0) {
+          html += '<table><tr><th>序号</th><th>开始时间</th><th>结束时间</th><th>类别</th><th>标注人</th><th>创建时间</th></tr>';
+          annotations.forEach((ann, idx) => {
+            html += `<tr>
+              <td>${idx + 1}</td>
+              <td>${ann.start_time.toFixed(2)}s</td>
+              <td>${ann.end_time.toFixed(2)}s</td>
+              <td>${ann.category || '无'}</td>
+              <td>${ann.annotator_name || ann.annotator_id || '未知'}</td>
+              <td>${ann.created_at ? new Date(ann.created_at).toLocaleString('zh-CN') : '未知'}</td>
+            </tr>`;
+          });
+          html += '</table>';
+          
+          html += '<h4>📊 完整 JSON 数据:</h4>';
+          html += `<pre>${JSON.stringify(annotations, null, 2)}</pre>`;
+        } else {
+          html += '<p style="color: #ff5722;">❌ 该视频没有标注数据</p>';
+        }
+
+        html += `<hr>`;
+        html += `<h4>🔍 复检数据: ${reviews ? reviews.length : 0} 条</h4>`;
+        
+        if (reviews && reviews.length > 0) {
+          html += '<table><tr><th>序号</th><th>开始时间</th><th>结束时间</th><th>类别</th><th>复检人</th><th>创建时间</th></tr>';
+          reviews.forEach((rev, idx) => {
+            html += `<tr>
+              <td>${idx + 1}</td>
+              <td>${rev.start_time.toFixed(2)}s</td>
+              <td>${rev.end_time.toFixed(2)}s</td>
+              <td>${rev.category || '无'}</td>
+              <td>${rev.reviewer_name || rev.reviewer_id || '未知'}</td>
+              <td>${rev.created_at ? new Date(rev.created_at).toLocaleString('zh-CN') : '未知'}</td>
+            </tr>`;
+          });
+          html += '</table>';
+          
+          html += '<h4>📊 完整 JSON 数据:</h4>';
+          html += `<pre>${JSON.stringify(reviews, null, 2)}</pre>`;
+        } else {
+          html += '<p style="color: #999;">该视频没有复检数据</p>';
+        }
+
+        html += '</div>';
+        resultDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('查询失败:', error);
+        resultDiv.innerHTML = `
+          <div class="error">
+            <h3>❌ 查询失败</h3>
+            <p><strong>错误:</strong> ${error.message}</p>
+            <pre>${JSON.stringify(error, null, 2)}</pre>
+          </div>
+        `;
+      }
+    }
+
+    // 回车键触发查询
+    document.getElementById('searchInput').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter' && !document.getElementById('searchBtn').disabled) {
+        findVideo();
+      }
+    });
+  </script>
+</body>
+</html>
+

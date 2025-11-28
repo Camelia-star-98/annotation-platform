@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>检查标注人字段</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 30px;
+      max-width: 1400px;
+      margin: 0 auto;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    .info-box {
+      background-color: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      background-color: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    th, td {
+      padding: 12px 15px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+      font-weight: bold;
+    }
+    tr:hover {
+      background-color: #e3f2fd;
+    }
+    pre {
+      background-color: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    .null-value { color: #f44336; font-weight: bold; }
+    .empty-value { color: #ff9800; font-weight: bold; }
+    .unknown-value { color: #9c27b0; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查第5批语文视频的标注人字段</h1>
+  
+  <div class="info-box">
+    <button id="runBtn" onclick="checkAnnotators()">🚀 开始检查</button>
+    <div id="status" style="margin-top: 15px;"></div>
+  </div>
+
+  <div id="result"></div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+
+    window.supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    window.checkAnnotators = async function() {
+      const statusDiv = document.getElementById('status');
+      const resultDiv = document.getElementById('result');
+      document.getElementById('runBtn').disabled = true;
+
+      try {
+        statusDiv.textContent = '🔄 正在查询数据...';
+        let html = '';
+
+        // 查询第5批语文视频
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('id, name, subject')
+          .ilike('name', '%第5批%')
+          .or('name.ilike.%语文%,subject.ilike.%语文%')
+          .order('name');
+
+        if (videoError) throw videoError;
+
+        html += '<div class="info-box">';
+        html += `<h2>📹 找到 ${videos.length} 个第5批语文视频</h2>`;
+        html += '</div>';
+
+        // 对每个视频查询标注数据
+        for (const video of videos) {
+          statusDiv.textContent = `🔄 正在检查: ${video.name}...`;
+
+          const { data: annotations, error: annError } = await supabase
+            .from('annotations')
+            .select('id, annotator, human_annotated_text, review_status, reviewer')
+            .eq('video_id', video.id);
+
+          if (annError) {
+            console.error('查询失败:', annError);
+            continue;
+          }
+
+          // 分析标注人字段
+          const annotatorStats = {
+            total: annotations.length,
+            hasAnnotator: 0,
+            isNull: 0,
+            isEmpty: 0,
+            isUnknown: 0,
+            isUndefined: 0,
+            uniqueAnnotators: new Set()
+          };
+
+          const problemRecords = [];
+
+          annotations.forEach(ann => {
+            if (ann.annotator === null) {
+              annotatorStats.isNull++;
+              problemRecords.push({
+                id: ann.id,
+                annotator: 'NULL',
+                text: ann.human_annotated_text,
+                reviewStatus: ann.review_status,
+                reviewer: ann.reviewer
+              });
+            } else if (ann.annotator === undefined) {
+              annotatorStats.isUndefined++;
+              problemRecords.push({
+                id: ann.id,
+                annotator: 'UNDEFINED',
+                text: ann.human_annotated_text,
+                reviewStatus: ann.review_status,
+                reviewer: ann.reviewer
+              });
+            } else if (ann.annotator === '') {
+              annotatorStats.isEmpty++;
+              problemRecords.push({
+                id: ann.id,
+                annotator: 'EMPTY STRING',
+                text: ann.human_annotated_text,
+                reviewStatus: ann.review_status,
+                reviewer: ann.reviewer
+              });
+            } else if (ann.annotator === 'unknown') {
+              annotatorStats.isUnknown++;
+              problemRecords.push({
+                id: ann.id,
+                annotator: 'unknown',
+                text: ann.human_annotated_text,
+                reviewStatus: ann.review_status,
+                reviewer: ann.reviewer
+              });
+            } else {
+              annotatorStats.hasAnnotator++;
+              annotatorStats.uniqueAnnotators.add(ann.annotator);
+            }
+          });
+
+          const hasProblem = annotatorStats.isNull > 0 || 
+                            annotatorStats.isEmpty > 0 || 
+                            annotatorStats.isUnknown > 0 ||
+                            annotatorStats.isUndefined > 0;
+
+          if (hasProblem) {
+            html += '<div class="info-box">';
+            html += `<h3>⚠️ ${video.name}</h3>`;
+            html += `<p><strong>视频ID:</strong> <code>${video.id}</code></p>`;
+            html += `<p><strong>总记录数:</strong> ${annotatorStats.total}</p>`;
+            html += `<p><strong>有标注人:</strong> ${annotatorStats.hasAnnotator} (${[...annotatorStats.uniqueAnnotators].join(', ')})</p>`;
+            
+            if (annotatorStats.isNull > 0) {
+              html += `<p class="null-value">❌ NULL 值: ${annotatorStats.isNull} 条</p>`;
+            }
+            if (annotatorStats.isEmpty > 0) {
+              html += `<p class="empty-value">❌ 空字符串: ${annotatorStats.isEmpty} 条</p>`;
+            }
+            if (annotatorStats.isUnknown > 0) {
+              html += `<p class="unknown-value">❌ unknown: ${annotatorStats.isUnknown} 条</p>`;
+            }
+            if (annotatorStats.isUndefined > 0) {
+              html += `<p class="null-value">❌ UNDEFINED: ${annotatorStats.isUndefined} 条</p>`;
+            }
+
+            // 显示问题记录
+            if (problemRecords.length > 0 && problemRecords.length <= 20) {
+              html += '<h4>问题记录详情：</h4>';
+              html += '<table>';
+              html += '<tr><th>记录ID</th><th>标注人</th><th>有文本</th><th>复检状态</th><th>复检人</th></tr>';
+              problemRecords.forEach(rec => {
+                const hasText = rec.text && rec.text.trim() !== '';
+                html += `<tr>
+                  <td><code>${rec.id.substring(0, 8)}...</code></td>
+                  <td><strong>${rec.annotator}</strong></td>
+                  <td>${hasText ? '✅ 是' : '❌ 否'}</td>
+                  <td>${rec.reviewStatus ? '✅ 已复检' : '❌ 未复检'}</td>
+                  <td>${rec.reviewer || '-'}</td>
+                </tr>`;
+              });
+              html += '</table>';
+            } else if (problemRecords.length > 20) {
+              html += `<p>⚠️ 问题记录太多 (${problemRecords.length} 条)，省略详情</p>`;
+            }
+
+            // 生成修复 SQL
+            if (problemRecords.length > 0) {
+              html += '<h4>🔧 可能的修复方案：</h4>';
+              html += '<p>如果这些记录应该有标注人但被错误地设为 null/empty/unknown，可以尝试：</p>';
+              html += '<pre>';
+              html += `-- 方案1: 如果能从其他字段推断标注人\n`;
+              html += `-- 查看这些记录是否有其他线索\n`;
+              html += `SELECT id, annotator, human_annotated_text, created_at, updated_at\n`;
+              html += `FROM annotations\n`;
+              html += `WHERE video_id = '${video.id}'\n`;
+              html += `  AND (annotator IS NULL OR annotator = '' OR annotator = 'unknown');\n\n`;
+              
+              html += `-- 方案2: 如果这些是无效记录，可以删除\n`;
+              html += `-- DELETE FROM annotations\n`;
+              html += `-- WHERE video_id = '${video.id}'\n`;
+              html += `--   AND (annotator IS NULL OR annotator = '' OR annotator = 'unknown')\n`;
+              html += `--   AND (human_annotated_text IS NULL OR human_annotated_text = '');\n`;
+              html += '</pre>';
+            }
+
+            html += '</div>';
+          }
+        }
+
+        if (!html.includes('⚠️')) {
+          html += '<div class="info-box">';
+          html += '<h2>✅ 太好了！所有视频的标注人字段都是正常的</h2>';
+          html += '</div>';
+        }
+
+        statusDiv.textContent = '✅ 检查完成！';
+        resultDiv.innerHTML = html;
+
+      } catch (error) {
+        statusDiv.textContent = '❌ 发生错误';
+        resultDiv.innerHTML = `<div class="info-box"><p style="color: red;">错误: ${error.message}</p><pre>${error.stack}</pre></div>`;
+      } finally {
+        document.getElementById('runBtn').disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
+

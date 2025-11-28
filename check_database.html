@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查数据库连接和数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+      background: #f5f5f5;
+    }
+    h1 { color: #1890ff; }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .info { background: #e6f7ff; padding: 15px; border-left: 4px solid #1890ff; margin: 15px 0; }
+    .success { background: #f6ffed; padding: 15px; border-left: 4px solid #52c41a; margin: 15px 0; }
+    .error { background: #fff1f0; padding: 15px; border-left: 4px solid #ff4d4f; margin: 15px 0; }
+    pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 5px;
+      font-size: 14px;
+    }
+    button:hover { background: #40a9ff; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #1890ff;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 数据库连接诊断</h1>
+  
+  <div class="section">
+    <button onclick="testConnection()">1️⃣ 测试连接</button>
+    <button onclick="listVideos()">2️⃣ 列出所有视频</button>
+    <button onclick="checkSpecificVideo()">3️⃣ 检查特定视频</button>
+    <button onclick="checkAnnotatorField()">4️⃣ 检查annotator字段</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+
+    const { createClient } = window.supabase;
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const resultsDiv = document.getElementById('results');
+
+    async function testConnection() {
+      resultsDiv.innerHTML = '<div class="section"><p>测试中...</p></div>';
+      
+      try {
+        console.log('测试 Supabase 连接...');
+        
+        // 简单查询测试
+        const { data, error, count } = await supabaseClient
+          .from('annotations')
+          .select('*', { count: 'exact', head: true });
+
+        console.log('连接结果:', { data, error, count });
+
+        if (error) {
+          throw error;
+        }
+
+        let html = '<div class="section">';
+        html += '<div class="success">';
+        html += '<h3>✅ 连接成功！</h3>';
+        html += `<p><strong>数据库 URL:</strong> ${SUPABASE_URL}</p>`;
+        html += `<p><strong>表名:</strong> annotations</p>`;
+        html += `<p><strong>总记录数:</strong> ${count || '未知'} 条</p>`;
+        html += '</div></div>';
+        
+        resultsDiv.innerHTML = html;
+      } catch (error) {
+        console.error('连接失败:', error);
+        
+        let html = '<div class="section">';
+        html += '<div class="error">';
+        html += '<h3>❌ 连接失败</h3>';
+        html += `<p><strong>错误信息:</strong> ${error.message}</p>`;
+        html += `<pre>${JSON.stringify(error, null, 2)}</pre>`;
+        html += '</div></div>';
+        
+        resultsDiv.innerHTML = html;
+      }
+    }
+
+    async function listVideos() {
+      resultsDiv.innerHTML = '<div class="section"><p>查询中...</p></div>';
+      
+      try {
+        console.log('查询所有视频ID...');
+        
+        // 分批查询所有数据
+        let allData = [];
+        let page = 0;
+        let pageSize = 1000;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const { data, error } = await supabaseClient
+            .from('annotations')
+            .select('video_id')
+            .range(page * pageSize, (page + 1) * pageSize - 1);
+
+          if (error) {
+            throw error;
+          }
+
+          if (data && data.length > 0) {
+            allData = allData.concat(data);
+            console.log(`查询第 ${page + 1} 页，本页 ${data.length} 条，累计 ${allData.length} 条`);
+            
+            if (data.length < pageSize) {
+              hasMore = false;
+            } else {
+              page++;
+            }
+          } else {
+            hasMore = false;
+          }
+        }
+
+        console.log('查询完成，总记录数:', allData.length);
+
+        // 去重统计
+        const videoIds = [...new Set(allData.map(d => d.video_id))];
+        
+        // 统计每个视频的数据量
+        const videoStats = videoIds.map(videoId => ({
+          id: videoId,
+          count: allData.filter(d => d.video_id === videoId).length
+        })).sort((a, b) => b.count - a.count); // 按数据量降序排列
+        
+        let html = '<div class="section">';
+        html += '<div class="success">';
+        html += '<h3>📊 数据库中的视频列表</h3>';
+        html += `<p><strong>总视频数:</strong> ${videoIds.length} 个</p>`;
+        html += `<p><strong>总记录数:</strong> ${allData.length} 条</p>`;
+        html += `<p><strong>平均每个视频:</strong> ${(allData.length / videoIds.length).toFixed(1)} 条</p>`;
+        html += '</div>';
+
+        if (videoStats.length > 0) {
+          html += '<h4>视频列表（点击视频ID可复制）</h4>';
+          html += '<table>';
+          html += '<tr><th>序号</th><th>视频ID</th><th>数据量</th></tr>';
+          
+          videoStats.forEach((video, index) => {
+            html += `<tr>`;
+            html += `<td>${index + 1}</td>`;
+            html += `<td style="cursor: pointer; user-select: all;" onclick="navigator.clipboard.writeText('${video.id}')" title="点击复制">${video.id}</td>`;
+            html += `<td><strong>${video.count}</strong></td>`;
+            html += `</tr>`;
+          });
+          
+          html += '</table>';
+        }
+        
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+      } catch (error) {
+        console.error('查询失败:', error);
+        
+        let html = '<div class="section">';
+        html += '<div class="error">';
+        html += '<h3>❌ 查询失败</h3>';
+        html += `<p><strong>错误信息:</strong> ${error.message}</p>`;
+        html += `<pre>${JSON.stringify(error, null, 2)}</pre>`;
+        html += '</div></div>';
+        
+        resultsDiv.innerHTML = html;
+      }
+    }
+
+    async function checkSpecificVideo() {
+      const videoId = prompt('请输入视频ID:', 'upload_1732757358330');
+      if (!videoId) return;
+
+      resultsDiv.innerHTML = '<div class="section"><p>查询中...</p></div>';
+      
+      try {
+        console.log('查询视频:', videoId);
+        
+        const { data, error } = await supabaseClient
+          .from('annotations')
+          .select('*')
+          .eq('video_id', videoId)
+          .order('sentence_no', { ascending: true })
+          .limit(20);
+
+        console.log('查询结果:', { data, error, count: data?.length });
+
+        if (error) {
+          throw error;
+        }
+
+        let html = '<div class="section">';
+        
+        if (!data || data.length === 0) {
+          html += '<div class="error">';
+          html += '<h3>⚠️ 未找到数据</h3>';
+          html += `<p>视频ID <strong>${videoId}</strong> 在数据库中没有任何记录。</p>`;
+          html += '</div>';
+        } else {
+          html += '<div class="success">';
+          html += `<h3>✅ 找到 ${data.length} 条数据</h3>`;
+          html += `<p><strong>视频ID:</strong> ${videoId}</p>`;
+          html += '</div>';
+          
+          html += '<h4>前20条数据</h4>';
+          html += '<table>';
+          html += '<tr><th>句号</th><th>annotator</th><th>人工标注</th><th>is_qualified</th><th>创建时间</th></tr>';
+          
+          data.forEach(item => {
+            const hasAnnotator = item.annotator && item.annotator.trim() !== '';
+            const hasHumanText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+            
+            html += `<tr style="background: ${hasAnnotator ? '#d4edda' : '#fff3cd'}">`;
+            html += `<td>${item.sentence_no || '-'}</td>`;
+            html += `<td><strong>${item.annotator || '(空)'}</strong></td>`;
+            html += `<td>${hasHumanText ? '✅ 有' : '❌ 无'}</td>`;
+            html += `<td>${item.is_qualified === null ? '-' : (item.is_qualified ? '✅' : '❌')}</td>`;
+            html += `<td>${item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '-'}</td>`;
+            html += `</tr>`;
+          });
+          
+          html += '</table>';
+        }
+        
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+      } catch (error) {
+        console.error('查询失败:', error);
+        
+        let html = '<div class="section">';
+        html += '<div class="error">';
+        html += '<h3>❌ 查询失败</h3>';
+        html += `<p><strong>错误信息:</strong> ${error.message}</p>`;
+        html += `<pre>${JSON.stringify(error, null, 2)}</pre>`;
+        html += '</div></div>';
+        
+        resultsDiv.innerHTML = html;
+      }
+    }
+
+    async function checkAnnotatorField() {
+      resultsDiv.innerHTML = '<div class="section"><p>分析中...</p></div>';
+      
+      try {
+        console.log('检查 annotator 字段...');
+        
+        const { data, error } = await supabaseClient
+          .from('annotations')
+          .select('id, video_id, annotator, human_annotated_text, is_qualified')
+          .limit(1000);
+
+        console.log('查询结果:', { data, error, count: data?.length });
+
+        if (error) {
+          throw error;
+        }
+
+        const empty = data.filter(d => !d.annotator || d.annotator.trim() === '');
+        const nonEmpty = data.filter(d => d.annotator && d.annotator.trim() !== '');
+        
+        const annotators = [...new Set(nonEmpty.map(d => d.annotator))];
+
+        let html = '<div class="section">';
+        html += '<div class="info">';
+        html += '<h3>📊 Annotator 字段统计</h3>';
+        html += `<p><strong>总记录数:</strong> ${data.length} 条（采样1000条）</p>`;
+        html += `<p><strong>空 annotator:</strong> ${empty.length} 条 (${(empty.length/data.length*100).toFixed(1)}%)</p>`;
+        html += `<p><strong>有 annotator:</strong> ${nonEmpty.length} 条 (${(nonEmpty.length/data.length*100).toFixed(1)}%)</p>`;
+        html += `<p><strong>不同标注人数:</strong> ${annotators.length} 人</p>`;
+        html += '</div>';
+
+        if (annotators.length > 0) {
+          html += '<h4>标注人列表</h4>';
+          html += '<ul>';
+          annotators.forEach(annotator => {
+            const count = nonEmpty.filter(d => d.annotator === annotator).length;
+            html += `<li><strong>${annotator}</strong>: ${count} 条</li>`;
+          });
+          html += '</ul>';
+        }
+
+        if (empty.length > 0) {
+          html += '<h4>空 annotator 样本（前10条）</h4>';
+          html += '<table>';
+          html += '<tr><th>video_id</th><th>annotator</th><th>人工标注</th><th>is_qualified</th></tr>';
+          
+          empty.slice(0, 10).forEach(item => {
+            const hasHumanText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+            
+            html += `<tr style="background: #fff3cd">`;
+            html += `<td>${item.video_id}</td>`;
+            html += `<td>"${item.annotator || ''}" (空)</td>`;
+            html += `<td>${hasHumanText ? '✅ 有' : '❌ 无'}</td>`;
+            html += `<td>${item.is_qualified === null ? '-' : (item.is_qualified ? '✅' : '❌')}</td>`;
+            html += `</tr>`;
+          });
+          
+          html += '</table>';
+        }
+
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+      } catch (error) {
+        console.error('分析失败:', error);
+        
+        let html = '<div class="section">';
+        html += '<div class="error">';
+        html += '<h3>❌ 分析失败</h3>';
+        html += `<p><strong>错误信息:</strong> ${error.message}</p>`;
+        html += `<pre>${JSON.stringify(error, null, 2)}</pre>`;
+        html += '</div></div>';
+        
+        resultsDiv.innerHTML = html;
+      }
+    }
+
+    // 自动测试连接
+    window.onload = () => {
+      console.log('页面加载完成');
+      testConnection();
+    };
+  </script>
+</body>
+</html>
+

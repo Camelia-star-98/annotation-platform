@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查空标注人数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      padding: 20px;
+      max-width: 1600px;
+      margin: 0 auto;
+      background: #f5f5f5;
+    }
+    h1 { color: #1890ff; }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 11px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 6px;
+      text-align: left;
+    }
+    th {
+      background: #1890ff;
+      color: white;
+      position: sticky;
+      top: 0;
+      font-size: 12px;
+    }
+    .empty-annotator { background: #fff3cd; }
+    .has-annotator { background: #d4edda; }
+    .has-human-text { font-weight: bold; color: #52c41a; }
+    .qualified-true { background: #d4edda; }
+    .qualified-false { background: #f8d7da; }
+    .qualified-null { background: #e9ecef; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      margin: 10px 5px;
+      font-size: 14px;
+    }
+    button:hover { background: #40a9ff; }
+    .info { background: #e6f7ff; padding: 15px; border-left: 4px solid #1890ff; margin: 15px 0; }
+    .warning { background: #fff7e6; padding: 15px; border-left: 4px solid #faad14; margin: 15px 0; }
+    .error { background: #fff1f0; padding: 15px; border-left: 4px solid #ff4d4f; margin: 15px 0; }
+    input {
+      padding: 8px 12px;
+      border: 1px solid #d9d9d9;
+      border-radius: 4px;
+      font-size: 14px;
+      width: 400px;
+    }
+    .highlight { background: #fffacd !important; font-weight: bold; }
+    pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查空标注人数据</h1>
+  
+  <div class="section">
+    <h3>查询特定视频的数据</h3>
+    <input type="text" id="videoIdInput" placeholder="输入视频ID（如：upload_1732757358330）" value="upload_1732757358330">
+    <button onclick="checkVideoData()">🔍 查询视频数据</button>
+  </div>
+
+  <div id="results"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+
+    const { createClient } = window.supabase;
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const resultsDiv = document.getElementById('results');
+
+    async function checkVideoData() {
+      const videoId = document.getElementById('videoIdInput').value.trim();
+      
+      if (!videoId) {
+        alert('请输入视频ID');
+        return;
+      }
+
+      resultsDiv.innerHTML = '<div class="section"><p>正在查询视频数据...</p></div>';
+
+      try {
+        // 1. 查询该视频的所有数据
+        console.log('🔍 开始查询视频ID:', videoId);
+        
+        const { data: allData, error } = await supabaseClient
+          .from('annotations')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, is_qualified, inspector, reviewer, review_status, created_at, updated_at')
+          .eq('video_id', videoId)
+          .order('sentence_no', { ascending: true });
+
+        console.log('📊 查询结果:', { 
+          error, 
+          dataCount: allData?.length,
+          firstItem: allData?.[0]
+        });
+
+        if (error) {
+          throw new Error(`Supabase 错误: ${error.message}\n详情: ${JSON.stringify(error, null, 2)}`);
+        }
+
+        if (!allData || allData.length === 0) {
+          resultsDiv.innerHTML = '<div class="section"><div class="warning"><h3>⚠️ 未找到数据</h3><p>该视频ID没有任何标注数据。</p></div></div>';
+          return;
+        }
+
+        console.log('✅ 查询成功，数据量:', allData.length);
+
+        // 2. 分析数据
+        const emptyAnnotator = allData.filter(d => !d.annotator || d.annotator.trim() === '');
+        const hasAnnotator = allData.filter(d => d.annotator && d.annotator.trim() !== '');
+        
+        console.log('📊 数据分类:', {
+          total: allData.length,
+          emptyAnnotator: emptyAnnotator.length,
+          hasAnnotator: hasAnnotator.length
+        });
+
+        // 统计各标注人的数据
+        const annotatorGroups = new Map();
+        hasAnnotator.forEach(item => {
+          if (!annotatorGroups.has(item.annotator)) {
+            annotatorGroups.set(item.annotator, []);
+          }
+          annotatorGroups.get(item.annotator).push(item);
+        });
+
+        let html = '<div class="section">';
+        html += `<h2>📊 视频数据分析：${videoId}</h2>`;
+        
+        html += '<div class="info">';
+        html += `<p><strong>总数据量：</strong>${allData.length} 条</p>`;
+        html += `<p><strong>空标注人数据：</strong>${emptyAnnotator.length} 条 (${(emptyAnnotator.length/allData.length*100).toFixed(1)}%)</p>`;
+        html += `<p><strong>有标注人数据：</strong>${hasAnnotator.length} 条 (${(hasAnnotator.length/allData.length*100).toFixed(1)}%)</p>`;
+        html += `<p><strong>标注人数量：</strong>${annotatorGroups.size} 人</p>`;
+        html += '</div>';
+
+        // 显示各标注人的统计
+        if (annotatorGroups.size > 0) {
+          html += '<h3>各标注人统计</h3>';
+          html += '<table style="max-width: 800px;">';
+          html += '<tr><th>标注人</th><th>数据量</th><th>有人工标注</th><th>质检通过</th><th>质检未通过</th><th>待质检</th></tr>';
+          
+          annotatorGroups.forEach((items, annotator) => {
+            const withHumanText = items.filter(i => i.human_annotated_text && i.human_annotated_text.trim() !== '').length;
+            const qualifiedTrue = items.filter(i => i.is_qualified === true).length;
+            const qualifiedFalse = items.filter(i => i.is_qualified === false).length;
+            const qualifiedNull = items.filter(i => i.is_qualified === null || i.is_qualified === undefined).length;
+            
+            html += '<tr>';
+            html += `<td><strong>${annotator}</strong></td>`;
+            html += `<td>${items.length}</td>`;
+            html += `<td>${withHumanText}</td>`;
+            html += `<td class="qualified-true">${qualifiedTrue}</td>`;
+            html += `<td class="qualified-false">${qualifiedFalse}</td>`;
+            html += `<td class="qualified-null">${qualifiedNull}</td>`;
+            html += '</tr>';
+          });
+          
+          html += '</table>';
+        }
+
+        // 空标注人数据分析
+        if (emptyAnnotator.length > 0) {
+          html += '<h3>🔍 空标注人数据详情</h3>';
+          
+          const emptyWithHumanText = emptyAnnotator.filter(d => d.human_annotated_text && d.human_annotated_text.trim() !== '');
+          const emptyWithInspector = emptyAnnotator.filter(d => d.inspector && d.inspector.trim() !== '');
+          const emptyQualifiedFalse = emptyAnnotator.filter(d => d.is_qualified === false);
+          
+          html += '<div class="warning">';
+          html += `<p><strong>空标注人但有人工标注文本：</strong>${emptyWithHumanText.length} 条</p>`;
+          html += `<p><strong>空标注人但有质检人：</strong>${emptyWithInspector.length} 条</p>`;
+          html += `<p><strong>空标注人且质检未通过：</strong>${emptyQualifiedFalse.length} 条 🚨</p>`;
+          
+          if (emptyQualifiedFalse.length > 0) {
+            html += '<hr style="margin: 15px 0;">';
+            html += '<p style="color: red; font-weight: bold; font-size: 16px;">⚠️ 发现异常：有空标注人的数据被质检打回了！</p>';
+            html += '<p><strong>这说明：</strong></p>';
+            html += '<ul>';
+            html += '<li>✅ 标注员最初提交时，<code>annotator</code> 字段应该是有值的（否则质检人不会看到并打回）</li>';
+            html += '<li>❌ 被打回后重新上传/提交时，<code>annotator</code> 字段变成了空字符串</li>';
+            html += '<li>🐛 这是一个 BUG：重新提交标注时没有保留原来的 <code>annotator</code> 字段</li>';
+            html += '</ul>';
+            html += '<p><strong>解决方案：</strong></p>';
+            html += '<ul>';
+            html += '<li>检查 AnnotationPage.tsx 的 handleSubmit 函数，确保始终设置 <code>annotator: userName</code></li>';
+            html += '<li>检查是否有地方会覆盖 annotator 字段为空字符串</li>';
+            html += '</ul>';
+          }
+          html += '</div>';
+
+          // 显示空标注人且被打回的数据
+          if (emptyQualifiedFalse.length > 0) {
+            html += '<h4>🚨 空标注人且被打回的数据（前20条）</h4>';
+            html += '<table>';
+            html += '<thead><tr>';
+            html += '<th>ID</th><th>句号</th><th>annotator</th><th>人工标注文本</th><th>is_qualified</th><th>inspector</th><th>更新时间</th>';
+            html += '</tr></thead><tbody>';
+
+            emptyQualifiedFalse.slice(0, 20).forEach(item => {
+              const hasText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+              
+              html += `<tr class="qualified-false">`;
+              html += `<td style="font-size: 9px;">${item.id ? item.id.substring(0, 30) + '...' : '-'}</td>`;
+              html += `<td><strong>${item.sentence_no || '-'}</strong></td>`;
+              html += `<td style="background: #fff3cd; font-weight: bold;">"${item.annotator || ''}" (空🚨)</td>`;
+              html += `<td class="${hasText ? 'has-human-text' : ''}">${hasText ? item.human_annotated_text.substring(0, 40) + '...' : '(空)'}</td>`;
+              html += `<td style="color: red; font-weight: bold;">false (被打回)</td>`;
+              html += `<td><strong>${item.inspector || '-'}</strong></td>`;
+              html += `<td>${item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : '-'}</td>`;
+              html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            
+            if (emptyQualifiedFalse.length > 20) {
+              html += `<p class="info">显示前20条，共${emptyQualifiedFalse.length}条异常数据</p>`;
+            }
+          }
+
+          // 显示所有空标注人数据（前50条）
+          html += '<h4>所有空标注人数据（前50条）</h4>';
+          html += '<table>';
+          html += '<thead><tr>';
+          html += '<th>句号</th><th>annotator</th><th>人工标注</th><th>is_qualified</th><th>inspector</th><th>更新时间</th>';
+          html += '</tr></thead><tbody>';
+
+          emptyAnnotator.slice(0, 50).forEach(item => {
+            const rowClass = item.is_qualified === false ? 'qualified-false' : 
+                           item.is_qualified === true ? 'qualified-true' : 'qualified-null';
+            const hasText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+            
+            html += `<tr class="${rowClass}">`;
+            html += `<td>${item.sentence_no || '-'}</td>`;
+            html += `<td style="background: #fff3cd;"><strong>"${item.annotator || ''}"</strong> (空)</td>`;
+            html += `<td class="${hasText ? 'has-human-text' : ''}">${hasText ? item.human_annotated_text.substring(0, 30) + '...' : '(空)'}</td>`;
+            html += `<td>${item.is_qualified === null || item.is_qualified === undefined ? '-' : (item.is_qualified ? '✅' : '❌')}</td>`;
+            html += `<td>${item.inspector || '-'}</td>`;
+            html += `<td>${item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : '-'}</td>`;
+            html += '</tr>';
+          });
+
+          html += '</tbody></table>';
+          
+          if (emptyAnnotator.length > 50) {
+            html += `<p class="info">显示前50条，共${emptyAnnotator.length}条空标注人数据</p>`;
+          }
+        }
+
+        // 显示所有数据（前100条）
+        html += '<h3>所有数据预览（前100条）</h3>';
+        html += '<table>';
+        html += '<thead><tr>';
+        html += '<th>句号</th><th>annotator</th><th>人工标注</th><th>is_qualified</th><th>inspector</th><th>更新时间</th>';
+        html += '</tr></thead><tbody>';
+
+        allData.slice(0, 100).forEach(item => {
+          const isEmpty = !item.annotator || item.annotator.trim() === '';
+          const rowClass = isEmpty ? 'empty-annotator' : 'has-annotator';
+          const hasText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+          
+          html += `<tr class="${rowClass}">`;
+          html += `<td>${item.sentence_no || '-'}</td>`;
+          html += `<td><strong>${item.annotator || '(空)'}</strong></td>`;
+          html += `<td class="${hasText ? 'has-human-text' : ''}">${hasText ? '✅' : '❌'}</td>`;
+          html += `<td>${item.is_qualified === null || item.is_qualified === undefined ? '-' : (item.is_qualified ? '✅通过' : '❌未通过')}</td>`;
+          html += `<td>${item.inspector || '-'}</td>`;
+          html += `<td>${item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : '-'}</td>`;
+          html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        
+        if (allData.length > 100) {
+          html += `<p class="info">显示前100条，共${allData.length}条</p>`;
+        }
+
+        html += '</div>';
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('❌ 查询失败 - 详细错误:', error);
+        
+        let html = '<div class="section">';
+        html += '<div class="error">';
+        html += '<h3>❌ 查询失败</h3>';
+        html += `<p><strong>错误信息：</strong>${error.message}</p>`;
+        html += '<p>请按 <kbd>F12</kbd> 打开浏览器控制台查看详细错误信息。</p>';
+        html += '<h4>完整错误对象：</h4>';
+        html += `<pre>${JSON.stringify(error, null, 2)}</pre>`;
+        html += '</div>';
+        html += '</div>';
+        
+        resultsDiv.innerHTML = html;
+      }
+    }
+
+    // 页面加载时自动查询默认视频
+    window.onload = () => {
+      console.log('🚀 页面加载完成，准备自动查询...');
+      setTimeout(() => {
+        console.log('⏰ 开始自动查询');
+        checkVideoData();
+      }, 500);
+    };
+  </script>
+</body>
+</html>
