@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>诊断语文视频问题</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 30px;
+      max-width: 1400px;
+      margin: 0 auto;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #555;
+      margin-top: 30px;
+      border-left: 4px solid #2196F3;
+      padding-left: 10px;
+    }
+    .info-box {
+      background-color: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .loading {
+      color: #2196F3;
+      font-weight: bold;
+    }
+    .error {
+      color: #f44336;
+      background-color: #ffebee;
+      padding: 15px;
+      border-radius: 4px;
+      border-left: 4px solid #f44336;
+    }
+    .success {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      background-color: white;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    th, td {
+      padding: 12px 15px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #4CAF50;
+      color: white;
+      font-weight: bold;
+      position: sticky;
+      top: 0;
+    }
+    tr:nth-child(even) {
+      background-color: #f9f9f9;
+    }
+    tr:hover {
+      background-color: #e3f2fd;
+    }
+    .highlight {
+      background-color: #fff3cd !important;
+      font-weight: bold;
+    }
+    .alert {
+      background-color: #ffcdd2 !important;
+    }
+    pre {
+      background-color: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+      margin: 2px;
+    }
+    .badge-success { background-color: #c8e6c9; color: #2e7d32; }
+    .badge-warning { background-color: #fff9c4; color: #f57f17; }
+    .badge-error { background-color: #ffcdd2; color: #c62828; }
+    .badge-info { background-color: #bbdefb; color: #1565c0; }
+    
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 10px 5px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 诊断语文视频问题</h1>
+  
+  <div class="info-box">
+    <h3>使用说明</h3>
+    <p><strong>方法1：快速配置（推荐）</strong></p>
+    <ol>
+      <li>点击下方 "📝 手动配置 Supabase" 按钮</li>
+      <li>输入你的 Supabase URL：<code>https://dcqwxvekgxgjujurpipg.supabase.co</code></li>
+      <li>输入你的 Supabase Anon Key（从你的 Supabase 项目设置中获取）</li>
+    </ol>
+    <p><strong>方法2：从浏览器获取</strong></p>
+    <ol>
+      <li>打开你的标注平台应用（正在运行的版本）</li>
+      <li>按 F12 打开开发者工具</li>
+      <li>在 Console 标签页中，找到 "✅ Supabase 客户端已初始化" 这行日志</li>
+      <li>复制显示的 URL 和 Key</li>
+    </ol>
+    <p style="color: #ff5722; font-weight: bold;">⚠️ 如果你还没有配置 Supabase，请先查看项目中的 SUPABASE_GUIDE.md</p>
+  </div>
+
+  <div class="info-box">
+    <button onclick="setupManualConfig()">📝 手动配置 Supabase</button>
+    <button onclick="runDiagnostics()" id="runBtn" disabled>▶️ 运行诊断</button>
+  </div>
+
+  <div class="info-box">
+    <h3>🎯 检查特定视频</h3>
+    <p style="margin-bottom: 10px; color: #666;">
+      <small>支持三种查询方式：<br>
+      1️⃣ 视频ID (例如: annotation_only_1763963353902)<br>
+      2️⃣ 存储URL (例如: https://...supabase.co/storage/v1/object/public/videos/video_1763956911507.mp4)<br>
+      3️⃣ 文件名 (例如: video_1763956911507.mp4 或 第5批第一轮-语文-1.mp4)</small>
+    </p>
+    <input type="text" id="videoIdInput" placeholder="输入视频ID、URL或文件名" 
+           style="width: 600px; padding: 10px; font-size: 14px; border: 2px solid #ddd; border-radius: 4px;">
+    <button onclick="checkSpecificVideo()" id="checkVideoBtn" disabled>🔍 检查视频</button>
+    <div id="videoResult" style="margin-top: 15px;"></div>
+  </div>
+
+  <div id="status" class="loading">等待配置...</div>
+  <div id="result"></div>
+
+  <script>
+    let supabaseUrl = '';
+    let supabaseKey = '';
+    let supabase = null;
+
+    function setupManualConfig() {
+      const url = prompt('请输入 Supabase URL:\n例如: https://dcqwxvekgxgjujurpipg.supabase.co', 'https://dcqwxvekgxgjujurpipg.supabase.co');
+      
+      if (!url) {
+        alert('未输入URL，配置取消');
+        return;
+      }
+      
+      const key = prompt('请输入 Supabase Anon Key:\n(一长串以 eyJ 开头的字符串)', '');
+      
+      if (!key) {
+        alert('未输入Key，配置取消');
+        return;
+      }
+      
+      supabaseUrl = url.trim();
+      supabaseKey = key.trim();
+      
+      document.getElementById('status').textContent = '⏳ 正在加载 Supabase 库...';
+      document.getElementById('status').className = 'loading';
+      
+      // 动态加载 Supabase JS
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+      script.onload = async () => {
+        try {
+          console.log('正在初始化 Supabase 客户端...');
+          console.log('URL:', supabaseUrl);
+          console.log('Key (前20字符):', supabaseKey.substring(0, 20) + '...');
+          
+          supabase = window.supabase.createClient(supabaseUrl, supabaseKey, {
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false
+            },
+            global: {
+              headers: {
+                'X-Client-Info': 'supabase-js-web'
+              }
+            }
+          });
+          
+          console.log('Supabase 客户端已创建');
+          
+          // 测试连接
+          document.getElementById('status').textContent = '🔄 测试连接...';
+          console.log('正在测试 videos 表...');
+          
+          const { data, error, count } = await supabase
+            .from('videos')
+            .select('*', { count: 'exact', head: true });
+          
+          if (error) {
+            console.error('查询出错:', error);
+            throw error;
+          }
+          
+          console.log('连接成功！视频总数:', count);
+          
+          document.getElementById('status').textContent = `✅ Supabase 连接成功！共有 ${count} 个视频`;
+          document.getElementById('status').className = 'success';
+          document.getElementById('runBtn').disabled = false;
+          document.getElementById('checkVideoBtn').disabled = false;
+          
+          document.getElementById('result').innerHTML = `
+            <div class="info-box" style="background-color: #e8f5e9;">
+              <h3>✅ 连接成功</h3>
+              <p><strong>Supabase URL:</strong> ${supabaseUrl}</p>
+              <p><strong>视频总数:</strong> ${count}</p>
+              <p>现在可以使用下方的功能查询视频了！</p>
+            </div>
+          `;
+        } catch (error) {
+          console.error('连接测试失败:', error);
+          console.error('完整错误对象:', JSON.stringify(error, null, 2));
+          
+          document.getElementById('status').textContent = '❌ 连接失败: ' + error.message;
+          document.getElementById('status').className = 'error';
+          document.getElementById('result').innerHTML = `
+            <div class="error">
+              <h3>❌ 连接失败: ${error.message}</h3>
+              
+              <h3>连接失败详情：</h3>
+              <p><strong>错误信息：</strong> ${error.message}</p>
+              <p><strong>错误类型：</strong> ${error.name || 'Unknown'}</p>
+              <p><strong>Supabase URL:</strong> ${supabaseUrl}</p>
+              <p><strong>Key (前20字符):</strong> ${supabaseKey.substring(0, 20)}...</p>
+              
+              <h3>可能的原因：</h3>
+              <ul>
+                  <li>Supabase URL 或 Key 不正确</li>
+                  <li>网络连接问题</li>
+                  <li>Supabase 项目未启用公共访问</li>
+                  <li>浏览器阻止了请求（CORS 问题）</li>
+                </ul>
+                <p><strong>解决方法：</strong></p>
+                <ol>
+                  <li>检查 Supabase URL 和 Key 是否正确</li>
+                  <li>尝试在 Supabase 项目中启用 API</li>
+                  <li>或者使用 React 应用内的调试功能</li>
+                </ol>
+                <pre>${error.stack || ''}</pre>
+              </div>
+            `;
+          }
+        };
+        script.onerror = () => {
+          document.getElementById('status').textContent = '❌ 加载 Supabase 库失败';
+          document.getElementById('status').className = 'error';
+        };
+        document.head.appendChild(script);
+      }
+    }
+
+    async function checkSpecificVideo() {
+      if (!supabase) {
+        alert('请先配置 Supabase');
+        return;
+      }
+
+      const input = document.getElementById('videoIdInput').value.trim();
+      if (!input) {
+        alert('请输入视频ID、URL或文件名');
+        return;
+      }
+
+      const resultDiv = document.getElementById('videoResult');
+      resultDiv.innerHTML = '<p class="loading">🔍 正在查询视频信息...</p>';
+
+      try {
+        let videoId = null;
+        let searchMethod = '';
+
+        // 判断输入类型并查询
+        if (input.includes('supabase.co/storage')) {
+          // 是 URL，提取文件名
+          const urlParts = input.split('/');
+          const filename = urlParts[urlParts.length - 1];
+          searchMethod = `URL (文件名: ${filename})`;
+          
+          // 通过 storage_url 查询
+          const { data: videos, error: videoError } = await supabase
+            .from('videos')
+            .select('*')
+            .eq('storage_url', input);
+          
+          if (videoError) throw videoError;
+          
+          if (videos && videos.length > 0) {
+            videoId = videos[0].id;
+          } else {
+            // 尝试通过文件名在 storage_url 中模糊查询
+            const { data: videos2, error: videoError2 } = await supabase
+              .from('videos')
+              .select('*')
+              .ilike('storage_url', `%${filename}%`);
+            
+            if (videoError2) throw videoError2;
+            if (videos2 && videos2.length > 0) {
+              videoId = videos2[0].id;
+            }
+          }
+        } else if (input.endsWith('.mp4')) {
+          // 是文件名
+          searchMethod = `文件名: ${input}`;
+          
+          // 首先通过 name 精确查询
+          let { data: videos, error: videoError } = await supabase
+            .from('videos')
+            .select('*')
+            .eq('name', input);
+          
+          if (videoError) throw videoError;
+          
+          if (!videos || videos.length === 0) {
+            // 尝试模糊查询 name
+            const { data: videos2, error: videoError2 } = await supabase
+              .from('videos')
+              .select('*')
+              .ilike('name', `%${input}%`);
+            
+            if (videoError2) throw videoError2;
+            videos = videos2;
+          }
+          
+          if (!videos || videos.length === 0) {
+            // 尝试通过 storage_url 模糊查询
+            const { data: videos3, error: videoError3 } = await supabase
+              .from('videos')
+              .select('*')
+              .ilike('storage_url', `%${input}%`);
+            
+            if (videoError3) throw videoError3;
+            videos = videos3;
+          }
+          
+          if (videos && videos.length > 0) {
+            videoId = videos[0].id;
+            if (videos.length > 1) {
+              searchMethod += ` (找到 ${videos.length} 个匹配，显示第一个)`;
+            }
+          }
+        } else {
+          // 假设是 video_id
+          videoId = input;
+          searchMethod = 'video_id';
+        }
+
+        if (!videoId) {
+          resultDiv.innerHTML = `
+            <div class="error">
+              <h3>❌ 未找到视频</h3>
+              <p><strong>查询方式:</strong> ${searchMethod}</p>
+              <p><strong>输入:</strong> ${input}</p>
+              <p>请检查输入是否正确，或尝试其他查询方式。</p>
+            </div>
+          `;
+          return;
+        }
+
+        let html = '<div class="info-box" style="background-color: #e3f2fd;">';
+        html += `<p style="color: #666;"><small>查询方式: ${searchMethod}</small></p>`;
+        
+        // 1. 查询 annotations 表
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .select('*')
+          .eq('video_id', videoId);
+
+        if (annError) throw annError;
+
+        html += `<h3>📹 视频ID: ${videoId}</h3>`;
+        html += `<p><strong>annotations 表记录数:</strong> ${annotations ? annotations.length : 0} 条</p>`;
+
+        if (annotations && annotations.length > 0) {
+          // 分析 annotator
+          const annotators = [...new Set(annotations.map(a => a.annotator).filter(Boolean))];
+          html += `<p><strong>标注人:</strong> ${annotators.join(', ') || '未设置'}</p>`;
+          
+          // 分析时间
+          const times = annotations.map(a => a.time).filter(Boolean).sort((a, b) => a - b);
+          if (times.length > 0) {
+            html += `<p><strong>时间范围:</strong> ${times[0].toFixed(2)}s - ${times[times.length - 1].toFixed(2)}s</p>`;
+          }
+
+          // 显示前10条数据样本
+          html += '<h4>📝 数据样本（前10条）:</h4>';
+          html += '<table><tr><th>序号</th><th>时间(s)</th><th>标注人</th><th>问题类型</th><th>内容预览</th></tr>';
+          annotations.slice(0, 10).forEach((ann, idx) => {
+            html += '<tr>';
+            html += `<td>${idx + 1}</td>`;
+            html += `<td>${ann.time ? ann.time.toFixed(2) : 'N/A'}</td>`;
+            html += `<td>${ann.annotator || '未设置'}</td>`;
+            html += `<td>${ann.problem_category || 'N/A'}</td>`;
+            const preview = JSON.stringify(ann).substring(0, 100);
+            html += `<td><small>${preview}...</small></td>`;
+            html += '</tr>';
+          });
+          html += '</table>';
+        } else {
+          html += '<p class="error">⚠️ 在 annotations 表中没有找到任何记录</p>';
+        }
+
+        // 2. 查询 videos 表
+        html += '<hr style="margin: 20px 0;">';
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .eq('id', videoId);
+
+        if (videoError) throw videoError;
+
+        html += '<h3>🎬 videos 表信息</h3>';
+        if (videos && videos.length > 0) {
+          const video = videos[0];
+          html += '<table><tr><th>字段</th><th>值</th></tr>';
+          Object.entries(video).forEach(([key, value]) => {
+            html += `<tr><td><strong>${key}</strong></td><td>${JSON.stringify(value)}</td></tr>`;
+          });
+          html += '</table>';
+        } else {
+          html += '<p class="error">⚠️ 在 videos 表中没有找到该视频</p>';
+        }
+
+        // 3. 查询 review_status 表
+        html += '<hr style="margin: 20px 0;">';
+        const { data: reviewStatus, error: reviewError } = await supabase
+          .from('review_status')
+          .select('*')
+          .eq('video_id', videoId);
+
+        if (reviewError) {
+          html += '<h3>📋 review_status 表信息</h3>';
+          html += `<p class="error">❌ 查询失败: ${reviewError.message}</p>`;
+        } else {
+          html += '<h3>📋 review_status 表信息</h3>';
+          if (reviewStatus && reviewStatus.length > 0) {
+            html += '<table><tr><th>字段</th><th>值</th></tr>';
+            Object.entries(reviewStatus[0]).forEach(([key, value]) => {
+              html += `<tr><td><strong>${key}</strong></td><td>${JSON.stringify(value)}</td></tr>`;
+            });
+            html += '</table>';
+          } else {
+            html += '<p class="error">⚠️ 在 review_status 表中没有找到该视频</p>';
+          }
+        }
+
+        html += '</div>';
+        resultDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('查询失败:', error);
+        resultDiv.innerHTML = `
+          <div class="error">
+            <h3>❌ 查询失败</h3>
+            <p><strong>错误信息:</strong> ${error.message}</p>
+            <pre>${JSON.stringify(error, null, 2)}</pre>
+          </div>
+        `;
+      }
+    }
+
+    async function runDiagnostics() {
+      if (!supabase) {
+        alert('请先配置 Supabase');
+        return;
+      }
+
+      try {
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+        document.getElementById('runBtn').disabled = true;
+
+        statusDiv.textContent = '🔄 正在运行诊断...';
+        statusDiv.className = 'loading';
+        resultDiv.innerHTML = '';
+
+        let html = '';
+
+        // ========== 第1步：查询所有第5批视频 ==========
+        statusDiv.textContent = '📊 步骤 1/6: 查询第5批所有视频...';
+        const { data: batch5Videos, error: batch5Error } = await supabase
+          .from('videos')
+          .select('*')
+          .ilike('name', '%第5批%')
+          .order('name');
+
+        if (batch5Error) throw batch5Error;
+
+        html += '<div class="info-box">';
+        html += '<h2>📊 第5批视频总览</h2>';
+        html += `<p>找到 <strong>${batch5Videos.length}</strong> 个第5批视频</p>`;
+        
+        // 按科目分组
+        const bySubject = {};
+        batch5Videos.forEach(v => {
+          const subject = v.subject || '未设置';
+          if (!bySubject[subject]) bySubject[subject] = [];
+          bySubject[subject].push(v);
+        });
+
+        html += '<table>';
+        html += '<tr><th>科目</th><th>数量</th><th>is_completed=true</th><th>is_completed=false</th></tr>';
+        Object.keys(bySubject).sort().forEach(subject => {
+          const videos = bySubject[subject];
+          const completedCount = videos.filter(v => v.is_completed === true).length;
+          const pendingCount = videos.filter(v => v.is_completed !== true).length;
+          html += `<tr>
+            <td><strong>${subject}</strong></td>
+            <td>${videos.length}</td>
+            <td><span class="badge badge-success">${completedCount}</span></td>
+            <td><span class="badge badge-warning">${pendingCount}</span></td>
+          </tr>`;
+        });
+        html += '</table>';
+        html += '</div>';
+
+        // ========== 第2步：查询所有语文视频 ==========
+        statusDiv.textContent = '📚 步骤 2/6: 查询所有语文视频...';
+        const { data: chineseVideos, error: chineseError } = await supabase
+          .from('videos')
+          .select('*')
+          .or('name.ilike.%语文%,subject.ilike.%语文%')
+          .order('created_at', { ascending: false });
+
+        if (chineseError) throw chineseError;
+
+        html += '<div class="info-box">';
+        html += '<h2>📚 所有语文视频</h2>';
+        html += `<p>找到 <strong>${chineseVideos.length}</strong> 个语文视频</p>`;
+        html += '<table>';
+        html += '<tr><th>视频名称</th><th>科目</th><th>is_completed</th><th>创建时间</th></tr>';
+        
+        chineseVideos.forEach(v => {
+          const isBatch5 = v.name.includes('第5批');
+          const rowClass = isBatch5 ? 'highlight' : '';
+          html += `<tr class="${rowClass}">
+            <td>${v.name} ${isBatch5 ? '🎯' : ''}</td>
+            <td>${v.subject || '未设置'}</td>
+            <td>${v.is_completed ? '<span class="badge badge-success">✅ 是</span>' : '<span class="badge badge-warning">❌ 否</span>'}</td>
+            <td>${new Date(v.created_at).toLocaleString('zh-CN')}</td>
+          </tr>`;
+        });
+        html += '</table>';
+        html += '</div>';
+
+        // ========== 第3步：查询第5批语文视频的标注数据 ==========
+        statusDiv.textContent = '🔍 步骤 3/6: 分析第5批语文视频的标注数据...';
+        const batch5Chinese = chineseVideos.filter(v => v.name.includes('第5批'));
+        
+        html += '<div class="info-box">';
+        html += '<h2>🔍 第5批语文视频详细分析</h2>';
+        html += `<p>第5批语文视频数量: <strong>${batch5Chinese.length}</strong></p>`;
+
+        if (batch5Chinese.length === 0) {
+          html += '<div class="error">❌ 警告：没有找到任何第5批语文视频！</div>';
+        } else {
+          html += '<table>';
+          html += '<tr><th>视频名称</th><th>video_id</th><th>is_completed</th><th>标注总数</th><th>待复检</th><th>已复检</th><th>标注人</th></tr>';
+          
+          for (const video of batch5Chinese) {
+            const { data: annotations, error: annError } = await supabase
+              .from('annotations')
+              .select('annotator, review_status, human_annotated_text')
+              .eq('video_id', video.id);
+
+            if (annError) {
+              console.error('查询标注数据失败:', annError);
+              continue;
+            }
+
+            // 统计
+            const total = annotations.length;
+            const hasText = annotations.filter(a => a.human_annotated_text && a.human_annotated_text.trim() !== '').length;
+            const reviewed = annotations.filter(a => a.review_status === true).length;
+            const pending = annotations.filter(a => !a.review_status).length;
+            const annotators = [...new Set(annotations.map(a => a.annotator).filter(a => a))];
+
+            const hasIssue = video.is_completed && pending > 0;
+            const rowClass = hasIssue ? 'alert' : '';
+
+            html += `<tr class="${rowClass}">
+              <td>${video.name} ${hasIssue ? '⚠️' : ''}</td>
+              <td><code>${video.id.substring(0, 8)}...</code></td>
+              <td>${video.is_completed ? '<span class="badge badge-success">✅ 是</span>' : '<span class="badge badge-warning">❌ 否</span>'}</td>
+              <td><span class="badge badge-info">${total}</span></td>
+              <td><span class="badge ${pending > 0 ? 'badge-warning' : 'badge-success'}">${pending}</span></td>
+              <td><span class="badge badge-success">${reviewed}</span></td>
+              <td>${annotators.join(', ')}</td>
+            </tr>`;
+          }
+          html += '</table>';
+        }
+        html += '</div>';
+
+        // ========== 第4步：模拟前端筛选逻辑 ==========
+        statusDiv.textContent = '🎯 步骤 4/6: 模拟前端待复检视频筛选逻辑...';
+        
+        html += '<div class="info-box">';
+        html += '<h2>🎯 前端筛选逻辑模拟</h2>';
+        html += '<p>按照 ReviewSelectPage.tsx 的筛选逻辑进行分析</p>';
+
+        // 查询所有有标注的视频
+        const { data: allAnnotations, error: allAnnError } = await supabase
+          .from('annotations')
+          .select('video_id, annotator, human_annotated_text, review_status, reviewer')
+          .not('annotator', 'is', null)
+          .neq('annotator', '')
+          .neq('annotator', 'unknown');
+
+        if (allAnnError) throw allAnnError;
+
+        // 统计每个视频的待复检数据
+        const videoAnnotationMap = {};
+        allAnnotations.forEach(ann => {
+          if (!videoAnnotationMap[ann.video_id]) {
+            videoAnnotationMap[ann.video_id] = [];
+          }
+          videoAnnotationMap[ann.video_id].push(ann);
+        });
+
+        // 找出有待复检数据的视频
+        const videosWithPending = [];
+        Object.keys(videoAnnotationMap).forEach(videoId => {
+          const annotations = videoAnnotationMap[videoId];
+          
+          // 按标注人分组
+          const annotatorMap = {};
+          annotations.forEach(ann => {
+            if (!annotatorMap[ann.annotator]) {
+              annotatorMap[ann.annotator] = {
+                total: 0,
+                reviewed: 0,
+                pending: 0,
+                hasText: 0
+              };
+            }
+            const stats = annotatorMap[ann.annotator];
+            stats.total++;
+            if (ann.human_annotated_text && ann.human_annotated_text.trim() !== '') {
+              stats.hasText++;
+              if (ann.review_status === true) {
+                stats.reviewed++;
+              } else {
+                stats.pending++;
+              }
+            }
+          });
+
+          // 检查是否有待复检数据
+          const hasPending = Object.values(annotatorMap).some(stats => stats.pending > 0);
+          if (hasPending) {
+            videosWithPending.push({
+              videoId,
+              annotators: Object.keys(annotatorMap),
+              stats: annotatorMap
+            });
+          }
+        });
+
+        // 过滤掉 is_completed = true 的视频
+        const allVideosMap = {};
+        batch5Videos.forEach(v => {
+          allVideosMap[v.id] = v;
+        });
+
+        const filteredPending = videosWithPending.filter(item => {
+          const video = allVideosMap[item.videoId];
+          return video && video.is_completed !== true;
+        });
+
+        html += `<p>有待复检数据的视频总数（过滤前）: <strong>${videosWithPending.length}</strong></p>`;
+        html += `<p>is_completed=false 的待复检视频（过滤后）: <strong>${filteredPending.length}</strong></p>`;
+
+        // 查找第5批语文视频是否在列表中
+        const batch5ChineseInPending = videosWithPending.filter(item => {
+          const video = allVideosMap[item.videoId];
+          return video && video.name.includes('第5批') && (video.name.includes('语文') || video.subject?.includes('语文'));
+        });
+
+        const batch5ChineseFiltered = filteredPending.filter(item => {
+          const video = allVideosMap[item.videoId];
+          return video && video.name.includes('第5批') && (video.name.includes('语文') || video.subject?.includes('语文'));
+        });
+
+        html += `<p>第5批语文视频在过滤前列表中: <strong>${batch5ChineseInPending.length}</strong></p>`;
+        html += `<p>第5批语文视频在过滤后列表中: <strong>${batch5ChineseFiltered.length}</strong></p>`;
+
+        if (batch5ChineseInPending.length > batch5ChineseFiltered.length) {
+          html += '<div class="error">';
+          html += '<h3>⚠️ 发现问题！</h3>';
+          html += '<p>第5批语文视频有待复检数据，但因为 <code>is_completed=true</code> 被过滤掉了！</p>';
+          html += '<p><strong>被过滤的视频：</strong></p>';
+          html += '<ul>';
+          batch5ChineseInPending.forEach(item => {
+            const video = allVideosMap[item.videoId];
+            if (video && video.is_completed === true) {
+              html += `<li>${video.name} (ID: ${video.id})</li>`;
+            }
+          });
+          html += '</ul>';
+          html += '</div>';
+        }
+
+        html += '</div>';
+
+        // ========== 第5步：建议的解决方案 ==========
+        html += '<div class="info-box">';
+        html += '<h2>💡 问题分析与解决方案</h2>';
+        
+        const problematicVideos = batch5Chinese.filter(v => v.is_completed === true);
+        if (problematicVideos.length > 0) {
+          html += '<h3>问题视频：</h3>';
+          html += '<table>';
+          html += '<tr><th>视频名称</th><th>video_id</th><th>当前状态</th><th>建议操作</th></tr>';
+          problematicVideos.forEach(v => {
+            html += `<tr class="alert">
+              <td>${v.name}</td>
+              <td><code>${v.id}</code></td>
+              <td><span class="badge badge-error">is_completed=true</span></td>
+              <td>需要设置为 false</td>
+            </tr>`;
+          });
+          html += '</table>';
+
+          html += '<h3>SQL 修复语句：</h3>';
+          html += '<pre>';
+          html += '-- 将第5批语文视频的 is_completed 设置为 false\n';
+          problematicVideos.forEach(v => {
+            html += `UPDATE videos SET is_completed = false WHERE id = '${v.id}'; -- ${v.name}\n`;
+          });
+          html += '</pre>';
+        } else {
+          html += '<div class="success">✅ 没有发现问题视频</div>';
+        }
+
+        html += '</div>';
+
+        // ========== 显示结果 ==========
+        resultDiv.innerHTML = html;
+        statusDiv.textContent = '✅ 诊断完成！';
+        statusDiv.className = 'success';
+
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('status').textContent = '❌ 诊断失败: ' + error.message;
+        document.getElementById('status').className = 'error';
+        document.getElementById('result').innerHTML = '<div class="error"><pre>' + error.stack + '</pre></div>';
+      } finally {
+        document.getElementById('runBtn').disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
+

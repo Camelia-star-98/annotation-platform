@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>检查语文视频</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 { color: #333; }
+    .loading { color: #666; }
+    .error { color: red; }
+    .success { color: green; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+    th {
+      background-color: #f5f5f5;
+      font-weight: bold;
+    }
+    tr:hover {
+      background-color: #f9f9f9;
+    }
+    .highlight {
+      background-color: #fff3cd !important;
+    }
+    pre {
+      background-color: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>检查语文视频</h1>
+  <div id="status" class="loading">正在加载数据...</div>
+  <div id="result"></div>
+
+  <script>
+    const SUPABASE_URL = 'https://uqfzrlqapobyjklqnjqo.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVxZnpybHFhcG9ieWprbHFuanFvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIwMTQ5MzgsImV4cCI6MjA0NzU5MDkzOH0.8W6A-4xFYIEWh9A0wHyKT0fwHPEJUuE5R1Nncd3wGUM';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function checkChineseVideos() {
+      try {
+        const statusDiv = document.getElementById('status');
+        const resultDiv = document.getElementById('result');
+
+        // 1. 查询所有第5批的视频
+        statusDiv.textContent = '正在查询第5批视频...';
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .ilike('name', '%第5批%')
+          .order('name');
+
+        if (videoError) {
+          throw new Error('查询视频失败: ' + videoError.message);
+        }
+
+        // 2. 按科目分类
+        const videosBySubject = {};
+        videos.forEach(video => {
+          const subject = video.subject || '未知';
+          if (!videosBySubject[subject]) {
+            videosBySubject[subject] = [];
+          }
+          videosBySubject[subject].push(video);
+        });
+
+        // 3. 查询所有包含"语文"的视频
+        const { data: chineseVideos, error: chineseError } = await supabase
+          .from('videos')
+          .select('*')
+          .or('name.ilike.%语文%,subject.ilike.%语文%')
+          .order('created_at', { ascending: false });
+
+        if (chineseError) {
+          throw new Error('查询语文视频失败: ' + chineseError.message);
+        }
+
+        // 4. 查询待复检的视频（检查语文视频是否在待复检列表中）
+        const { data: pendingReviewVideos, error: pendingError } = await supabase
+          .from('videos')
+          .select('*')
+          .eq('is_completed', false)
+          .ilike('name', '%第5批%')
+          .order('name');
+
+        if (pendingError) {
+          throw new Error('查询待复检视频失败: ' + pendingError.message);
+        }
+
+        // 5. 查询语文视频的标注数据统计
+        const chineseVideoAnnotations = {};
+        for (const video of chineseVideos) {
+          const { data: annotations, error: annError } = await supabase
+            .from('annotations')
+            .select('video_id, annotator, review_status')
+            .eq('video_id', video.id);
+
+          if (!annError) {
+            const stats = {
+              total: annotations.length,
+              reviewedCount: annotations.filter(a => a.review_status === true).length,
+              pendingCount: annotations.filter(a => a.review_status === null || a.review_status === false).length,
+              annotators: [...new Set(annotations.map(a => a.annotator).filter(a => a))]
+            };
+            chineseVideoAnnotations[video.id] = stats;
+          }
+        }
+
+        // 显示结果
+        let html = '<h2>第5批视频统计（按科目）</h2>';
+        html += '<table>';
+        html += '<tr><th>科目</th><th>视频数量</th><th>视频列表</th></tr>';
+        
+        Object.keys(videosBySubject).sort().forEach(subject => {
+          const videos = videosBySubject[subject];
+          html += `<tr>
+            <td><strong>${subject}</strong></td>
+            <td>${videos.length}</td>
+            <td>${videos.map(v => v.name).join('<br>')}</td>
+          </tr>`;
+        });
+        html += '</table>';
+
+        html += '<h2>所有语文视频</h2>';
+        if (chineseVideos.length === 0) {
+          html += '<p class="error">❌ 没有找到任何语文视频！</p>';
+        } else {
+          html += `<p>找到 ${chineseVideos.length} 个语文视频：</p>`;
+          html += '<table>';
+          html += '<tr><th>视频名称</th><th>科目</th><th>是否完成复检</th><th>创建时间</th><th>标注数据统计</th></tr>';
+          
+          chineseVideos.forEach(video => {
+            const stats = chineseVideoAnnotations[video.id];
+            const isInPending = pendingReviewVideos.some(v => v.id === video.id);
+            const highlightClass = (video.name.includes('第5批') && !isInPending && video.is_completed) ? 'highlight' : '';
+            
+            html += `<tr class="${highlightClass}">
+              <td>${video.name}</td>
+              <td>${video.subject || '未设置'}</td>
+              <td>${video.is_completed ? '✅ 是' : '❌ 否'}</td>
+              <td>${new Date(video.created_at).toLocaleString('zh-CN')}</td>
+              <td>${stats ? `
+                总计: ${stats.total}<br>
+                已复检: ${stats.reviewedCount}<br>
+                待复检: ${stats.pendingCount}<br>
+                标注人: ${stats.annotators.join(', ')}
+              ` : '无数据'}</td>
+            </tr>`;
+          });
+          html += '</table>';
+        }
+
+        html += '<h2>第5批待复检视频</h2>';
+        html += '<table>';
+        html += '<tr><th>视频名称</th><th>科目</th><th>创建时间</th></tr>';
+        
+        if (pendingReviewVideos.length === 0) {
+          html += '<tr><td colspan="3">没有待复检的第5批视频</td></tr>';
+        } else {
+          pendingReviewVideos.forEach(video => {
+            html += `<tr>
+              <td>${video.name}</td>
+              <td>${video.subject || '未设置'}</td>
+              <td>${new Date(video.created_at).toLocaleString('zh-CN')}</td>
+            </tr>`;
+          });
+        }
+        html += '</table>';
+
+        // 诊断信息
+        html += '<h2>诊断信息</h2>';
+        html += '<pre>';
+        html += `第5批视频总数: ${videos.length}\n`;
+        html += `语文视频总数: ${chineseVideos.length}\n`;
+        html += `第5批待复检视频: ${pendingReviewVideos.length}\n`;
+        html += `第5批语文视频数量: ${videos.filter(v => (v.subject || '').includes('语文') || v.name.includes('语文')).length}\n\n`;
+        
+        const batch5Chinese = chineseVideos.filter(v => v.name.includes('第5批'));
+        html += `第5批语文视频详情:\n`;
+        batch5Chinese.forEach(v => {
+          const stats = chineseVideoAnnotations[v.id];
+          html += `  - ${v.name}\n`;
+          html += `    ID: ${v.id}\n`;
+          html += `    is_completed: ${v.is_completed}\n`;
+          html += `    待复检数量: ${stats ? stats.pendingCount : 'N/A'}\n`;
+          html += `    标注人: ${stats ? stats.annotators.join(', ') : 'N/A'}\n\n`;
+        });
+        html += '</pre>';
+
+        resultDiv.innerHTML = html;
+        statusDiv.textContent = '✅ 查询完成';
+        statusDiv.className = 'success';
+
+      } catch (error) {
+        console.error('Error:', error);
+        document.getElementById('status').textContent = '❌ 查询失败: ' + error.message;
+        document.getElementById('status').className = 'error';
+        document.getElementById('result').innerHTML = '<pre>' + error.stack + '</pre>';
+      }
+    }
+
+    // 页面加载完成后执行
+    checkChineseVideos();
+  </script>
+</body>
+</html>
+
