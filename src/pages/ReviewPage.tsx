@@ -62,9 +62,12 @@ export default function ReviewPage() {
       const loadedCategories = await getProblemCategories();
       setCategories(loadedCategories);
       console.log('✅ 加载了', loadedCategories.length, '个问题分类');
+      if (loadedCategories.length === 0) {
+        console.warn('⚠️ 未加载到任何问题分类，可能是网络问题或数据库为空');
+      }
     } catch (error) {
-      console.error('加载问题分类失败:', error);
-      message.error('加载问题分类失败');
+      console.error('获取问题分类失败:', error instanceof Error ? { message: error.message, details: error } : error);
+      message.error('加载问题分类失败，请检查网络连接');
     }
   };
 
@@ -90,10 +93,14 @@ export default function ReviewPage() {
       });
       
       setReviewData(annotatorData);
-      message.success(`加载了${annotatorName}的 ${annotatorData.length} 条标注数据`);
+      if (annotatorData.length === 0) {
+        message.warning(`未找到${annotatorName}的标注数据，请检查视频ID和标注人姓名`);
+      } else {
+        message.success(`加载了${annotatorName}的 ${annotatorData.length} 条标注数据`);
+      }
     } catch (error) {
-      console.error('加载复检数据失败:', error);
-      message.error('加载复检数据失败');
+      console.error('获取标注数据失败:', error instanceof Error ? { message: error.message, details: error } : error);
+      message.error('加载复检数据失败，请检查网络连接或稍后重试');
     } finally {
       setLoading(false);
     }
@@ -280,8 +287,8 @@ export default function ReviewPage() {
         reviewedIds
       });
 
-      // 2. 批量更新复检状态、备注和问题分类
-      // 使用循环来保存每条数据（因为备注和分类可能不同）
+      // 2. 批量更新复检状态、备注、问题分类和文本内容
+      // 使用循环来保存每条数据（因为备注、分类和文本可能不同）
       const updatePromises = reviewedItems.map(item => 
         supabase
           .from('annotations')
@@ -291,7 +298,10 @@ export default function ReviewPage() {
             status: true,
             remark: item.remark || '', // 保存备注
             major_category: item.majorCategory || '', // 保存问题大类
-            minor_category: item.minorCategory || ''  // 保存问题小类
+            minor_category: item.minorCategory || '', // 保存问题小类
+            original_text: item.originalText || '', // 保存修改后的原文文本
+            ai_rewritten_text: item.aiRewrittenText || '', // 保存修改后的大模型改写文本
+            human_annotated_text: item.humanAnnotatedText || '' // 保存修改后的人工标注文本
           })
           .eq('id', item.id)
       );
@@ -368,19 +378,52 @@ export default function ReviewPage() {
       title: '原文文本',
       dataIndex: 'originalText',
       key: 'originalText',
-      width: 180
+      width: 180,
+      render: (text: string, record: AnnotationItem) => {
+        return (
+          <Input.TextArea
+            value={text || ''}
+            onChange={(e) => updateReview(record.id, 'originalText', e.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder="原文文本"
+            style={{ fontSize: '13px' }}
+          />
+        );
+      }
     },
     {
       title: '大模型改写文本',
       dataIndex: 'aiRewrittenText',
       key: 'aiRewrittenText',
-      width: 180
+      width: 180,
+      render: (text: string, record: AnnotationItem) => {
+        return (
+          <Input.TextArea
+            value={text || ''}
+            onChange={(e) => updateReview(record.id, 'aiRewrittenText', e.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder="大模型改写文本"
+            style={{ fontSize: '13px' }}
+          />
+        );
+      }
     },
     {
       title: '人工标注文本',
       dataIndex: 'humanAnnotatedText',
       key: 'humanAnnotatedText',
-      width: 180
+      width: 180,
+      render: (text: string, record: AnnotationItem) => {
+        return (
+          <Input.TextArea
+            value={text || ''}
+            onChange={(e) => updateReview(record.id, 'humanAnnotatedText', e.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder="人工标注文本"
+            style={{ fontSize: '13px' }}
+          />
+        );
+      }
     },
     {
       title: '问题分类',

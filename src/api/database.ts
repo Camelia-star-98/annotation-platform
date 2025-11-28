@@ -13,6 +13,38 @@ function withTimeout<T>(promise: PromiseLike<T>, timeoutMs: number = 30000): Pro
   ]);
 }
 
+// 重试包装器：为 Promise 添加重试机制
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<T> {
+  let lastError: Error | unknown;
+  
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      const isNetworkError = error instanceof Error && (
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('网络') ||
+        error.message.includes('timeout') ||
+        error.message.includes('超时')
+      );
+      
+      if (!isNetworkError || attempt === maxRetries) {
+        throw error;
+      }
+      
+      console.warn(`⚠️ 请求失败 (尝试 ${attempt}/${maxRetries})，${delayMs}ms 后重试...`, error);
+      await new Promise(resolve => setTimeout(resolve, delayMs * attempt)); // 指数退避
+    }
+  }
+  
+  throw lastError;
+}
+
 // ========== 视频相关 ==========
 
 // 获取所有视频（优化：只查询必要字段，移除日志）
@@ -317,47 +349,56 @@ export async function getReviewedAnnotations(videoIds?: string[]): Promise<Annot
   }
 }
 
-// 获取指定视频的标注数据
+// 获取指定视频的标注数据（添加超时控制、重试机制和错误处理）
 export async function getAnnotations(videoId: string): Promise<AnnotationItem[]> {
-  // 优化：只查询必要字段，关联视频表获取视频信息
-  const { data, error } = await supabase
-    .from('annotations')
-    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status, videos!inner(url, name, subject)')
-    .eq('video_id', videoId)
-    .order('sentence_no', { ascending: true });
+  try {
+    return await withRetry(async () => {
+      // 优化：只查询必要字段，关联视频表获取视频信息
+      const query = supabase
+        .from('annotations')
+        .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status, videos!inner(url, name, subject)')
+        .eq('video_id', videoId)
+        .order('sentence_no', { ascending: true });
 
-  if (error) {
-    console.error('获取标注数据失败:', error);
+      const { data, error } = await withTimeout(query, 15000); // 15秒超时
+
+      if (error) {
+        console.error('获取标注数据失败:', error);
+        throw error; // 抛出错误以便重试机制处理
+      }
+
+      // 转换数据格式
+      return (data || []).map(item => {
+        const video = Array.isArray(item.videos) ? item.videos[0] : item.videos;
+        return {
+          id: item.id,
+          videoId: item.video_id,
+          sentenceNo: item.sentence_no,
+          timeRange: item.time_range,
+          startTime: item.start_time,
+          endTime: item.end_time,
+          originalText: item.original_text,
+          aiRewrittenText: item.ai_rewritten_text || '', // 修复：查询并返回大模型改写文本
+          humanAnnotatedText: item.human_annotated_text,
+          majorCategory: item.major_category,
+          minorCategory: item.minor_category,
+          remark: item.remark,
+          status: item.status,
+          annotator: item.annotator,
+          isQualified: item.is_qualified,
+          inspector: item.inspector,
+          reviewer: item.reviewer || '', // 添加复检人
+          reviewStatus: item.review_status, // 添加复检状态
+          videoUrl: video?.url || '',
+          videoName: video?.name || '',
+          subject: video?.subject || ''
+        };
+      });
+    }, 3, 1000); // 最多重试3次，每次间隔1秒
+  } catch (error) {
+    console.error('获取标注数据超时或失败（已重试）:', error);
     return [];
   }
-
-  // 转换数据格式
-  return (data || []).map(item => {
-    const video = Array.isArray(item.videos) ? item.videos[0] : item.videos;
-    return {
-      id: item.id,
-      videoId: item.video_id,
-      sentenceNo: item.sentence_no,
-      timeRange: item.time_range,
-      startTime: item.start_time,
-      endTime: item.end_time,
-      originalText: item.original_text,
-      aiRewrittenText: item.ai_rewritten_text || '', // 修复：查询并返回大模型改写文本
-      humanAnnotatedText: item.human_annotated_text,
-      majorCategory: item.major_category,
-      minorCategory: item.minor_category,
-      remark: item.remark,
-      status: item.status,
-      annotator: item.annotator,
-      isQualified: item.is_qualified,
-      inspector: item.inspector,
-      reviewer: item.reviewer || '', // 添加复检人
-      reviewStatus: item.review_status, // 添加复检状态
-      videoUrl: video?.url || '',
-      videoName: video?.name || '',
-      subject: video?.subject || ''
-    };
-  });
 }
 
 // 获取指定视频的待质检数据（优化：在数据库层面直接过滤，支持分页，添加超时控制）
@@ -736,36 +777,40 @@ export async function getBatchCompletedAnnotatorsCount(
 
 // ========== 问题分类相关 ==========
 
-// 获取所有问题分类
+// 获取所有问题分类（添加超时控制、重试机制和错误处理）
 export async function getProblemCategories(): Promise<{ majorCategory: string; minorCategories: string[] }[]> {
   try {
-    const { data, error } = await supabase
-      .from('problem_categories')
-      .select('*')
-      .order('major_category', { ascending: true })
-      .order('minor_category', { ascending: true });
+    return await withRetry(async () => {
+      const query = supabase
+        .from('problem_categories')
+        .select('*')
+        .order('major_category', { ascending: true })
+        .order('minor_category', { ascending: true });
 
-    if (error) {
-      console.error('获取问题分类失败:', error);
-      return [];
-    }
+      const { data, error } = await withTimeout(query, 10000); // 10秒超时
 
-    // 按大类分组
-    const grouped = new Map<string, string[]>();
-    data?.forEach(item => {
-      if (!grouped.has(item.major_category)) {
-        grouped.set(item.major_category, []);
+      if (error) {
+        console.error('获取问题分类失败:', { message: error.message, details: error });
+        throw error; // 抛出错误以便重试机制处理
       }
-      grouped.get(item.major_category)!.push(item.minor_category);
-    });
 
-    // 转换为数组格式
-    return Array.from(grouped.entries()).map(([majorCategory, minorCategories]) => ({
-      majorCategory,
-      minorCategories
-    }));
+      // 按大类分组
+      const grouped = new Map<string, string[]>();
+      data?.forEach(item => {
+        if (!grouped.has(item.major_category)) {
+          grouped.set(item.major_category, []);
+        }
+        grouped.get(item.major_category)!.push(item.minor_category);
+      });
+
+      // 转换为数组格式
+      return Array.from(grouped.entries()).map(([majorCategory, minorCategories]) => ({
+        majorCategory,
+        minorCategories
+      }));
+    }, 3, 1000); // 最多重试3次，每次间隔1秒
   } catch (error) {
-    console.error('获取问题分类失败:', error);
+    console.error('获取问题分类失败（已重试）:', error instanceof Error ? { message: error.message, details: error } : error);
     return [];
   }
 }
