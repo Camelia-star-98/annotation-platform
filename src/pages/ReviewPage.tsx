@@ -110,16 +110,36 @@ export default function ReviewPage() {
       
       const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
       
-      // 过滤出指定标注人的数据，且必须是质检通过的数据（有inspector且isQualified === true）
-      const annotatorData = deduplicatedAnnotations.filter(
-        item => item.annotator === annotatorName && 
-                item.inspector && 
-                item.inspector.trim() !== '' &&
-                item.isQualified === true
-      );
+      // 🔧 抽检逻辑：检查该标注人是否有至少一条质检通过的数据
+      const hasQualifiedData = deduplicatedAnnotations.some(item => {
+        const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+        const isQualified = item.inspector && item.inspector.trim() !== '' && item.isQualified === true;
+        return item.annotator === annotatorName && hasHumanText && isQualified;
+      });
+      
+      // 🔧 新逻辑：如果该标注人有质检通过的数据（抽检通过），则加载所有有标注文本的数据
+      // 否则只加载质检通过的数据（旧逻辑）
+      const annotatorData = deduplicatedAnnotations.filter(item => {
+        if (item.annotator !== annotatorName) return false;
+        
+        const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+        if (!hasHumanText) return false; // 没有标注文本的不加载
+        
+        // 如果该标注人通过了抽检，加载所有有标注文本的数据
+        if (hasQualifiedData) {
+          return true;
+        }
+        
+        // 否则只加载质检通过的数据（兼容旧逻辑）
+        return item.inspector && item.inspector.trim() !== '' && item.isQualified === true;
+      });
       
       const totalForAnnotator = deduplicatedAnnotations.filter(item => item.annotator === annotatorName).length;
       const originalTotal = annotations.filter(item => item.annotator === annotatorName).length;
+      const withHumanText = deduplicatedAnnotations.filter(item => {
+        const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+        return item.annotator === annotatorName && hasHumanText;
+      }).length;
       const withInspector = deduplicatedAnnotations.filter(item => 
         item.annotator === annotatorName && item.inspector && item.inspector.trim() !== ''
       ).length;
@@ -133,17 +153,20 @@ export default function ReviewPage() {
         item.isQualified === true
       ).length;
       
-      console.log('📋 复检数据筛选:', {
+      console.log('📋 复检数据筛选 (抽检逻辑):', {
         videoId,
         videoName,
         annotatorName,
         原始总数: originalTotal,
         去重后总数: totalForAnnotator,
         去除了: originalTotal - totalForAnnotator,
+        有标注文本: withHumanText,
         有质检人: withInspector,
         质检通过: qualified,
         有质检人且通过: qualifiedWithInspector,
-        最终筛选结果: annotatorData.length
+        该标注人是否通过抽检: hasQualifiedData,
+        最终筛选结果: annotatorData.length,
+        说明: hasQualifiedData ? '抽检通过，加载所有有标注文本的数据' : '未通过抽检或无质检数据，只加载质检通过的数据'
       });
       
       setReviewData(annotatorData);
@@ -156,11 +179,16 @@ export default function ReviewPage() {
           message.warning(`未找到${annotatorName}的标注数据，请检查视频ID和标注人姓名`);
         } else if (inspectedCount === 0) {
           message.warning(`未找到${annotatorName}的已质检数据，请先完成质检`);
+        } else if (!hasQualifiedData) {
+          message.warning(`${annotatorName}没有质检通过的数据，无法进入复检流程`);
         } else {
           message.warning(`未找到${annotatorName}的待复检数据`);
         }
       } else {
-        message.success(`加载了${annotatorName}的 ${annotatorData.length} 条已质检数据`);
+        const msg = hasQualifiedData 
+          ? `加载了${annotatorName}的 ${annotatorData.length} 条待复检数据（抽检通过，包含所有有标注的内容）`
+          : `加载了${annotatorName}的 ${annotatorData.length} 条已质检数据`;
+        message.success(msg);
       }
     } catch (error) {
       console.error('获取标注数据失败:', error instanceof Error ? { message: error.message, details: error } : error);
@@ -407,26 +435,92 @@ export default function ReviewPage() {
 
       console.log('✅ 批量更新成功，共更新', reviewedIds.length, '条数据');
 
-      // 3. 检查该视频的该标注人是否所有数据都复检完成
-      const allReviewed = reviewData.every(item => item.status);
+      // 3. 🔧 检查该视频的所有标注人的所有数据是否都复检完成
+      // 注意：一个视频可能有多个标注人，只有所有标注人的所有数据都复检完成，才标记视频为完成
+      const { data: allVideoAnnotations, error: checkError } = await supabase
+        .from('annotations')
+        .select('annotator, review_status, human_annotated_text, inspector, is_qualified')
+        .eq('video_id', videoId)
+        .not('annotator', 'is', null)
+        .neq('annotator', '')
+        .neq('annotator', 'unknown');
       
-      if (allReviewed) {
-        console.log('✅ 该标注人的所有数据已复检完成，标记视频为完成状态');
+      if (checkError) {
+        console.error('❌ 检查视频完成状态失败:', checkError);
+      } else if (allVideoAnnotations && allVideoAnnotations.length > 0) {
+        // 使用和 ReviewSelectPage 相同的抽检逻辑
+        // 按标注人分组，检查每个标注人是否都完成了复检
+        const annotatorMap = new Map<string, { total: number; reviewed: number; hasQualified: boolean }>();
         
-        // 标记视频为已完成
-        const { error: videoError } = await supabase
-          .from('videos')
-          .update({
-            is_completed: true,
-            review_completed_at: new Date().toISOString()
-          })
-          .eq('id', videoId);
+        allVideoAnnotations.forEach(ann => {
+          const annotator = ann.annotator;
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          
+          if (!annotatorMap.has(annotator)) {
+            annotatorMap.set(annotator, { total: 0, reviewed: 0, hasQualified: false });
+          }
+          
+          const stats = annotatorMap.get(annotator)!;
+          
+          // 检查该标注人是否有质检通过的数据（抽检逻辑）
+          const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+          if (hasHumanText && isQualified) {
+            stats.hasQualified = true;
+          }
+          
+          // 统计有标注文本的数据
+          if (hasHumanText) {
+            stats.total++;
+            if (ann.review_status === true) {
+              stats.reviewed++;
+            }
+          }
+        });
+        
+        // 检查每个标注人是否都完成了复检
+        let allAnnotatorsCompleted = true;
+        const annotatorStatus: string[] = [];
+        
+        annotatorMap.forEach((stats, annotator) => {
+          // 只有通过抽检的标注人才需要复检
+          if (stats.hasQualified) {
+            const isCompleted = stats.reviewed === stats.total && stats.total > 0;
+            annotatorStatus.push(`${annotator}: ${stats.reviewed}/${stats.total} ${isCompleted ? '✅' : '⏳'}`);
+            
+            if (!isCompleted) {
+              allAnnotatorsCompleted = false;
+            }
+          } else {
+            annotatorStatus.push(`${annotator}: 未通过抽检，无需复检`);
+          }
+        });
+        
+        console.log('📊 视频复检状态:', {
+          videoId,
+          标注人状态: annotatorStatus,
+          所有标注人都完成: allAnnotatorsCompleted
+        });
+        
+        if (allAnnotatorsCompleted) {
+          console.log('✅ 该视频的所有标注人都已完成复检，标记视频为完成状态');
+          
+          // 标记视频为已完成
+          const { error: videoError } = await supabase
+            .from('videos')
+            .update({
+              is_completed: true,
+              review_completed_at: new Date().toISOString()
+            })
+            .eq('id', videoId);
 
-        if (videoError) {
-          console.error('❌ 更新视频状态失败:', videoError);
-          message.warning('复检数据已保存，但更新视频状态失败');
+          if (videoError) {
+            console.error('❌ 更新视频状态失败:', videoError);
+            message.warning('复检数据已保存，但更新视频状态失败');
+          } else {
+            console.log('✅ 视频已标记为完成');
+          }
         } else {
-          console.log('✅ 视频已标记为完成');
+          console.log('⏳ 该视频还有其他标注人未完成复检，暂不标记为完成');
         }
       }
 

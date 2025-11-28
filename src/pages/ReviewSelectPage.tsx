@@ -241,6 +241,17 @@ export default function ReviewSelectPage() {
           });
         }
         
+        // 🔧 第一步：先检查每个标注人是否有质检通过的数据（抽检逻辑）
+        const annotatorQualifiedMap = new Map<string, boolean>();
+        deduplicatedAnnotations.forEach(ann => {
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+          
+          if (hasHumanText && isQualified) {
+            annotatorQualifiedMap.set(ann.annotator, true);
+          }
+        });
+        
         // 按标注人分组统计（使用去重后的数据）
         const annotatorMap = new Map<string, AnnotatorData>();
         
@@ -264,6 +275,9 @@ export default function ReviewSelectPage() {
           const annotatorData = annotatorMap.get(annotator)!;
           annotatorData.totalAnnotations++;
           
+          // 🔧 抽检逻辑：只要该标注人有任意一条数据被质检通过，则所有有标注的数据都可以进入复检
+          const annotatorHasQualified = annotatorQualifiedMap.get(annotator) === true;
+          
           if (hasHumanText) {
             // 已复检完成的数据
             if (ann.review_status === true) {
@@ -277,12 +291,12 @@ export default function ReviewSelectPage() {
                 }
               }
             } 
-            // 待复检的数据：质检通过（is_qualified === true）且已设置inspector，但未复检完成
-            // 注意：只有质检通过的数据才应该进入复检流程
-            else if (ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true) {
+            // 🔧 新逻辑：待复检的数据
+            // 只要该标注人有质检通过的数据（抽检通过），则所有有标注文本且未复检的数据都计入待复检
+            else if (annotatorHasQualified) {
               annotatorData.pendingCount++;
             }
-            // 其他情况（未质检或质检不通过的数据）不计入待复检
+            // 如果该标注人没有任何质检通过的数据，则不计入待复检
           } else {
             annotatorData.unannotatedCount++;
           }
@@ -499,6 +513,17 @@ export default function ReviewSelectPage() {
           console.log(`  🔧 去重统计: 原始 ${originalCount} 条，去重后 ${deduplicatedCount} 条，去除了 ${originalCount - deduplicatedCount} 条重复数据`);
         }
         
+        // 🔧 第一步：先检查每个标注人是否有质检通过的数据（抽检逻辑）
+        const annotatorQualifiedMap = new Map<string, boolean>();
+        deduplicatedAnnotations.forEach(ann => {
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+          
+          if (hasHumanText && isQualified) {
+            annotatorQualifiedMap.set(ann.annotator, true);
+          }
+        });
+        
         // 按标注人分组统计（使用去重后的数据）
         const annotatorMap = new Map<string, AnnotatorData>();
         
@@ -522,6 +547,9 @@ export default function ReviewSelectPage() {
           const annotatorData = annotatorMap.get(annotator)!;
           annotatorData.totalAnnotations++;
         
+          // 🔧 抽检逻辑：只要该标注人有任意一条数据被质检通过，则所有有标注的数据都可以进入复检
+          const annotatorHasQualified = annotatorQualifiedMap.get(annotator) === true;
+        
           if (hasHumanText) {
             // 已复检完成的数据
             if (ann.review_status === true) {
@@ -535,12 +563,12 @@ export default function ReviewSelectPage() {
                 }
               }
             } 
-            // 待复检的数据：质检通过（is_qualified === true）且已设置inspector，但未复检完成
-            // 注意：只有质检通过的数据才应该进入复检流程
-            else if (ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true) {
+            // 🔧 新逻辑：待复检的数据
+            // 只要该标注人有质检通过的数据（抽检通过），则所有有标注文本且未复检的数据都计入待复检
+            else if (annotatorHasQualified) {
               annotatorData.pendingCount++;
             }
-            // 其他情况（未质检或质检不通过的数据）不计入待复检
+            // 如果该标注人没有任何质检通过的数据，则不计入待复检
           } else {
             annotatorData.unannotatedCount++;
           }
