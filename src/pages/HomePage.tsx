@@ -63,6 +63,7 @@ export default function HomePage() {
       console.log(`🔄 数据刷新完成，加载第 ${currentPage} 页 (version=${dataVersion})`);
       loadPageVideos(currentPage, pageSize, searchText, completedVideoIds, annotatorCountMap);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataVersion]); // 只监听 dataVersion，用于首次加载和刷新后加载
 
   // 当页码或搜索条件变化时，加载对应页的视频
@@ -75,6 +76,7 @@ export default function HomePage() {
     } else {
       console.log(`📄 ⚠️ 不满足条件，跳过加载: completedVideoIds.size=${completedVideoIds.size}, isLoading=${isLoadingRef.current}, dataVersion=${dataVersion}`);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, pageSize, searchText]); // dataVersion 不需要作为依赖项，因为它会导致不必要的重复加载
 
   // 监听页面可见性，当用户返回页面时自动刷新（暂时禁用，避免翻页时意外触发）
@@ -128,6 +130,7 @@ export default function HomePage() {
           console.error('查询标注数据失败:', error);
           message.error('加载失败');
           setLoading(false);
+          isLoadingRef.current = false;
           return;
         }
         
@@ -239,6 +242,7 @@ export default function HomePage() {
       if (idsToUse.size === 0) {
         setCompletedVideos([]);
         setLoading(false);
+        isLoadingRef.current = false;
         return;
       }
 
@@ -263,6 +267,7 @@ export default function HomePage() {
           console.error('搜索视频失败:', searchError);
           message.error('搜索失败');
           setLoading(false);
+          isLoadingRef.current = false;
           return;
         }
         
@@ -304,6 +309,7 @@ export default function HomePage() {
           console.error('加载视频失败:', error);
           message.error('加载视频失败');
           setLoading(false);
+          isLoadingRef.current = false;
           return;
         }
         

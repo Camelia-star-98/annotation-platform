@@ -115,15 +115,12 @@ export default function AnnotationTaskListPage() {
       const videoIds = publishedVideos.map(v => v.id);
       const completedCountMap = await getBatchCompletedAnnotatorsCount(videoIds);
       
-      // 🚀 优化：使用聚合查询一次性获取所有需要的数据
-      // 查询每个视频的总句子数和完成情况
+      // 🚀 优化：查询所有句子（包括未标注的）来获取真实的总句子数和已完成情况
       console.log('🔍 查询视频标注统计信息...');
-      const { data: annotationStats, error: statsError } = await supabase
+      const { data: allSentences, error: statsError } = await supabase
         .from('annotations')
-        .select('video_id, annotator, sentence_no, human_annotated_text')
-        .in('video_id', videoIds)
-        .not('human_annotated_text', 'is', null)
-        .neq('human_annotated_text', '');
+        .select('video_id, sentence_no, annotator, human_annotated_text')
+        .in('video_id', videoIds);
       
       if (statsError) {
         console.error('❌ 查询标注统计失败:', statsError);
@@ -143,19 +140,13 @@ export default function AnnotationTaskListPage() {
         return;
       }
       
-      console.log(`✅ 获取到 ${annotationStats?.length || 0} 条标注数据`);
+      console.log(`✅ 获取到 ${allSentences?.length || 0} 条句子记录`);
       
       // 统计每个视频的总句子数和每个标注员的完成情况
       const videoTotalSentences = new Map<string, Set<number>>();
       const videoAnnotatorSentences = new Map<string, Map<string, Set<number>>>();
       
-      // 同时也需要查询所有句子（包括未标注的）来获取真实的总句子数
-      const { data: allSentences } = await supabase
-        .from('annotations')
-        .select('video_id, sentence_no')
-        .in('video_id', videoIds);
-      
-      // 统计每个视频的总句子数
+      // 统计每个视频的总句子数（所有句子，不管是否标注）
       allSentences?.forEach(item => {
         if (!videoTotalSentences.has(item.video_id)) {
           videoTotalSentences.set(item.video_id, new Set());
@@ -163,16 +154,20 @@ export default function AnnotationTaskListPage() {
         videoTotalSentences.get(item.video_id)!.add(item.sentence_no);
       });
       
-      // 统计每个标注员已完成的句子
-      annotationStats?.forEach(item => {
-        if (!videoAnnotatorSentences.has(item.video_id)) {
-          videoAnnotatorSentences.set(item.video_id, new Map());
+      // 统计每个标注员已完成的句子（只统计有内容的标注）
+      allSentences?.forEach(item => {
+        // 只统计有标注人且有标注内容的记录
+        if (item.annotator && item.annotator.trim() !== '' && 
+            item.human_annotated_text && item.human_annotated_text.trim() !== '') {
+          if (!videoAnnotatorSentences.has(item.video_id)) {
+            videoAnnotatorSentences.set(item.video_id, new Map());
+          }
+          const annotatorMap = videoAnnotatorSentences.get(item.video_id)!;
+          if (!annotatorMap.has(item.annotator)) {
+            annotatorMap.set(item.annotator, new Set());
+          }
+          annotatorMap.get(item.annotator)!.add(item.sentence_no);
         }
-        const annotatorMap = videoAnnotatorSentences.get(item.video_id)!;
-        if (!annotatorMap.has(item.annotator)) {
-          annotatorMap.set(item.annotator, new Set());
-        }
-        annotatorMap.get(item.annotator)!.add(item.sentence_no);
       });
       
       // 判断哪些视频已经有标注员完成了
