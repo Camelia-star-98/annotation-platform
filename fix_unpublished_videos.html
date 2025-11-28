@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>修复未发布的视频</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .description {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .info-box {
+            background: #e8f4fd;
+            border-left: 4px solid #3498db;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        
+        .info-box h3 {
+            color: #2980b9;
+            font-size: 16px;
+            margin-bottom: 8px;
+        }
+        
+        .info-box p {
+            color: #34495e;
+            font-size: 14px;
+            margin: 5px 0;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #7f8c8d;
+            font-size: 16px;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            font-size: 14px;
+        }
+        
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ecf0f1;
+        }
+        
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+            position: sticky;
+            top: 0;
+        }
+        
+        tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .status-unpublished {
+            background: #fee;
+            color: #c0392b;
+        }
+        
+        .status-published {
+            background: #e8f8f5;
+            color: #27ae60;
+        }
+        
+        .btn-primary {
+            background: #3498db;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary:hover {
+            background: #2980b9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+        }
+        
+        .btn-primary:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .btn-fix-all {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        
+        .btn-fix-all:hover {
+            background: #229954;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(39, 174, 96, 0.3);
+        }
+        
+        .btn-fix-all:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #3498db;
+        }
+        
+        .stat-card.unpublished {
+            border-left-color: #e74c3c;
+        }
+        
+        .stat-card.published {
+            border-left-color: #27ae60;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #2c3e50;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+        
+        .empty-state-text {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        
+        .empty-state-subtext {
+            font-size: 14px;
+            color: #95a5a6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 修复未发布的视频</h1>
+        <p class="description">此工具会检查数据库中所有 is_published = false 或 null 的视频，并提供一键修复功能。</p>
+        
+        <div class="info-box">
+            <h3>❓ 为什么会出现未发布的视频？</h3>
+            <p><strong>原因：</strong>之前上传视频/标注数据时，没有自动设置 is_published = true。</p>
+            <p><strong>影响：</strong>这些视频不会出现在"待标注任务"页面。</p>
+            <p><strong>解决：</strong>点击下方"一键修复全部"按钮，将所有未发布的视频设置为已发布。</p>
+        </div>
+        
+        <div id="loading" class="loading">
+            <div class="spinner"></div>
+            正在检查数据库...
+        </div>
+        
+        <div id="results" style="display: none;">
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-label">总视频数</div>
+                    <div class="stat-value" id="totalCount">0</div>
+                </div>
+                <div class="stat-card unpublished">
+                    <div class="stat-label">未发布视频</div>
+                    <div class="stat-value" id="unpublishedCount">0</div>
+                </div>
+                <div class="stat-card published">
+                    <div class="stat-label">已发布视频</div>
+                    <div class="stat-value" id="publishedCount">0</div>
+                </div>
+            </div>
+            
+            <div id="message"></div>
+            
+            <div id="fixAllContainer" style="display: none;">
+                <button class="btn-fix-all" id="fixAllBtn">
+                    🚀 一键修复全部（将所有未发布视频设为已发布）
+                </button>
+            </div>
+            
+            <div id="tableContainer"></div>
+        </div>
+    </div>
+
+    <script>
+        // Supabase 配置
+        const SUPABASE_URL = 'https://ybgjhicxtqozigiynxck.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InliZ2poaWN4dHFvemlnaXlueGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2OTg1ODIsImV4cCI6MjA0ODI3NDU4Mn0.xg5Vq9z0nw59wO7DYCIV2fmb1W6jh-8IZ3NdVYeHjYY';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        let unpublishedVideos = [];
+        
+        async function checkVideos() {
+            try {
+                console.log('🔍 开始检查视频...');
+                
+                // 查询所有视频
+                const { data: allVideos, error: allError } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (allError) {
+                    console.error('❌ 查询失败:', allError);
+                    showError('查询失败: ' + allError.message);
+                    return;
+                }
+                
+                console.log('✅ 查询成功，共', allVideos.length, '个视频');
+                
+                // 分类统计
+                const publishedVideos = allVideos.filter(v => v.is_published === true);
+                unpublishedVideos = allVideos.filter(v => v.is_published !== true);
+                
+                console.log('📊 已发布:', publishedVideos.length);
+                console.log('📊 未发布:', unpublishedVideos.length);
+                
+                // 更新统计
+                document.getElementById('totalCount').textContent = allVideos.length;
+                document.getElementById('publishedCount').textContent = publishedVideos.length;
+                document.getElementById('unpublishedCount').textContent = unpublishedVideos.length;
+                
+                // 显示结果
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('results').style.display = 'block';
+                
+                if (unpublishedVideos.length === 0) {
+                    showSuccess('✅ 太好了！所有视频都已发布，无需修复。');
+                    showEmptyState();
+                } else {
+                    showWarning(`⚠️ 发现 ${unpublishedVideos.length} 个未发布的视频，请点击下方按钮修复。`);
+                    document.getElementById('fixAllContainer').style.display = 'block';
+                    renderTable(unpublishedVideos);
+                }
+                
+            } catch (err) {
+                console.error('❌ 检查失败:', err);
+                showError('检查失败: ' + err.message);
+            }
+        }
+        
+        function renderTable(videos) {
+            const html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>视频ID</th>
+                            <th>视频名称</th>
+                            <th>创建时间</th>
+                            <th>待标注数</th>
+                            <th>发布状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${videos.map(video => `
+                            <tr id="row-${video.id}">
+                                <td><code>${video.id}</code></td>
+                                <td>${video.name || '未命名'}</td>
+                                <td>${new Date(video.created_at).toLocaleString('zh-CN')}</td>
+                                <td>${video.required_annotators || 1}</td>
+                                <td>
+                                    <span class="status-badge ${video.is_published ? 'status-published' : 'status-unpublished'}" id="status-${video.id}">
+                                        ${video.is_published ? '✅ 已发布' : '❌ 未发布'}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn-primary" onclick="fixSingle('${video.id}')" id="btn-${video.id}">
+                                        修复此视频
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('tableContainer').innerHTML = html;
+        }
+        
+        async function fixSingle(videoId) {
+            const btn = document.getElementById(`btn-${videoId}`);
+            btn.disabled = true;
+            btn.textContent = '修复中...';
+            
+            try {
+                const { error } = await supabase
+                    .from('videos')
+                    .update({ is_published: true })
+                    .eq('id', videoId);
+                
+                if (error) {
+                    console.error('❌ 修复失败:', error);
+                    btn.textContent = '修复失败';
+                    setTimeout(() => {
+                        btn.textContent = '修复此视频';
+                        btn.disabled = false;
+                    }, 2000);
+                    return;
+                }
+                
+                console.log('✅ 修复成功:', videoId);
+                
+                // 更新UI
+                document.getElementById(`status-${videoId}`).className = 'status-badge status-published';
+                document.getElementById(`status-${videoId}`).textContent = '✅ 已发布';
+                btn.textContent = '✅ 已修复';
+                btn.style.background = '#27ae60';
+                
+                // 更新统计
+                const currentUnpublished = parseInt(document.getElementById('unpublishedCount').textContent);
+                const currentPublished = parseInt(document.getElementById('publishedCount').textContent);
+                document.getElementById('unpublishedCount').textContent = currentUnpublished - 1;
+                document.getElementById('publishedCount').textContent = currentPublished + 1;
+                
+                // 从未发布列表中移除
+                unpublishedVideos = unpublishedVideos.filter(v => v.id !== videoId);
+                
+                // 如果全部修复完成
+                if (unpublishedVideos.length === 0) {
+                    setTimeout(() => {
+                        showSuccess('🎉 所有视频都已修复！刷新页面查看最新状态。');
+                        document.getElementById('fixAllContainer').style.display = 'none';
+                    }, 1000);
+                }
+                
+            } catch (err) {
+                console.error('❌ 修复失败:', err);
+                btn.textContent = '修复失败';
+                setTimeout(() => {
+                    btn.textContent = '修复此视频';
+                    btn.disabled = false;
+                }, 2000);
+            }
+        }
+        
+        async function fixAll() {
+            const btn = document.getElementById('fixAllBtn');
+            btn.disabled = true;
+            btn.textContent = '修复中...';
+            
+            try {
+                const videoIds = unpublishedVideos.map(v => v.id);
+                
+                console.log('🚀 开始批量修复:', videoIds);
+                
+                const { error } = await supabase
+                    .from('videos')
+                    .update({ is_published: true })
+                    .in('id', videoIds);
+                
+                if (error) {
+                    console.error('❌ 批量修复失败:', error);
+                    showError('批量修复失败: ' + error.message);
+                    btn.textContent = '修复失败，请重试';
+                    btn.disabled = false;
+                    return;
+                }
+                
+                console.log('✅ 批量修复成功');
+                
+                showSuccess(`🎉 成功修复 ${videoIds.length} 个视频！现在它们都可以在"待标注任务"页面看到了。`);
+                
+                // 重新加载数据
+                setTimeout(() => {
+                    location.reload();
+                }, 2000);
+                
+            } catch (err) {
+                console.error('❌ 批量修复失败:', err);
+                showError('批量修复失败: ' + err.message);
+                btn.textContent = '修复失败，请重试';
+                btn.disabled = false;
+            }
+        }
+        
+        function showSuccess(msg) {
+            document.getElementById('message').innerHTML = `<div class="success-message">${msg}</div>`;
+        }
+        
+        function showError(msg) {
+            document.getElementById('message').innerHTML = `<div class="error-message">${msg}</div>`;
+        }
+        
+        function showWarning(msg) {
+            document.getElementById('message').innerHTML = `<div class="info-box"><p>${msg}</p></div>`;
+        }
+        
+        function showEmptyState() {
+            document.getElementById('tableContainer').innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-state-icon">✅</div>
+                    <div class="empty-state-text">所有视频都已发布</div>
+                    <div class="empty-state-subtext">无需任何操作</div>
+                </div>
+            `;
+        }
+        
+        // 绑定事件
+        document.getElementById('fixAllBtn')?.addEventListener('click', fixAll);
+        
+        // 页面加载时执行检查
+        checkVideos();
+    </script>
+</body>
+</html>
+

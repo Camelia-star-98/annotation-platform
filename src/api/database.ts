@@ -110,6 +110,7 @@ export async function addVideo(video: VideoInfo): Promise<VideoInfo | null> {
     subject: video.subject,
     duration: video.duration || 0,
     required_annotators: video.required_annotators || 1 // 添加待标注数量字段
+    // is_published 默认为 false（数据库默认值），需要手动发布
   };
   
   console.log('📤 准备插入数据库的数据:', insertData);
