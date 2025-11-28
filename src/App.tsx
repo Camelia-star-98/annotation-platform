@@ -13,6 +13,7 @@ import AnalysisPage from './pages/AnalysisPage';
 import ComparisonPage from './pages/ComparisonPage';
 import VideoManagePage from './pages/VideoManagePage';
 import SupabaseTestPage from './pages/SupabaseTestPage';
+import DiagnosticPage from './pages/DiagnosticPage';
 
 function App() {
   return (
@@ -31,6 +32,7 @@ function App() {
           <Route path="/comparison" element={<ComparisonPage />} />
           <Route path="/video-manage" element={<VideoManagePage />} />
           <Route path="/test-supabase" element={<SupabaseTestPage />} />
+          <Route path="/diagnostic" element={<DiagnosticPage />} />
         </Routes>
       </Router>
     </ConfigProvider>

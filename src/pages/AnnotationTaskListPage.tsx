@@ -49,6 +49,16 @@ interface RejectedAnnotation {
   rejectedTime: string;
 }
 
+interface CompletedTask {
+  id: string;
+  videoId: string;
+  videoName: string;
+  subject: string;
+  duration: number;
+  annotationCount: number; // 标注的条数
+  completedTime: string;
+}
+
 export default function AnnotationTaskListPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -57,11 +67,13 @@ export default function AnnotationTaskListPage() {
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState<AnnotationTask[]>([]);
   const [rejectedItems, setRejectedItems] = useState<RejectedAnnotation[]>([]);
+  const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [activeTab, setActiveTab] = useState<string>('tasks');
 
   useEffect(() => {
     loadTasks();
     loadRejectedItems();
+    loadCompletedTasks();
   }, []);
 
   const loadTasks = async () => {
@@ -354,6 +366,121 @@ export default function AnnotationTaskListPage() {
     }
   };
 
+  const loadCompletedTasks = async () => {
+    try {
+      const { supabase } = await import('../api/supabase');
+      const allVideos = await getVideos();
+      
+      console.log('🔍 加载已标注任务 - 当前标注人:', annotatorName);
+      
+      // 查询当前标注人的所有标注数据
+      const { data: myAnnotations, error } = await supabase
+        .from('annotations')
+        .select('video_id, sentence_no, human_annotated_text, updated_at')
+        .eq('annotator', annotatorName);
+      
+      if (error) {
+        console.error('查询已标注数据失败:', error);
+        message.error('加载已标注任务失败');
+        return;
+      }
+      
+      console.log('📊 当前标注人的标注数据总数:', myAnnotations?.length || 0);
+      
+      // 统计每个视频的标注情况
+      // Map<videoId, { sentenceSet: Set<number>, maxUpdateTime: string, annotationCount: number }>
+      const videoStatsMap = new Map<string, { sentenceSet: Set<number>, maxUpdateTime: string, annotationCount: number }>();
+      
+      myAnnotations?.forEach(item => {
+        if (!videoStatsMap.has(item.video_id)) {
+          videoStatsMap.set(item.video_id, {
+            sentenceSet: new Set(),
+            maxUpdateTime: item.updated_at || '',
+            annotationCount: 0
+          });
+        }
+        const stats = videoStatsMap.get(item.video_id)!;
+        
+        // 只有当 human_annotated_text 不为空时，才记录该句子已被标注
+        if (item.human_annotated_text && item.human_annotated_text.trim() !== '') {
+          stats.sentenceSet.add(item.sentence_no);
+          stats.annotationCount++;
+          // 更新最新的标注时间
+          if (item.updated_at && item.updated_at > stats.maxUpdateTime) {
+            stats.maxUpdateTime = item.updated_at;
+          }
+        }
+      });
+      
+      // 查询每个视频的总句子数
+      const videoIds = Array.from(videoStatsMap.keys());
+      if (videoIds.length === 0) {
+        setCompletedTasks([]);
+        console.log('✅ 当前标注人没有标注过任何视频');
+        return;
+      }
+      
+      const { data: allVideoSentences, error: totalError } = await supabase
+        .from('annotations')
+        .select('video_id, sentence_no')
+        .in('video_id', videoIds);
+      
+      if (totalError) {
+        console.error('查询视频总句子数失败:', totalError);
+        message.error('查询视频总句子数失败');
+        return;
+      }
+      
+      // 统计每个视频的总句子数（按 video_id 和 sentence_no 去重）
+      const videoTotalSentences = new Map<string, Set<number>>();
+      allVideoSentences?.forEach(item => {
+        if (!videoTotalSentences.has(item.video_id)) {
+          videoTotalSentences.set(item.video_id, new Set());
+        }
+        videoTotalSentences.get(item.video_id)!.add(item.sentence_no);
+      });
+      
+      // 创建视频ID到视频信息的映射
+      const videoMap = new Map(allVideos.map(v => [v.id, v]));
+      
+      // 找出已完成的视频（已标注的句子数 = 视频的总句子数）
+      const completed: CompletedTask[] = [];
+      
+      videoStatsMap.forEach((stats, videoId) => {
+        const totalSentences = videoTotalSentences.get(videoId)?.size || 0;
+        const annotatedSentences = stats.sentenceSet.size;
+        
+        // 只有当已标注的句子数 = 视频的总句子数时，才认为已完成
+        if (totalSentences > 0 && annotatedSentences === totalSentences) {
+          const video = videoMap.get(videoId);
+          if (video) {
+            completed.push({
+              id: `${videoId}_${annotatorName}`, // 使用组合ID避免重复
+              videoId: videoId,
+              videoName: video.name || '未命名视频',
+              subject: video.subject || '未知',
+              duration: video.duration || 0,
+              annotationCount: stats.annotationCount,
+              completedTime: stats.maxUpdateTime
+            });
+            console.log(`✅ 已完成视频: ${video.name} (${annotatedSentences}/${totalSentences} 句)`);
+          }
+        } else {
+          console.log(`⏳ 未完成视频: ${videoMap.get(videoId)?.name} (${annotatedSentences}/${totalSentences} 句)`);
+        }
+      });
+      
+      // 按完成时间降序排序（最新的在最上面）
+      completed.sort((a, b) => b.completedTime.localeCompare(a.completedTime));
+      
+      setCompletedTasks(completed);
+      console.log(`✅ 加载了 ${completed.length} 个已完成的标注任务`);
+    } catch (error) {
+      console.error('加载已标注任务失败:', error);
+      message.error('加载已标注任务失败');
+    }
+  };
+
   const handleStartAnnotation = (task: AnnotationTask) => {
     // 跳转到标注页面，并传递视频ID和标注员姓名
     navigate('/annotation', {
@@ -545,6 +672,77 @@ export default function AnnotationTaskListPage() {
     }
   ];
 
+  const completedColumns = [
+    {
+      title: '视频名称',
+      dataIndex: 'videoName',
+      key: 'videoName',
+      width: 300
+    },
+    {
+      title: '科目',
+      dataIndex: 'subject',
+      key: 'subject',
+      width: 100,
+      render: (text: string) => <Tag color="blue">{text}</Tag>
+    },
+    {
+      title: '时长',
+      dataIndex: 'duration',
+      key: 'duration',
+      width: 100,
+      render: (seconds: number) => {
+        if (!seconds) return '-';
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+      }
+    },
+    {
+      title: '标注条数',
+      dataIndex: 'annotationCount',
+      key: 'annotationCount',
+      width: 120,
+      render: (count: number) => (
+        <Tag color="green">{count} 条</Tag>
+      )
+    },
+    {
+      title: '完成时间',
+      dataIndex: 'completedTime',
+      key: 'completedTime',
+      width: 180,
+      render: (text: string) => new Date(text).toLocaleString('zh-CN')
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 150,
+      fixed: 'right' as const,
+      render: (_: any, record: CompletedTask) => (
+        <Button
+          type="default"
+          icon={<CheckCircleOutlined />}
+          onClick={() => handleViewCompleted(record)}
+        >
+          查看详情
+        </Button>
+      )
+    }
+  ];
+
+  const handleViewCompleted = (task: CompletedTask) => {
+    // 跳转到标注页面查看已完成的标注
+    navigate('/annotation', {
+      state: {
+        videoId: task.videoId,
+        videoName: task.videoName,
+        annotatorName: annotatorName,
+        viewOnly: true // 标记为查看模式
+      }
+    });
+  };
+
   return (
     <Layout style={{ minHeight: '100vh', background: '#f0f2f5' }}>
       <Header style={{ 
@@ -597,6 +795,30 @@ export default function AnnotationTaskListPage() {
                       pageSize: 10,
                       showSizeChanger: true,
                       showTotal: (total) => `共 ${total} 个任务`
+                    }}
+                    scroll={{ x: 1000 }}
+                  />
+                )
+              },
+              {
+                key: 'completed',
+                label: (
+                  <Space>
+                    <CheckCircleOutlined />
+                    <span>已标注任务</span>
+                    <Tag color="green">{completedTasks.length}</Tag>
+                  </Space>
+                ),
+                children: (
+                  <Table
+                    columns={completedColumns}
+                    dataSource={completedTasks}
+                    rowKey="id"
+                    loading={loading}
+                    pagination={{
+                      pageSize: 10,
+                      showSizeChanger: true,
+                      showTotal: (total) => `共 ${total} 个已完成任务`
                     }}
                     scroll={{ x: 1000 }}
                   />
