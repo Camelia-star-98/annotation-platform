@@ -61,6 +61,7 @@ export default function InspectionManagePage() {
   const [totalCount, setTotalCount] = useState(0); // 总数据量
   const [isLoadingMore, setIsLoadingMore] = useState(false); // 是否正在加载更多
   const [isLoadingData, setIsLoadingData] = useState(false); // 防止重复加载
+  const [statistics, setStatistics] = useState({ pendingCount: 0, inspectedCount: 0, passedCount: 0, failedCount: 0 }); // 统计数据
 
   // 按视频分组数据 - 使用 useCallback 优化
   const groupByVideo = useCallback((data: AnnotationItem[]) => {
@@ -309,9 +310,110 @@ export default function InspectionManagePage() {
     }
   }, [selectedVideoId, videoName, samplePercentage, pageSize]);
 
+  // 单独查询统计数据（从数据库查询，考虑去重）
+  const loadStatistics = useCallback(async () => {
+    try {
+      // 查询所有待质检和已质检的数据（排除已复检完成的数据）
+      // 使用分页查询避免1000条限制
+      let allAnnotationsForStats: any[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      
+      while (hasMore) {
+        const { data, error } = await supabase
+          .from('annotations')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
+          .not('human_annotated_text', 'is', null)
+          .neq('human_annotated_text', '')
+          .is('review_status', null)  // 排除已复检完成的数据
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+        
+        if (error) {
+          console.error('查询统计数据失败（第' + (page + 1) + '页）:', error);
+          break;
+        }
+        
+        if (data && data.length > 0) {
+          allAnnotationsForStats = allAnnotationsForStats.concat(data);
+        }
+        
+        hasMore = data && data.length === pageSize;
+        page++;
+      }
+      
+      // 🔧 去重逻辑：对于相同 video_id + sentence_no + annotator 的数据
+      // 优先保留有质检状态的数据，如果都有质检状态则保留最新的
+      const deduplicatedMap = new Map<string, any>();
+      
+      allAnnotationsForStats.forEach(ann => {
+        const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+        const existing = deduplicatedMap.get(key);
+        
+        if (!existing) {
+          deduplicatedMap.set(key, ann);
+        } else {
+          // 优先保留有质检状态的数据
+          const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && existing.is_qualified === true;
+          const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+          
+          if (currentHasInspection && !existingHasInspection) {
+            // 当前数据有质检状态，旧数据没有，保留当前数据
+            deduplicatedMap.set(key, ann);
+          } else if (existingHasInspection && !currentHasInspection) {
+            // 旧数据有质检状态，当前数据没有，保留旧数据
+            // 不做任何操作
+          } else {
+            // 都有或都没有质检状态，保留最新的（按 updated_at）
+            const existingTime = existing.updated_at || existing.created_at || '';
+            const currentTime = ann.updated_at || ann.created_at || '';
+            if (currentTime > existingTime) {
+              deduplicatedMap.set(key, ann);
+            }
+          }
+        }
+      });
+      
+      const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+      
+      // 计算统计数据
+      const pendingCount = deduplicatedAnnotations.filter(item => {
+        const hasHumanText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+        const notInspected = !item.inspector || item.inspector.trim() === '';
+        return hasHumanText && notInspected;
+      }).length;
+      
+      const inspectedCount = deduplicatedAnnotations.filter(item => 
+        item.inspector && item.inspector.trim() !== ''
+      ).length;
+      
+      const passedCount = deduplicatedAnnotations.filter(item => 
+        item.is_qualified === true && item.inspector && item.inspector.trim() !== ''
+      ).length;
+      
+      const failedCount = deduplicatedAnnotations.filter(item => 
+        item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
+      ).length;
+      
+      console.log('📊 统计数据（去重后）:', {
+        原始数量: allAnnotationsForStats.length,
+        去重后数量: deduplicatedAnnotations.length,
+        待质检: pendingCount,
+        已质检: inspectedCount,
+        通过: passedCount,
+        不通过: failedCount
+      });
+      
+      setStatistics({ pendingCount, inspectedCount, passedCount, failedCount });
+    } catch (error) {
+      console.error('加载统计数据失败:', error);
+    }
+  }, []);
+
   // 加载数据（只在 selectedVideoId 变化时重新加载）
   useEffect(() => {
     loadData(false);
+    loadStatistics(); // 同时加载统计数据
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedVideoId]);
 
@@ -407,6 +509,7 @@ export default function InspectionManagePage() {
       
       // 重新加载数据
       await loadData(false);
+      await loadStatistics(); // 重新加载统计数据
       
       // 清空选择
       setSelectedRows([]);
@@ -596,34 +699,6 @@ export default function InspectionManagePage() {
       }
     }
   ];
-
-  // 使用useMemo优化统计数据计算 - 基于实际加载的数据，而不是过滤后的数据
-  // 排除已复检完成的数据（reviewStatus 不为 null）
-  const statistics = useMemo(() => {
-    // 使用allAnnotations而不是filteredData，确保统计数据准确
-    // 先过滤掉已复检完成的数据
-    const allItems = allAnnotations.filter(item => item.reviewStatus == null);
-    
-    const pendingCount = allItems.filter(item => {
-      const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-      const notInspected = !item.inspector;
-      return hasHumanText && notInspected;
-    }).length;
-    
-    const inspectedCount = allItems.filter(item => 
-      item.inspector && item.inspector.trim() !== ''
-    ).length;
-    
-    const passedCount = allItems.filter(item => 
-      item.isQualified === true && item.inspector
-    ).length;
-    
-    const failedCount = allItems.filter(item => 
-      item.isQualified === false && item.inspector
-    ).length;
-    
-    return { pendingCount, inspectedCount, passedCount, failedCount };
-  }, [allAnnotations]);
 
   const rowSelection = {
     selectedRowKeys: selectedRows,

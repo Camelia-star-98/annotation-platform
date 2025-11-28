@@ -173,9 +173,10 @@ export default function ReviewSelectPage() {
       // 2. 对每个视频统计待复检数据
       const videoStatsPromises = uniqueVideoIds.map(async (videoId) => {
         // 查询该视频的所有标注数据（按标注人分组）
+        // 注意：需要查询 inspector 字段来判断是否已质检，还需要 sentence_no 用于去重
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified')
           .eq('video_id', videoId)
           .not('annotator', 'is', null)
           .neq('annotator', '')
@@ -183,10 +184,67 @@ export default function ReviewSelectPage() {
         
         if (error || !annotations) return null;
         
-        // 按标注人分组统计
-        const annotatorMap = new Map<string, AnnotatorData>();
+        // 🔧 去重逻辑：对于相同 video_id + sentence_no + annotator 的数据
+        // 优先保留有质检状态的数据，如果都有质检状态则保留最新的
+        const deduplicatedMap = new Map<string, any>();
         
         annotations.forEach(ann => {
+          const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+          const existing = deduplicatedMap.get(key);
+          
+          if (!existing) {
+            deduplicatedMap.set(key, ann);
+          } else {
+            // 优先保留有质检状态的数据
+            const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && existing.is_qualified === true;
+            const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+            
+            if (currentHasInspection && !existingHasInspection) {
+              // 当前数据有质检状态，旧数据没有，保留当前数据
+              deduplicatedMap.set(key, ann);
+            } else if (existingHasInspection && !currentHasInspection) {
+              // 旧数据有质检状态，当前数据没有，保留旧数据
+              // 不做任何操作
+            } else {
+              // 都有或都没有质检状态，保留最新的（按 updated_at）
+              const existingTime = existing.updated_at || existing.created_at || '';
+              const currentTime = ann.updated_at || ann.created_at || '';
+              if (currentTime > existingTime) {
+                deduplicatedMap.set(key, ann);
+              }
+            }
+          }
+        });
+        
+        const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+        
+        // 调试日志：打印查询到的数据统计
+        if (deduplicatedAnnotations && deduplicatedAnnotations.length > 0) {
+          const originalCount = annotations.length;
+          const deduplicatedCount = deduplicatedAnnotations.length;
+          const withInspector = deduplicatedAnnotations.filter(a => a.inspector && a.inspector.trim() !== '').length;
+          const withReviewStatus = deduplicatedAnnotations.filter(a => a.review_status === true).length;
+          const withHumanText = deduplicatedAnnotations.filter(a => a.human_annotated_text && a.human_annotated_text.trim() !== '').length;
+          const qualified = deduplicatedAnnotations.filter(a => a.is_qualified === true).length;
+          const withInspectorAndQualified = deduplicatedAnnotations.filter(a => 
+            a.inspector && a.inspector.trim() !== '' && a.is_qualified === true
+          ).length;
+          console.log(`  📊 视频 ${videoId} 的数据统计:`, {
+            原始数量: originalCount,
+            去重后数量: deduplicatedCount,
+            去除了: originalCount - deduplicatedCount,
+            有标注文本: withHumanText,
+            有质检人: withInspector,
+            质检通过: qualified,
+            有质检人且通过: withInspectorAndQualified,
+            已复检: withReviewStatus
+          });
+        }
+        
+        // 按标注人分组统计（使用去重后的数据）
+        const annotatorMap = new Map<string, AnnotatorData>();
+        
+        deduplicatedAnnotations.forEach(ann => {
           const annotator = ann.annotator;
           const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
           
@@ -207,6 +265,7 @@ export default function ReviewSelectPage() {
           annotatorData.totalAnnotations++;
           
           if (hasHumanText) {
+            // 已复检完成的数据
             if (ann.review_status === true) {
               annotatorData.reviewedCount++;
               if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
@@ -217,9 +276,13 @@ export default function ReviewSelectPage() {
                   annotatorData.lastReviewTime = ann.updated_at;
                 }
               }
-            } else {
+            } 
+            // 待复检的数据：质检通过（is_qualified === true）且已设置inspector，但未复检完成
+            // 注意：只有质检通过的数据才应该进入复检流程
+            else if (ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true) {
               annotatorData.pendingCount++;
             }
+            // 其他情况（未质检或质检不通过的数据）不计入待复检
           } else {
             annotatorData.unannotatedCount++;
           }
@@ -229,18 +292,48 @@ export default function ReviewSelectPage() {
           }
         });
         
+        // 调试日志：打印每个标注人的统计信息
+        if (videoId && annotatorMap.size > 0) {
+          console.log(`📊 视频 ${videoId} 的标注人统计:`, 
+            Array.from(annotatorMap.entries()).map(([name, data]) => ({
+              annotator: name,
+              total: data.totalAnnotations,
+              pending: data.pendingCount,
+              reviewed: data.reviewedCount,
+              hasInspector: data.inspectors.length > 0,
+              inspectors: data.inspectors
+            }))
+          );
+        }
+        
+        // 🔧 新逻辑：只要视频有质检通过的内容，就将该视频加载到待复检
+        // 检查该视频是否有质检通过的数据
+        const hasQualifiedData = deduplicatedAnnotations.some(ann => {
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+          return hasHumanText && isQualified;
+        });
+        
+        if (!hasQualifiedData) {
+          // 如果没有质检通过的数据，不显示该视频
+          return null;
+        }
+        
         // 过滤出有待复检数据的标注人（至少有一条已标注的数据）
         const pendingAnnotators = Array.from(annotatorMap.values()).filter(a => 
           a.pendingCount > 0 && (a.pendingCount + a.reviewedCount) > 0
         );
         
-        // 显示所有有标注数据的视频，即使所有标注人都已完成复检
-        // 如果有待复检数据的标注人，则显示这些标注人；否则显示所有标注人（用于查看已完成的情况）
+        // 显示所有有标注数据的标注人（包括已复检和待复检的）
+        // 如果有待复检数据的标注人，则显示这些标注人；否则显示所有有质检通过数据的标注人
         const annotatorsToShow = pendingAnnotators.length > 0 
           ? pendingAnnotators 
-          : Array.from(annotatorMap.values()).filter(a => (a.pendingCount + a.reviewedCount) > 0);
+          : Array.from(annotatorMap.values()).filter(a => {
+              // 显示有质检通过数据的标注人
+              return a.inspectors.length > 0 && (a.pendingCount + a.reviewedCount) > 0;
+            });
         
-        // 只要有标注数据的视频就显示
+        // 只要有质检通过数据的视频就显示
         return annotatorsToShow.length > 0 ? { videoId, annotators: annotatorsToShow } : null;
       });
       
@@ -248,6 +341,19 @@ export default function ReviewSelectPage() {
       const videosWithPending = videoStatsResults.filter(v => v !== null) as { videoId: string; annotators: AnnotatorData[] }[];
       
       console.log('  - 有标注数据的视频数量:', videosWithPending.length);
+      
+      // 调试日志：打印有待复检数据的视频
+      if (videosWithPending.length > 0) {
+        console.log('📋 有待复检数据的视频列表:');
+        videosWithPending.forEach(v => {
+          console.log(`  - 视频ID: ${v.videoId}, 标注人数: ${v.annotators.length}`);
+          v.annotators.forEach(a => {
+            console.log(`    - 标注人: ${a.annotatorName}, 待复检: ${a.pendingCount}, 已复检: ${a.reviewedCount}, 质检人: ${a.inspectors.join(', ')}`);
+          });
+        });
+      } else {
+        console.log('⚠️ 没有找到任何有待复检数据的视频');
+      }
       
       // 3. 获取所有视频详细信息
       const { getVideos } = await import('../api/database');
@@ -343,7 +449,7 @@ export default function ReviewSelectPage() {
         // 查询该视频的所有标注数据（按标注人分组）
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at')
+          .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified')
           .eq('video_id', video.id)
           .not('annotator', 'is', null)
           .neq('annotator', '')
@@ -351,10 +457,51 @@ export default function ReviewSelectPage() {
         
         if (error || !annotations) return null;
         
-        // 按标注人分组统计
-        const annotatorMap = new Map<string, AnnotatorData>();
+        // 🔧 去重逻辑：对于相同 video_id + sentence_no + annotator 的数据
+        // 优先保留有质检状态的数据，如果都有质检状态则保留最新的
+        const deduplicatedMap = new Map<string, any>();
         
         annotations.forEach(ann => {
+          const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+          const existing = deduplicatedMap.get(key);
+          
+          if (!existing) {
+            deduplicatedMap.set(key, ann);
+          } else {
+            // 优先保留有质检状态的数据
+            const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && existing.is_qualified === true;
+            const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+            
+            if (currentHasInspection && !existingHasInspection) {
+              // 当前数据有质检状态，旧数据没有，保留当前数据
+              deduplicatedMap.set(key, ann);
+            } else if (existingHasInspection && !currentHasInspection) {
+              // 旧数据有质检状态，当前数据没有，保留旧数据
+              // 不做任何操作
+            } else {
+              // 都有或都没有质检状态，保留最新的（按 updated_at）
+              const existingTime = existing.updated_at || existing.created_at || '';
+              const currentTime = ann.updated_at || ann.created_at || '';
+              if (currentTime > existingTime) {
+                deduplicatedMap.set(key, ann);
+              }
+            }
+          }
+        });
+        
+        const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+        
+        // 调试日志：打印去重统计
+        if (deduplicatedAnnotations && deduplicatedAnnotations.length > 0) {
+          const originalCount = annotations.length;
+          const deduplicatedCount = deduplicatedAnnotations.length;
+          console.log(`  🔧 去重统计: 原始 ${originalCount} 条，去重后 ${deduplicatedCount} 条，去除了 ${originalCount - deduplicatedCount} 条重复数据`);
+        }
+        
+        // 按标注人分组统计（使用去重后的数据）
+        const annotatorMap = new Map<string, AnnotatorData>();
+        
+        deduplicatedAnnotations.forEach(ann => {
           const annotator = ann.annotator;
           const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
           
@@ -375,6 +522,7 @@ export default function ReviewSelectPage() {
           annotatorData.totalAnnotations++;
         
           if (hasHumanText) {
+            // 已复检完成的数据
             if (ann.review_status === true) {
               annotatorData.reviewedCount++;
               if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
@@ -385,13 +533,17 @@ export default function ReviewSelectPage() {
                   annotatorData.lastReviewTime = ann.updated_at;
                 }
               }
-            } else {
+            } 
+            // 待复检的数据：质检通过（is_qualified === true）且已设置inspector，但未复检完成
+            // 注意：只有质检通过的数据才应该进入复检流程
+            else if (ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true) {
               annotatorData.pendingCount++;
             }
+            // 其他情况（未质检或质检不通过的数据）不计入待复检
           } else {
             annotatorData.unannotatedCount++;
           }
-        
+          
           if (ann.inspector && !annotatorData.inspectors.includes(ann.inspector)) {
             annotatorData.inspectors.push(ann.inspector);
           }

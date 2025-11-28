@@ -79,24 +79,88 @@ export default function ReviewPage() {
       // 获取指定视频的所有标注数据
       const annotations = await getAnnotations(videoId);
       
-      // 过滤出指定标注人的数据
-      const annotatorData = annotations.filter(
-        item => item.annotator === annotatorName
+      // 🔧 去重逻辑：对于相同 video_id + sentence_no + annotator 的数据
+      // 优先保留有质检状态的数据，如果都有质检状态则保留最新的
+      const deduplicatedMap = new Map<string, any>();
+      
+      annotations.forEach(ann => {
+        const key = `${ann.videoId}_${ann.sentenceNo}_${ann.annotator}`;
+        const existing = deduplicatedMap.get(key);
+        
+        if (!existing) {
+          deduplicatedMap.set(key, ann);
+        } else {
+          // 优先保留有质检状态的数据
+          const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && existing.isQualified === true;
+          const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && ann.isQualified === true;
+          
+          if (currentHasInspection && !existingHasInspection) {
+            // 当前数据有质检状态，旧数据没有，保留当前数据
+            deduplicatedMap.set(key, ann);
+          } else if (existingHasInspection && !currentHasInspection) {
+            // 旧数据有质检状态，当前数据没有，保留旧数据
+            // 不做任何操作
+          } else {
+            // 都有或都没有质检状态，保留最新的（按 updated_at，但 AnnotationItem 可能没有这个字段，所以按 ID 或其他逻辑）
+            // 如果都有质检状态，优先保留最新的
+            deduplicatedMap.set(key, ann); // 简单策略：保留后遇到的（通常是更新的）
+          }
+        }
+      });
+      
+      const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+      
+      // 过滤出指定标注人的数据，且必须是质检通过的数据（有inspector且isQualified === true）
+      const annotatorData = deduplicatedAnnotations.filter(
+        item => item.annotator === annotatorName && 
+                item.inspector && 
+                item.inspector.trim() !== '' &&
+                item.isQualified === true
       );
       
-      console.log('📋 复检数据:', {
+      const totalForAnnotator = deduplicatedAnnotations.filter(item => item.annotator === annotatorName).length;
+      const originalTotal = annotations.filter(item => item.annotator === annotatorName).length;
+      const withInspector = deduplicatedAnnotations.filter(item => 
+        item.annotator === annotatorName && item.inspector && item.inspector.trim() !== ''
+      ).length;
+      const qualified = deduplicatedAnnotations.filter(item => 
+        item.annotator === annotatorName && item.isQualified === true
+      ).length;
+      const qualifiedWithInspector = deduplicatedAnnotations.filter(item => 
+        item.annotator === annotatorName && 
+        item.inspector && 
+        item.inspector.trim() !== '' &&
+        item.isQualified === true
+      ).length;
+      
+      console.log('📋 复检数据筛选:', {
         videoId,
         videoName,
         annotatorName,
-        total: annotations.length,
-        filtered: annotatorData.length
+        原始总数: originalTotal,
+        去重后总数: totalForAnnotator,
+        去除了: originalTotal - totalForAnnotator,
+        有质检人: withInspector,
+        质检通过: qualified,
+        有质检人且通过: qualifiedWithInspector,
+        最终筛选结果: annotatorData.length
       });
       
       setReviewData(annotatorData);
       if (annotatorData.length === 0) {
-        message.warning(`未找到${annotatorName}的标注数据，请检查视频ID和标注人姓名`);
+        const inspectedCount = deduplicatedAnnotations.filter(
+          item => item.annotator === annotatorName && item.inspector && item.inspector.trim() !== ''
+        ).length;
+        
+        if (totalForAnnotator === 0) {
+          message.warning(`未找到${annotatorName}的标注数据，请检查视频ID和标注人姓名`);
+        } else if (inspectedCount === 0) {
+          message.warning(`未找到${annotatorName}的已质检数据，请先完成质检`);
+        } else {
+          message.warning(`未找到${annotatorName}的待复检数据`);
+        }
       } else {
-        message.success(`加载了${annotatorName}的 ${annotatorData.length} 条标注数据`);
+        message.success(`加载了${annotatorName}的 ${annotatorData.length} 条已质检数据`);
       }
     } catch (error) {
       console.error('获取标注数据失败:', error instanceof Error ? { message: error.message, details: error } : error);
@@ -253,19 +317,34 @@ export default function ReviewPage() {
 
   // 提交复检 - 第一步：打开复检人姓名输入弹窗
   const handleSubmit = () => {
+    console.log('🔵 handleSubmit 被调用');
+    console.log('📊 当前状态:', {
+      reviewDataCount: reviewData.length,
+      filteredDataCount: filteredData.length,
+      reviewedCount: reviewData.filter(item => item.status).length,
+      videoId,
+      videoName,
+      annotatorName
+    });
+    
     const reviewedCount = reviewData.filter(item => item.status).length;
     
     if (reviewedCount === 0) {
+      console.warn('⚠️ 没有已复检的数据');
       message.warning('请至少复检一条数据');
       return;
     }
     
+    console.log('✅ 准备打开复检人姓名输入弹窗，已复检数量:', reviewedCount);
     setIsReviewerModalVisible(true);
   };
 
   // 提交复检 - 第二步：确认提交并保存到数据库
   const confirmSubmit = async () => {
+    console.log('🔵 confirmSubmit 被调用');
+    
     if (!reviewerName.trim()) {
+      console.warn('⚠️ 复检人姓名为空');
       message.warning('请输入复检人姓名');
       return;
     }
@@ -278,40 +357,52 @@ export default function ReviewPage() {
       const reviewedItems = reviewData.filter(item => item.status);
       const reviewedIds = reviewedItems.map(item => item.id);
       
+      if (reviewedIds.length === 0) {
+        throw new Error('没有已复检的数据');
+      }
+      
       console.log('📝 准备保存复检结果:', {
         videoId,
         videoName,
         annotatorName,
         reviewerName,
         reviewedCount: reviewedItems.length,
-        reviewedIds
+        reviewedIds: reviewedIds.slice(0, 5) // 只显示前5个ID
       });
 
       // 2. 批量更新复检状态、备注、问题分类和文本内容
       // 使用循环来保存每条数据（因为备注、分类和文本可能不同）
-      const updatePromises = reviewedItems.map(item => 
-        supabase
+      const updatePromises = reviewedItems.map((item, index) => {
+        const updateData = {
+          reviewer: reviewerName,
+          review_status: true,
+          status: true,
+          remark: item.remark || '', // 保存备注
+          major_category: item.majorCategory || '', // 保存问题大类
+          minor_category: item.minorCategory || '', // 保存问题小类
+          original_text: item.originalText || '', // 保存修改后的原文文本
+          ai_rewritten_text: item.aiRewrittenText || '', // 保存修改后的大模型改写文本
+          human_annotated_text: item.humanAnnotatedText || '' // 保存修改后的人工标注文本
+        };
+        
+        console.log(`📦 更新第 ${index + 1} 条数据 (ID: ${item.id}):`, updateData);
+        
+        return supabase
           .from('annotations')
-          .update({
-            reviewer: reviewerName,
-            review_status: true,
-            status: true,
-            remark: item.remark || '', // 保存备注
-            major_category: item.majorCategory || '', // 保存问题大类
-            minor_category: item.minorCategory || '', // 保存问题小类
-            original_text: item.originalText || '', // 保存修改后的原文文本
-            ai_rewritten_text: item.aiRewrittenText || '', // 保存修改后的大模型改写文本
-            human_annotated_text: item.humanAnnotatedText || '' // 保存修改后的人工标注文本
-          })
-          .eq('id', item.id)
-      );
+          .update(updateData)
+          .eq('id', item.id);
+      });
 
+      console.log('⏳ 开始批量更新，共', updatePromises.length, '条数据');
       const results = await Promise.all(updatePromises);
       const errors = results.filter(r => r.error);
       
       if (errors.length > 0) {
         console.error('❌ 部分更新失败:', errors);
-        throw new Error('部分数据更新失败');
+        errors.forEach((err, index) => {
+          console.error(`错误 ${index + 1}:`, err.error);
+        });
+        throw new Error(`部分数据更新失败，共 ${errors.length} 条失败`);
       }
 
       console.log('✅ 批量更新成功，共更新', reviewedIds.length, '条数据');
@@ -333,6 +424,7 @@ export default function ReviewPage() {
 
         if (videoError) {
           console.error('❌ 更新视频状态失败:', videoError);
+          message.warning('复检数据已保存，但更新视频状态失败');
         } else {
           console.log('✅ 视频已标记为完成');
         }
@@ -346,7 +438,8 @@ export default function ReviewPage() {
       }, 1500);
     } catch (error) {
       console.error('❌ 提交复检失败:', error);
-      message.error('提交复检失败，请重试');
+      const errorMessage = error instanceof Error ? error.message : '未知错误';
+      message.error(`提交复检失败：${errorMessage}`);
     } finally {
       setLoading(false);
     }
@@ -563,7 +656,16 @@ export default function ReviewPage() {
               extra={
                 <Space>
                   <span>已复检：{reviewedCount} / {filteredData.length}</span>
-                  <Button type="primary" onClick={handleSubmit}>
+                  <Button 
+                    type="primary" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      console.log('🔘 提交复检按钮被点击');
+                      handleSubmit();
+                    }}
+                    disabled={loading}
+                  >
                     提交复检
                   </Button>
                 </Space>

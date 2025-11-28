@@ -267,7 +267,8 @@ export async function getAllAnnotations(): Promise<AnnotationItem[]> {
       reviewStatus: item.review_status, // 添加复检状态
       videoName: item.video_name || '',
       videoUrl: item.video_url || '',
-      subject: item.subject || ''
+      subject: item.subject || '',
+      rejectionCount: item.rejection_count || 0 // 添加被打回次数
     }));
   } catch (error) {
     console.error('获取所有标注数据异常:', error);
@@ -507,7 +508,9 @@ export async function saveAnnotations(
       inspector: item.inspector || null,
       // 复检相关字段
       reviewer: item.reviewer || null,
-      review_status: item.reviewStatus ?? null
+      review_status: item.reviewStatus ?? null,
+      // 被打回次数（保留原有值，如果重新提交则不清除）
+      rejection_count: item.rejectionCount ?? undefined
     }));
 
     console.log('📝 标注人:', annotatorName);
@@ -525,16 +528,29 @@ export async function saveAnnotations(
     for (let i = 0; i < totalBatches; i++) {
       const start = i * BATCH_SIZE;
       const end = Math.min(start + BATCH_SIZE, data.length);
-      const batch = data.slice(start, end);
+      let batch = data.slice(start, end);
       
       console.log(`📤 正在保存第 ${i + 1}/${totalBatches} 批 (${batch.length} 条)...`);
       
       // 使用upsert（如果存在则更新，不存在则插入）
-      const { error } = await supabase
+      let { error } = await supabase
         .from('annotations')
         .upsert(batch, { onConflict: 'id' });
 
-      if (error) {
+      // 如果失败且错误信息包含 'rejection_count'，说明字段不存在，移除该字段后重试
+      if (error && error.message?.includes('rejection_count')) {
+        console.log('⚠️ rejection_count 字段不存在，移除该字段后重试...');
+        // 移除 rejection_count 字段
+        batch = batch.map(({ rejection_count, ...rest }) => rest);
+        const { error: retryError } = await supabase
+          .from('annotations')
+          .upsert(batch, { onConflict: 'id' });
+        
+        if (retryError) {
+          console.error(`❌ 第 ${i + 1} 批保存失败（重试后）:`, retryError);
+          throw new Error(`保存第 ${i + 1} 批数据失败: ${retryError.message}`);
+        }
+      } else if (error) {
         console.error(`❌ 第 ${i + 1} 批保存失败:`, error);
         throw new Error(`保存第 ${i + 1} 批数据失败: ${error.message}`);
       }
@@ -586,15 +602,37 @@ export async function updateAnnotation(
       updateData.is_qualified = updates.isQualified;
     }
     if (updates.inspector !== undefined) {
-      updateData.inspector = updates.inspector;
+      // 确保 inspector 字段被正确更新，即使是空字符串也要更新
+      updateData.inspector = updates.inspector || null;
+      console.log('📝 更新 inspector 字段:', {
+        id,
+        inspector: updates.inspector,
+        willUpdateTo: updateData.inspector
+      });
+    }
+    if (updates.rejectionCount !== undefined) {
+      updateData.rejection_count = updates.rejectionCount;
     }
 
-    const { error } = await supabase
+    let { error } = await supabase
       .from('annotations')
       .update(updateData)
       .eq('id', id);
 
-    if (error) {
+    // 如果失败且错误信息包含 'rejection_count'，说明字段不存在，移除该字段后重试
+    if (error && error.message?.includes('rejection_count')) {
+      console.log('⚠️ rejection_count 字段不存在，移除该字段后重试...');
+      const { rejection_count, ...updateDataWithoutRejectionCount } = updateData;
+      const { error: retryError } = await supabase
+        .from('annotations')
+        .update(updateDataWithoutRejectionCount)
+        .eq('id', id);
+      
+      if (retryError) {
+        console.error('更新标注失败（重试后）:', retryError);
+        return false;
+      }
+    } else if (error) {
       console.error('更新标注失败:', error);
       return false;
     }

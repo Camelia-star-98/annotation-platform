@@ -22,6 +22,7 @@ export interface AnnotationItem {
   inspector?: string; // 质检人
   reviewer?: string; // 复检人
   reviewStatus?: boolean | null; // 复检状态：true=通过，false=不通过，null=待复检
+  rejectionCount?: number; // 被打回次数
 }
 
 export interface VideoInfo {

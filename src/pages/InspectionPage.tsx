@@ -9,7 +9,9 @@ import {
   message,
   Typography,
   Tag,
-  Radio
+  Radio,
+  Input,
+  Modal
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -29,13 +31,23 @@ export default function InspectionPage() {
   const navigate = useNavigate();
   const playerRef = useRef<ReactPlayer>(null);
   
-  const userName = location.state?.userName || '未知用户';
+  const defaultUserName = location.state?.userName || '';
   const inspectionDataFromManage = location.state?.inspectionData || null;
   const isFromManagement = location.state?.isFromManagement || false;
   
   const [inspectionData, setInspectionData] = useState<AnnotationItem[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
+  const [inspectorName, setInspectorName] = useState(defaultUserName); // 质检人姓名
+  const [nameInputValue, setNameInputValue] = useState(defaultUserName); // 模态框中的输入值
+  const [isNameModalVisible, setIsNameModalVisible] = useState(false); // 是否显示姓名输入模态框
   const pageSize = 20;
+
+  // 页面加载时检查是否需要填写质检人姓名
+  useEffect(() => {
+    if (!defaultUserName || defaultUserName.trim() === '') {
+      setIsNameModalVisible(true);
+    }
+  }, [defaultUserName]);
 
   // 初始化质检数据
   useEffect(() => {
@@ -44,24 +56,35 @@ export default function InspectionPage() {
       setInspectionData(inspectionDataFromManage.map((item: AnnotationItem) => ({
         ...item,
         isQualified: undefined,
-        inspector: userName
+        inspector: inspectorName
       })));
     } else {
       // 使用模拟数据（旧的方式）
       const sampleData = MOCK_ANNOTATED_DATA.map(item => ({
         ...item,
         isQualified: undefined,
-        inspector: userName
+        inspector: inspectorName
       }));
       setInspectionData(sampleData);
     }
-  }, [userName, inspectionDataFromManage, isFromManagement]);
+  }, [inspectorName, inspectionDataFromManage, isFromManagement]);
 
   // 点击时间戳跳转视频
   const handleTimeClick = (startTime: number, videoUrl: string) => {
     if (playerRef.current) {
       playerRef.current.seekTo(startTime, 'seconds');
     }
+  };
+
+  // 确认质检人姓名
+  const handleConfirmName = () => {
+    if (!nameInputValue || nameInputValue.trim() === '') {
+      message.warning('请输入质检人姓名');
+      return;
+    }
+    setInspectorName(nameInputValue.trim());
+    setIsNameModalVisible(false);
+    message.success('质检人姓名已设置');
   };
 
   // 更新质检结果
@@ -75,6 +98,12 @@ export default function InspectionPage() {
 
   // 提交质检
   const handleSubmit = async () => {
+    // 验证质检人姓名
+    if (!inspectorName || inspectorName.trim() === '') {
+      message.warning('请输入质检人姓名');
+      return;
+    }
+
     const checkedItems = inspectionData.filter(item => item.isQualified !== undefined);
     
     if (checkedItems.length < inspectionData.length) {
@@ -90,17 +119,60 @@ export default function InspectionPage() {
     try {
       const { updateAnnotation } = await import('../api/database');
       
+      console.log('📤 开始提交质检数据，共', inspectionData.length, '条');
+      console.log('📤 质检人姓名:', inspectorName.trim());
+      
+      let successCount = 0;
+      let failCount = 0;
+      
+      // 先查询所有数据的当前 rejection_count
+      const { supabase } = await import('../api/supabase');
+      const annotationIds = inspectionData.map(item => item.id);
+      const { data: currentAnnotations } = await supabase
+        .from('annotations')
+        .select('id, rejection_count')
+        .in('id', annotationIds);
+      
+      const rejectionCountMap = new Map<string, number>();
+      currentAnnotations?.forEach(ann => {
+        rejectionCountMap.set(ann.id, ann.rejection_count || 0);
+      });
+      
       for (const item of inspectionData) {
-        await updateAnnotation(item.id, {
+        const updateData: any = {
           isQualified: item.isQualified,
-          inspector: userName
-        });
+          inspector: inspectorName.trim()
+        };
+        
+        // 如果质检不通过，增加 rejection_count
+        if (item.isQualified === false) {
+          const currentCount = rejectionCountMap.get(item.id) || 0;
+          updateData.rejectionCount = currentCount + 1;
+          console.log(`📝 数据 ${item.id} 被打回，rejection_count: ${currentCount} -> ${updateData.rejectionCount}`);
+        }
+        
+        const success = await updateAnnotation(item.id, updateData);
+        
+        if (success) {
+          successCount++;
+        } else {
+          failCount++;
+          console.error('❌ 更新失败的数据ID:', item.id);
+        }
       }
+      
+      console.log('✅ 质检数据提交完成:', {
+        总数: inspectionData.length,
+        成功: successCount,
+        失败: failCount
+      });
 
-      if (errorRate > 2) {
+      if (failCount > 0) {
+        message.error(`质检完成，但有 ${failCount} 条数据保存失败`);
+      } else if (errorRate > 2) {
         message.error(`错误率 ${errorRate.toFixed(1)}% 超过 2%，标注将被打回重新标注`);
       } else {
-        message.success(`质检通过！错误率 ${errorRate.toFixed(1)}%`);
+        message.success(`质检完成！错误率 ${errorRate.toFixed(1)}%，共提交 ${successCount} 条数据`);
       }
 
       setTimeout(() => {
@@ -108,7 +180,7 @@ export default function InspectionPage() {
       }, 2000);
     } catch (error) {
       message.error('保存质检结果失败');
-      console.error(error);
+      console.error('❌ 提交质检数据异常:', error);
     }
   };
 
@@ -237,6 +309,27 @@ export default function InspectionPage() {
 
   return (
     <Layout className="inspection-layout">
+      {/* 质检人姓名输入模态框 */}
+      <Modal
+        title="请输入质检人姓名"
+        open={isNameModalVisible}
+        onOk={handleConfirmName}
+        closable={false}
+        maskClosable={false}
+        okText="确认"
+        cancelButtonProps={{ style: { display: 'none' } }}
+        okButtonProps={{ disabled: !nameInputValue || nameInputValue.trim() === '' }}
+      >
+        <Input
+          placeholder="请输入质检人姓名"
+          value={nameInputValue}
+          onChange={(e) => setNameInputValue(e.target.value)}
+          onPressEnter={handleConfirmName}
+          autoFocus
+          maxLength={50}
+        />
+      </Modal>
+
       <Header className="inspection-header">
         <Space>
           <Button
@@ -248,7 +341,7 @@ export default function InspectionPage() {
             返回
           </Button>
           <Title level={3} style={{ color: 'white', margin: 0 }}>
-            抽样质检 - {userName}
+            抽样质检 {inspectorName && `- ${inspectorName}`}
           </Title>
         </Space>
       </Header>
@@ -273,25 +366,30 @@ export default function InspectionPage() {
             title="质检内容"
             className="inspection-table-card"
             extra={
-              <Space size="large">
-                <span>已检查：{checkedCount} / {inspectionData.length}</span>
-                <span>通过：<span style={{ color: '#52c41a' }}>{passedCount}</span></span>
-                <span>不通过：<span style={{ color: '#ff4d4f' }}>{failedCount}</span></span>
-                {checkedCount > 0 && (
-                  <span>
-                    错误率：
-                    <span style={{ color: errorRate > 2 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>
-                      {errorRate.toFixed(1)}%
+              <Space size="large" direction="vertical" align="end">
+                <Space size="large">
+                  <span>已检查：{checkedCount} / {inspectionData.length}</span>
+                  <span>通过：<span style={{ color: '#52c41a' }}>{passedCount}</span></span>
+                  <span>不通过：<span style={{ color: '#ff4d4f' }}>{failedCount}</span></span>
+                  {checkedCount > 0 && (
+                    <span>
+                      错误率：
+                      <span style={{ color: errorRate > 2 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>
+                        {errorRate.toFixed(1)}%
+                      </span>
                     </span>
-                  </span>
-                )}
-                <Button 
-                  type="primary" 
-                  onClick={handleSubmit}
-                  disabled={checkedCount < inspectionData.length}
-                >
-                  提交质检
-                </Button>
+                  )}
+                </Space>
+                <Space>
+                  <span>质检人：<strong>{inspectorName || '未填写'}</strong></span>
+                  <Button 
+                    type="primary" 
+                    onClick={handleSubmit}
+                    disabled={checkedCount < inspectionData.length || !inspectorName.trim()}
+                  >
+                    提交质检
+                  </Button>
+                </Space>
               </Space>
             }
           >

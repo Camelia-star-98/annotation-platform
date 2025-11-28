@@ -9,7 +9,9 @@ import {
   Tag,
   message,
   Typography,
-  Tabs
+  Tabs,
+  Modal,
+  Select
 } from 'antd';
 import {
   ArrowLeftOutlined,
@@ -48,6 +50,7 @@ interface RejectedAnnotation {
   inspector: string; // 质检人（谁打回的）
   annotator: string; // 标注人（自己）
   rejectedTime: string;
+  rejectionCount?: number; // 被打回次数
 }
 
 interface CompletedTask {
@@ -78,6 +81,10 @@ export default function AnnotationTaskListPage() {
   const [rejectedItems, setRejectedItems] = useState<RejectedAnnotation[]>([]);
   const [completedTasks, setCompletedTasks] = useState<CompletedTask[]>([]);
   const [activeTab, setActiveTab] = useState<string>('tasks');
+  const [annotatorSelectModalVisible, setAnnotatorSelectModalVisible] = useState(false);
+  const [currentTask, setCurrentTask] = useState<CompletedTask | null>(null);
+  const [availableAnnotators, setAvailableAnnotators] = useState<string[]>([]);
+  const [loadingAnnotators, setLoadingAnnotators] = useState(false);
 
   useEffect(() => {
     loadTasks();
@@ -370,13 +377,31 @@ export default function AnnotationTaskListPage() {
       
       // 性能优化：直接在数据库查询当前标注人的被打回数据
       // 查询条件：当前标注人 + 有质检人 + 质检不通过
+      // 先尝试查询包含 rejection_count 字段（如果字段存在）
       let { data: allAnnotations, error } = await supabase
         .from('annotations')
-        .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
+        .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at, rejection_count')
         .eq('annotator', annotatorName)
         .not('inspector', 'is', null)
         .neq('inspector', '')
         .eq('is_qualified', false);
+      
+      // 如果字段不存在，尝试不查询 rejection_count 字段
+      if (error && error.message?.includes('rejection_count')) {
+        console.log('⚠️ rejection_count 字段不存在，使用不包含该字段的查询...');
+        const { data: dataWithoutRejectionCount, error: errorWithoutRejectionCount } = await supabase
+          .from('annotations')
+          .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
+          .eq('annotator', annotatorName)
+          .not('inspector', 'is', null)
+          .neq('inspector', '')
+          .eq('is_qualified', false);
+        
+        if (!errorWithoutRejectionCount) {
+          allAnnotations = dataWithoutRejectionCount;
+          error = null;
+        }
+      }
       
       if (error) {
         console.error('查询被打回数据失败:', error);
@@ -389,13 +414,30 @@ export default function AnnotationTaskListPage() {
       // 如果查询结果为空，尝试查询 is_qualified 为 null 但有质检人的数据（可能是旧数据）
       if (!allAnnotations || allAnnotations.length === 0) {
         console.log('⚠️ 未找到 is_qualified=false 的数据，尝试查询 is_qualified=null 但有质检人的数据...');
-        const { data: nullQualifiedData, error: nullError } = await supabase
+        let { data: nullQualifiedData, error: nullError } = await supabase
           .from('annotations')
-          .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
+          .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at, rejection_count')
           .eq('annotator', annotatorName)
           .not('inspector', 'is', null)
           .neq('inspector', '')
           .is('is_qualified', null);
+        
+        // 如果字段不存在，尝试不查询 rejection_count 字段
+        if (nullError && nullError.message?.includes('rejection_count')) {
+          console.log('⚠️ rejection_count 字段不存在，使用不包含该字段的查询...');
+          const { data: dataWithoutRejectionCount, error: errorWithoutRejectionCount } = await supabase
+            .from('annotations')
+            .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
+            .eq('annotator', annotatorName)
+            .not('inspector', 'is', null)
+            .neq('inspector', '')
+            .is('is_qualified', null);
+          
+          if (!errorWithoutRejectionCount) {
+            nullQualifiedData = dataWithoutRejectionCount;
+            nullError = null;
+          }
+        }
         
         if (!nullError && nullQualifiedData && nullQualifiedData.length > 0) {
           console.log('📊 找到 is_qualified=null 但有质检人的数据:', nullQualifiedData.length);
@@ -422,7 +464,8 @@ export default function AnnotationTaskListPage() {
             minorCategory: item.minor_category || '',
             inspector: item.inspector || '未知',
             annotator: item.annotator || '',
-            rejectedTime: item.updated_at || item.created_at || ''
+            rejectedTime: item.updated_at || item.created_at || '',
+            rejectionCount: item.rejection_count || 0 // 添加被打回次数
           };
         })
         .sort((a, b) => {
@@ -793,7 +836,14 @@ export default function AnnotationTaskListPage() {
       title: '视频名称',
       dataIndex: 'videoName',
       key: 'videoName',
-      width: 200
+      width: 200,
+      render: (text: string, record: RejectedAnnotation) => {
+        const rejectionCount = record.rejectionCount || 0;
+        if (rejectionCount > 0) {
+          return `${text}（被打回第${rejectionCount}次）`;
+        }
+        return text;
+      }
     },
     {
       title: '科目',
@@ -1012,16 +1062,76 @@ export default function AnnotationTaskListPage() {
     }
   ];
 
-  const handleViewCompleted = (task: CompletedTask) => {
-    // 跳转到标注页面查看已完成的标注
+  const handleViewCompleted = async (task: CompletedTask) => {
+    // 先查询该视频的所有标注人
+    setCurrentTask(task);
+    setLoadingAnnotators(true);
+    setAnnotatorSelectModalVisible(true);
+    
+    try {
+      const { supabase } = await import('../api/supabase');
+      
+      // 查询该视频的所有标注人（有标注内容的）
+      const { data: annotations, error } = await supabase
+        .from('annotations')
+        .select('annotator')
+        .eq('video_id', task.videoId)
+        .not('annotator', 'is', null)
+        .neq('annotator', '')
+        .not('human_annotated_text', 'is', null)
+        .neq('human_annotated_text', '');
+      
+      if (error) {
+        console.error('查询标注人失败:', error);
+        message.error('查询标注人失败');
+        setAnnotatorSelectModalVisible(false);
+        return;
+      }
+      
+      // 去重获取所有标注人
+      const annotators = [...new Set(annotations?.map(a => a.annotator).filter(Boolean) || [])];
+      
+      if (annotators.length === 0) {
+        message.warning('该视频暂无标注数据');
+        setAnnotatorSelectModalVisible(false);
+        return;
+      }
+      
+      setAvailableAnnotators(annotators);
+    } catch (error) {
+      console.error('查询标注人异常:', error);
+      message.error('查询标注人失败');
+      setAnnotatorSelectModalVisible(false);
+    } finally {
+      setLoadingAnnotators(false);
+    }
+  };
+
+  const handleAnnotatorSelect = (selectedAnnotator: string) => {
+    if (!currentTask) return;
+    
+    // 关闭选择框
+    setAnnotatorSelectModalVisible(false);
+    
+    // 跳转到标注页面查看指定标注人的标注
     navigate('/annotation', {
       state: {
-        videoId: task.videoId,
-        videoName: task.videoName,
-        annotatorName: annotatorName,
+        videoId: currentTask.videoId,
+        videoName: currentTask.videoName,
+        annotatorName: selectedAnnotator,
         viewOnly: true // 标记为查看模式
       }
     });
+    
+    // 重置状态
+    setCurrentTask(null);
+    setAvailableAnnotators([]);
+  };
+
+  const handleCancelAnnotatorSelect = () => {
+    setAnnotatorSelectModalVisible(false);
+    setCurrentTask(null);
+    setAvailableAnnotators([]);
   };
 
   return (
@@ -1136,6 +1246,33 @@ export default function AnnotationTaskListPage() {
             ]}
           />
         </Card>
+
+        {/* 标注人选择弹窗 */}
+        <Modal
+          title="选择标注人"
+          open={annotatorSelectModalVisible}
+          onCancel={handleCancelAnnotatorSelect}
+          footer={null}
+          width={500}
+        >
+          <div style={{ padding: '20px 0' }}>
+            <p style={{ marginBottom: '16px', color: '#666' }}>
+              请选择要查看的标注人：
+            </p>
+            <Select
+              style={{ width: '100%' }}
+              placeholder={loadingAnnotators ? '正在加载标注人列表...' : '请选择标注人'}
+              loading={loadingAnnotators}
+              disabled={loadingAnnotators}
+              size="large"
+              onChange={handleAnnotatorSelect}
+              options={availableAnnotators.map(annotator => ({
+                label: annotator,
+                value: annotator
+              }))}
+            />
+          </div>
+        </Modal>
       </Content>
     </Layout>
   );
