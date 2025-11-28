@@ -57,6 +57,10 @@ interface CompletedTask {
   duration: number;
   annotationCount: number; // 标注的条数
   completedTime: string;
+  totalSentences: number; // 视频总句子数
+  annotatedSentences: number; // 已标注的句子数
+  progressPercentage: number; // 完成进度百分比
+  isCompleted: boolean; // 是否100%完成
 }
 
 export default function AnnotationTaskListPage() {
@@ -443,17 +447,20 @@ export default function AnnotationTaskListPage() {
       // 创建视频ID到视频信息的映射
       const videoMap = new Map(allVideos.map(v => [v.id, v]));
       
-      // 找出已完成的视频（已标注的句子数 = 视频的总句子数）
+      // 找出所有有标注数据的视频（包括部分完成和已完成）
       const completed: CompletedTask[] = [];
       
       videoStatsMap.forEach((stats, videoId) => {
         const totalSentences = videoTotalSentences.get(videoId)?.size || 0;
         const annotatedSentences = stats.sentenceSet.size;
         
-        // 只有当已标注的句子数 = 视频的总句子数时，才认为已完成
-        if (totalSentences > 0 && annotatedSentences === totalSentences) {
+        // 只要有标注数据就显示
+        if (totalSentences > 0 && annotatedSentences > 0) {
           const video = videoMap.get(videoId);
           if (video) {
+            const progressPercentage = Math.round((annotatedSentences / totalSentences) * 100);
+            const isCompleted = annotatedSentences === totalSentences;
+            
             completed.push({
               id: `${videoId}_${annotatorName}`, // 使用组合ID避免重复
               videoId: videoId,
@@ -461,12 +468,19 @@ export default function AnnotationTaskListPage() {
               subject: video.subject || '未知',
               duration: video.duration || 0,
               annotationCount: stats.annotationCount,
-              completedTime: stats.maxUpdateTime
+              completedTime: stats.maxUpdateTime,
+              totalSentences,
+              annotatedSentences,
+              progressPercentage,
+              isCompleted
             });
-            console.log(`✅ 已完成视频: ${video.name} (${annotatedSentences}/${totalSentences} 句)`);
+            
+            if (isCompleted) {
+              console.log(`✅ 已完成视频: ${video.name} (${annotatedSentences}/${totalSentences} 句, 100%)`);
+            } else {
+              console.log(`⏳ 进行中视频: ${video.name} (${annotatedSentences}/${totalSentences} 句, ${progressPercentage}%)`);
+            }
           }
-        } else {
-          console.log(`⏳ 未完成视频: ${videoMap.get(videoId)?.name} (${annotatedSentences}/${totalSentences} 句)`);
         }
       });
       
@@ -474,7 +488,10 @@ export default function AnnotationTaskListPage() {
       completed.sort((a, b) => b.completedTime.localeCompare(a.completedTime));
       
       setCompletedTasks(completed);
-      console.log(`✅ 加载了 ${completed.length} 个已完成的标注任务`);
+      
+      const fullyCompleted = completed.filter(t => t.isCompleted).length;
+      const inProgress = completed.filter(t => !t.isCompleted).length;
+      console.log(`✅ 加载了 ${completed.length} 个标注任务（已完成: ${fullyCompleted}，进行中: ${inProgress}）`);
     } catch (error) {
       console.error('加载已标注任务失败:', error);
       message.error('加载已标注任务失败');
@@ -687,15 +704,41 @@ export default function AnnotationTaskListPage() {
       render: (text: string) => <Tag color="blue">{text}</Tag>
     },
     {
-      title: '时长',
-      dataIndex: 'duration',
-      key: 'duration',
-      width: 100,
-      render: (seconds: number) => {
-        if (!seconds) return '-';
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+      title: '标注进度',
+      key: 'progress',
+      width: 200,
+      render: (_: any, record: CompletedTask) => {
+        const { annotatedSentences, totalSentences, progressPercentage, isCompleted } = record;
+        return (
+          <div>
+            <div style={{ marginBottom: '4px', fontSize: '12px', color: '#666' }}>
+              {annotatedSentences} / {totalSentences} 句
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div style={{ 
+                flex: 1, 
+                height: '8px', 
+                background: '#f0f0f0', 
+                borderRadius: '4px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  width: `${progressPercentage}%`,
+                  height: '100%',
+                  background: isCompleted ? '#52c41a' : '#1890ff',
+                  transition: 'width 0.3s'
+                }} />
+              </div>
+              <span style={{ 
+                fontSize: '12px', 
+                fontWeight: 'bold',
+                color: isCompleted ? '#52c41a' : '#1890ff'
+              }}>
+                {progressPercentage}%
+              </span>
+            </div>
+          </div>
+        );
       }
     },
     {
@@ -708,7 +751,19 @@ export default function AnnotationTaskListPage() {
       )
     },
     {
-      title: '完成时间',
+      title: '状态',
+      key: 'status',
+      width: 100,
+      render: (_: any, record: CompletedTask) => (
+        record.isCompleted ? (
+          <Tag color="success" icon={<CheckCircleOutlined />}>已完成</Tag>
+        ) : (
+          <Tag color="processing">进行中</Tag>
+        )
+      )
+    },
+    {
+      title: '最后更新',
       dataIndex: 'completedTime',
       key: 'completedTime',
       width: 180,
@@ -805,7 +860,7 @@ export default function AnnotationTaskListPage() {
                 label: (
                   <Space>
                     <CheckCircleOutlined />
-                    <span>已标注任务</span>
+                    <span>所有标注任务</span>
                     <Tag color="green">{completedTasks.length}</Tag>
                   </Space>
                 ),
@@ -818,9 +873,13 @@ export default function AnnotationTaskListPage() {
                     pagination={{
                       pageSize: 10,
                       showSizeChanger: true,
-                      showTotal: (total) => `共 ${total} 个已完成任务`
+                      showTotal: (total) => {
+                        const completed = completedTasks.filter(t => t.isCompleted).length;
+                        const inProgress = completedTasks.filter(t => !t.isCompleted).length;
+                        return `共 ${total} 个任务（已完成 ${completed} 个，进行中 ${inProgress} 个）`;
+                      }
                     }}
-                    scroll={{ x: 1000 }}
+                    scroll={{ x: 1200 }}
                   />
                 )
               },

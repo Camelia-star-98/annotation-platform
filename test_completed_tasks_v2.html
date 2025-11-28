@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试已标注任务新功能</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        .input-group {
+            margin: 20px 0;
+            padding: 15px;
+            background: #f0f7ff;
+            border-radius: 5px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #333;
+        }
+        input {
+            width: 300px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .results {
+            margin-top: 30px;
+        }
+        .summary {
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .summary h2 {
+            margin-top: 0;
+            color: white;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stat-card {
+            background: rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            border-radius: 8px;
+            backdrop-filter: blur(10px);
+        }
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 8px 0;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            background: white;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #fafafa;
+            font-weight: bold;
+            color: #333;
+            position: sticky;
+            top: 0;
+        }
+        tr:hover {
+            background: #f5f5f5;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background: #f0f0f0;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            transition: width 0.3s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            color: white;
+        }
+        .progress-fill.completed {
+            background: linear-gradient(90deg, #52c41a 0%, #73d13d 100%);
+        }
+        .progress-fill.high {
+            background: linear-gradient(90deg, #1890ff 0%, #40a9ff 100%);
+        }
+        .progress-fill.medium {
+            background: linear-gradient(90deg, #faad14 0%, #ffc53d 100%);
+        }
+        .progress-fill.low {
+            background: linear-gradient(90deg, #ff4d4f 0%, #ff7875 100%);
+        }
+        .badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+        }
+        .badge.completed {
+            background: #f6ffed;
+            color: #52c41a;
+            border: 1px solid #b7eb8f;
+        }
+        .badge.in-progress {
+            background: #e6f7ff;
+            color: #1890ff;
+            border: 1px solid #91d5ff;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            padding: 15px;
+            background: #fff2f0;
+            border: 1px solid #ffccc7;
+            border-radius: 4px;
+            color: #cf1322;
+        }
+        .section-title {
+            font-size: 20px;
+            font-weight: bold;
+            margin: 30px 0 15px 0;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .icon {
+            font-size: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 测试已标注任务新功能（方案1）</h1>
+        <p style="color: #666; margin-bottom: 20px;">
+            测试功能：显示所有有标注数据的视频，包括已完成（100%）和进行中的任务（&lt;100%），并显示详细的完成进度。
+        </p>
+        
+        <div class="input-group">
+            <label for="annotatorName">输入标注员姓名：</label>
+            <input type="text" id="annotatorName" placeholder="请输入标注员姓名" />
+            <button onclick="testNewFeature()">测试新功能</button>
+        </div>
+        
+        <div id="results" class="results"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://vhaykscygzvzpowbcjaz.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZoYXlrc2N5Z3p2enBvd2JjamF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIyNTU4OTYsImV4cCI6MjA0NzgzMTg5Nn0.VCc_aEKw4BkJGVzCe2sXbg1a9L2HQVb5WM6vgPh7LlI';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        function getProgressClass(percentage) {
+            if (percentage === 100) return 'completed';
+            if (percentage >= 70) return 'high';
+            if (percentage >= 40) return 'medium';
+            return 'low';
+        }
+
+        async function testNewFeature() {
+            const annotatorName = document.getElementById('annotatorName').value.trim();
+            const resultsDiv = document.getElementById('results');
+            
+            if (!annotatorName) {
+                resultsDiv.innerHTML = '<div class="error">请输入标注员姓名</div>';
+                return;
+            }
+            
+            resultsDiv.innerHTML = '<div class="loading">🔄 正在加载数据...</div>';
+            
+            try {
+                console.log('🔍 测试标注员:', annotatorName);
+                
+                // 1. 获取所有视频信息
+                const { data: videos, error: videoError } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (videoError) throw videoError;
+                
+                // 2. 查询该标注员的所有标注数据
+                const { data: myAnnotations, error: annotationError } = await supabase
+                    .from('annotations')
+                    .select('video_id, sentence_no, human_annotated_text, updated_at')
+                    .eq('annotator', annotatorName);
+                
+                if (annotationError) throw annotationError;
+                
+                if (!myAnnotations || myAnnotations.length === 0) {
+                    resultsDiv.innerHTML = '<div class="summary"><h2>😕 该标注员还没有任何标注数据</h2></div>';
+                    return;
+                }
+                
+                // 3. 统计每个视频的标注情况
+                const videoStatsMap = new Map();
+                
+                myAnnotations.forEach(item => {
+                    if (!videoStatsMap.has(item.video_id)) {
+                        videoStatsMap.set(item.video_id, {
+                            sentenceSet: new Set(),
+                            maxUpdateTime: item.updated_at || '',
+                            annotationCount: 0
+                        });
+                    }
+                    const stats = videoStatsMap.get(item.video_id);
+                    
+                    if (item.human_annotated_text && item.human_annotated_text.trim() !== '') {
+                        stats.sentenceSet.add(item.sentence_no);
+                        stats.annotationCount++;
+                        if (item.updated_at && item.updated_at > stats.maxUpdateTime) {
+                            stats.maxUpdateTime = item.updated_at;
+                        }
+                    }
+                });
+                
+                // 4. 查询这些视频的总句子数
+                const videoIds = Array.from(videoStatsMap.keys());
+                const { data: allVideoSentences, error: totalError } = await supabase
+                    .from('annotations')
+                    .select('video_id, sentence_no')
+                    .in('video_id', videoIds);
+                
+                if (totalError) throw totalError;
+                
+                const videoTotalSentences = new Map();
+                allVideoSentences?.forEach(item => {
+                    if (!videoTotalSentences.has(item.video_id)) {
+                        videoTotalSentences.set(item.video_id, new Set());
+                    }
+                    videoTotalSentences.get(item.video_id).add(item.sentence_no);
+                });
+                
+                // 5. 创建视频信息映射
+                const videoMap = new Map(videos.map(v => [v.id, v]));
+                
+                // 6. 处理所有有标注数据的视频
+                const allTasks = [];
+                
+                videoStatsMap.forEach((stats, videoId) => {
+                    const totalSentences = videoTotalSentences.get(videoId)?.size || 0;
+                    const annotatedSentences = stats.sentenceSet.size;
+                    
+                    // 只要有标注数据就显示（新逻辑）
+                    if (totalSentences > 0 && annotatedSentences > 0) {
+                        const video = videoMap.get(videoId);
+                        if (video) {
+                            const progressPercentage = Math.round((annotatedSentences / totalSentences) * 100);
+                            const isCompleted = annotatedSentences === totalSentences;
+                            
+                            allTasks.push({
+                                videoId,
+                                videoName: video.name || '未命名视频',
+                                subject: video.subject || '未知',
+                                totalSentences,
+                                annotatedSentences,
+                                annotationCount: stats.annotationCount,
+                                progressPercentage,
+                                isCompleted,
+                                completedTime: stats.maxUpdateTime
+                            });
+                        }
+                    }
+                });
+                
+                // 按时间降序排序
+                allTasks.sort((a, b) => b.completedTime.localeCompare(a.completedTime));
+                
+                const completedTasks = allTasks.filter(t => t.isCompleted);
+                const inProgressTasks = allTasks.filter(t => !t.isCompleted);
+                
+                // 7. 显示结果
+                let html = `
+                    <div class="summary">
+                        <h2>📊 标注统计（新逻辑）</h2>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">标注员</div>
+                                <div class="stat-value">${annotatorName}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">总任务数</div>
+                                <div class="stat-value">${allTasks.length}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">✅ 已完成</div>
+                                <div class="stat-value">${completedTasks.length}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">⏳ 进行中</div>
+                                <div class="stat-value">${inProgressTasks.length}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">总标注数据</div>
+                                <div class="stat-value">${myAnnotations.length}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                if (allTasks.length > 0) {
+                    html += `
+                        <div class="section-title">
+                            <span class="icon">📋</span>
+                            <span>所有标注任务（共 ${allTasks.length} 个）</span>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width: 30%">视频名称</th>
+                                    <th style="width: 10%">科目</th>
+                                    <th style="width: 30%">标注进度</th>
+                                    <th style="width: 10%">标注条数</th>
+                                    <th style="width: 10%">状态</th>
+                                    <th style="width: 10%">最后更新</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+                    
+                    allTasks.forEach(task => {
+                        const timeStr = new Date(task.completedTime).toLocaleString('zh-CN', {
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        });
+                        const progressClass = getProgressClass(task.progressPercentage);
+                        
+                        html += `
+                            <tr>
+                                <td><strong>${task.videoName}</strong></td>
+                                <td>${task.subject}</td>
+                                <td>
+                                    <div style="margin-bottom: 4px; font-size: 12px; color: #666;">
+                                        ${task.annotatedSentences} / ${task.totalSentences} 句
+                                    </div>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill ${progressClass}" style="width: ${task.progressPercentage}%">
+                                            ${task.progressPercentage}%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td><strong>${task.annotationCount}</strong> 条</td>
+                                <td>
+                                    <span class="badge ${task.isCompleted ? 'completed' : 'in-progress'}">
+                                        ${task.isCompleted ? '✅ 已完成' : '⏳ 进行中'}
+                                    </span>
+                                </td>
+                                <td style="font-size: 12px">${timeStr}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    html += `
+                            </tbody>
+                        </table>
+                    `;
+                }
+                
+                resultsDiv.innerHTML = html;
+                
+                console.log('✅ 测试完成');
+                console.log('总任务数:', allTasks.length);
+                console.log('已完成:', completedTasks.length);
+                console.log('进行中:', inProgressTasks.length);
+                
+            } catch (error) {
+                console.error('测试失败:', error);
+                resultsDiv.innerHTML = `<div class="error">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
+
