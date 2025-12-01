@@ -313,7 +313,8 @@ export default function InspectionManagePage() {
   // 单独查询统计数据（从数据库查询，考虑去重）
   const loadStatistics = useCallback(async () => {
     try {
-      // 查询所有待质检和已质检的数据（排除已复检完成的数据）
+      // 查询待质检和已质检的数据（排除已复检完成的数据）
+      // 🔧 修复：如果指定了 selectedVideoId，只统计该视频的数据
       // 使用分页查询避免1000条限制
       let allAnnotationsForStats: any[] = [];
       let page = 0;
@@ -321,13 +322,19 @@ export default function InspectionManagePage() {
       let hasMore = true;
       
       while (hasMore) {
-        const { data, error } = await supabase
+        let query = supabase
           .from('annotations')
           .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
           .not('human_annotated_text', 'is', null)
           .neq('human_annotated_text', '')
-          .is('review_status', null)  // 排除已复检完成的数据
-          .range(page * pageSize, (page + 1) * pageSize - 1);
+          .is('review_status', null);  // 排除已复检完成的数据
+        
+        // 🔧 如果指定了视频ID，只查询该视频的数据
+        if (selectedVideoId) {
+          query = query.eq('video_id', selectedVideoId);
+        }
+        
+        const { data, error } = await query.range(page * pageSize, (page + 1) * pageSize - 1);
         
         if (error) {
           console.error('查询统计数据失败（第' + (page + 1) + '页）:', error);
@@ -395,7 +402,7 @@ export default function InspectionManagePage() {
         item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
       ).length;
       
-      console.log('📊 统计数据（去重后）:', {
+      console.log('📊 统计数据（去重后）' + (selectedVideoId ? `（仅视频 ${selectedVideoId}）` : '（全部视频）') + ':', {
         原始数量: allAnnotationsForStats.length,
         去重后数量: deduplicatedAnnotations.length,
         待质检: pendingCount,
@@ -408,7 +415,7 @@ export default function InspectionManagePage() {
     } catch (error) {
       console.error('加载统计数据失败:', error);
     }
-  }, []);
+  }, [selectedVideoId]); // 🔧 添加依赖，当 selectedVideoId 变化时重新加载统计
 
   // 加载数据（只在 selectedVideoId 变化时重新加载）
   useEffect(() => {

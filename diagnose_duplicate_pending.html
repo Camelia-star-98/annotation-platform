@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>诊断待质检数据重复问题</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1890ff;
+            border-bottom: 3px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card.warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-card.success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        th {
+            background: #fafafa;
+            font-weight: 600;
+            color: #262626;
+        }
+        tr:hover {
+            background: #f5f5f5;
+        }
+        .duplicate-row {
+            background: #fff1f0;
+        }
+        .duplicate-row:hover {
+            background: #ffccc7;
+        }
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 10px 5px;
+        }
+        button:hover {
+            background: #40a9ff;
+        }
+        button:disabled {
+            background: #d9d9d9;
+            cursor: not-allowed;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #1890ff;
+        }
+        .error {
+            background: #fff2f0;
+            border: 1px solid #ffccc7;
+            color: #cf1322;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .success {
+            background: #f6ffed;
+            border: 1px solid #b7eb8f;
+            color: #389e0d;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-pending {
+            background: #fff7e6;
+            color: #fa8c16;
+        }
+        .badge-inspected {
+            background: #e6f7ff;
+            color: #1890ff;
+        }
+        .badge-rejected {
+            background: #fff1f0;
+            color: #cf1322;
+        }
+        .section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #fafafa;
+            border-radius: 8px;
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #262626;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 诊断待质检数据重复问题</h1>
+        
+        <div id="loading" class="loading">
+            <p>⏳ 正在加载数据...</p>
+        </div>
+        
+        <div id="error" class="error" style="display: none;"></div>
+        <div id="success" class="success" style="display: none;"></div>
+        
+        <div id="stats" class="stats" style="display: none;"></div>
+        
+        <div id="duplicates" class="section" style="display: none;">
+            <h2>📋 重复数据详情</h2>
+            <div id="duplicatesTable"></div>
+        </div>
+        
+        <div id="details" class="section" style="display: none;">
+            <h2>📊 完整数据分析</h2>
+            <div id="detailsTable"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://kaleelcazbdmycyqapwl.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImthbGVlbGNhemJkbXljeXFhcHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQzMzI4MjgsImV4cCI6MjA0OTkwODgyOH0.h_EZ3MmVLqzFbBb4HLOD0GQTRkXCvFr__1FKsXyg-V8';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function diagnose() {
+            try {
+                console.log('🔍 开始诊断...');
+                
+                // 查询所有数据（包括已质检和待质检）
+                let allData = [];
+                let page = 0;
+                const pageSize = 1000;
+                let hasMore = true;
+                
+                while (hasMore) {
+                    console.log(`📄 查询第 ${page + 1} 页...`);
+                    const { data, error } = await supabase
+                        .from('annotations')
+                        .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
+                        .not('human_annotated_text', 'is', null)
+                        .neq('human_annotated_text', '')
+                        .is('review_status', null)
+                        .range(page * pageSize, (page + 1) * pageSize - 1);
+                    
+                    if (error) {
+                        throw error;
+                    }
+                    
+                    if (data && data.length > 0) {
+                        allData = allData.concat(data);
+                    }
+                    
+                    hasMore = data && data.length === pageSize;
+                    page++;
+                }
+                
+                console.log(`✅ 总共查询到 ${allData.length} 条数据`);
+                
+                // 分析重复数据
+                const groupMap = new Map();
+                allData.forEach(item => {
+                    const key = `${item.video_id}_${item.sentence_no}_${item.annotator}`;
+                    if (!groupMap.has(key)) {
+                        groupMap.set(key, []);
+                    }
+                    groupMap.get(key).push(item);
+                });
+                
+                // 找出重复的组
+                const duplicateGroups = [];
+                groupMap.forEach((items, key) => {
+                    if (items.length > 1) {
+                        duplicateGroups.push({ key, items });
+                    }
+                });
+                
+                console.log(`🔄 发现 ${duplicateGroups.length} 组重复数据`);
+                
+                // 计算统计数据（不去重）
+                const rawPendingCount = allData.filter(item => {
+                    return item.human_annotated_text && 
+                           item.human_annotated_text.trim() !== '' && 
+                           (!item.inspector || item.inspector.trim() === '');
+                }).length;
+                
+                const rawInspectedCount = allData.filter(item => 
+                    item.inspector && item.inspector.trim() !== ''
+                ).length;
+                
+                // 计算统计数据（去重后）
+                const deduplicatedData = Array.from(groupMap.values()).map(items => {
+                    if (items.length === 1) return items[0];
+                    
+                    // 优先保留有质检状态的
+                    const withInspection = items.filter(item => 
+                        item.inspector && item.inspector.trim() !== '' && item.is_qualified === true
+                    );
+                    if (withInspection.length > 0) {
+                        return withInspection.sort((a, b) => 
+                            (b.updated_at || b.created_at) > (a.updated_at || a.created_at) ? 1 : -1
+                        )[0];
+                    }
+                    
+                    // 否则保留最新的
+                    return items.sort((a, b) => 
+                        (b.updated_at || b.created_at) > (a.updated_at || a.created_at) ? 1 : -1
+                    )[0];
+                });
+                
+                const deduplicatedPendingCount = deduplicatedData.filter(item => {
+                    return item.human_annotated_text && 
+                           item.human_annotated_text.trim() !== '' && 
+                           (!item.inspector || item.inspector.trim() === '');
+                }).length;
+                
+                const deduplicatedInspectedCount = deduplicatedData.filter(item => 
+                    item.inspector && item.inspector.trim() !== ''
+                ).length;
+                
+                // 显示统计信息
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('stats').style.display = 'grid';
+                document.getElementById('stats').innerHTML = `
+                    <div class="stat-card">
+                        <h3>数据库总数</h3>
+                        <div class="value">${allData.length}</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <h3>原始待质检数量</h3>
+                        <div class="value">${rawPendingCount}</div>
+                        <small>(包含重复)</small>
+                    </div>
+                    <div class="stat-card success">
+                        <h3>去重后待质检数量</h3>
+                        <div class="value">${deduplicatedPendingCount}</div>
+                        <small>(正确数量)</small>
+                    </div>
+                    <div class="stat-card">
+                        <h3>重复组数</h3>
+                        <div class="value">${duplicateGroups.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>多出的数据</h3>
+                        <div class="value">${allData.length - deduplicatedData.length}</div>
+                        <small>(因重复)</small>
+                    </div>
+                    <div class="stat-card warning">
+                        <h3>原始已质检数量</h3>
+                        <div class="value">${rawInspectedCount}</div>
+                    </div>
+                    <div class="stat-card success">
+                        <h3>去重后已质检数量</h3>
+                        <div class="value">${deduplicatedInspectedCount}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>去重后总数</h3>
+                        <div class="value">${deduplicatedData.length}</div>
+                    </div>
+                `;
+                
+                // 显示重复数据
+                if (duplicateGroups.length > 0) {
+                    document.getElementById('duplicates').style.display = 'block';
+                    let html = '<table><thead><tr><th>分组Key</th><th>重复次数</th><th>视频ID</th><th>句子号</th><th>标注人</th><th>详情</th></tr></thead><tbody>';
+                    
+                    duplicateGroups.slice(0, 50).forEach(group => {
+                        const [videoId, sentenceNo, annotator] = group.key.split('_');
+                        html += `<tr class="duplicate-row">
+                            <td><code>${group.key}</code></td>
+                            <td><strong>${group.items.length}</strong></td>
+                            <td>${videoId}</td>
+                            <td>${sentenceNo}</td>
+                            <td>${annotator}</td>
+                            <td><button onclick="showDetails('${group.key}')">查看详情</button></td>
+                        </tr>`;
+                        
+                        // 存储详情到全局变量
+                        window.duplicateDetails = window.duplicateDetails || {};
+                        window.duplicateDetails[group.key] = group.items;
+                    });
+                    
+                    html += '</tbody></table>';
+                    
+                    if (duplicateGroups.length > 50) {
+                        html += `<p style="color: #fa8c16; text-align: center;">⚠️ 只显示前50组重复数据（共 ${duplicateGroups.length} 组）</p>`;
+                    }
+                    
+                    document.getElementById('duplicatesTable').innerHTML = html;
+                }
+                
+                // 显示成功信息
+                document.getElementById('success').style.display = 'block';
+                document.getElementById('success').innerHTML = `
+                    <h3>✅ 诊断完成！</h3>
+                    <p><strong>问题原因：</strong>统计待质检数量时，数据库中存在重复记录（同一个 video_id + sentence_no + annotator 有多条数据）</p>
+                    <p><strong>解决方案：</strong>代码中已经有去重逻辑，但是在 <code>loadStatistics</code> 函数中，查询时包含了重复数据。需要确认去重逻辑是否正确执行。</p>
+                    <hr>
+                    <p><strong>数据差异：</strong></p>
+                    <ul>
+                        <li>原始待质检数量：<strong>${rawPendingCount}</strong> 条（这是你在界面上看到的数量）</li>
+                        <li>去重后待质检数量：<strong>${deduplicatedPendingCount}</strong> 条（这才是正确的数量）</li>
+                        <li>多出来的数据：<strong>${rawPendingCount - deduplicatedPendingCount}</strong> 条（因为重复）</li>
+                    </ul>
+                `;
+                
+            } catch (error) {
+                console.error('❌ 诊断失败:', error);
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                document.getElementById('error').innerHTML = `
+                    <h3>❌ 诊断失败</h3>
+                    <p>${error.message}</p>
+                    <pre>${JSON.stringify(error, null, 2)}</pre>
+                `;
+            }
+        }
+        
+        window.showDetails = function(key) {
+            const items = window.duplicateDetails[key];
+            if (!items) return;
+            
+            let html = `
+                <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                            background: white; padding: 30px; border-radius: 10px; box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+                            max-width: 90%; max-height: 90%; overflow: auto; z-index: 1000;">
+                    <h2>重复数据详情: ${key}</h2>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>质检人</th>
+                                <th>是否合格</th>
+                                <th>创建时间</th>
+                                <th>更新时间</th>
+                                <th>标注文本</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+            
+            items.forEach(item => {
+                const status = item.inspector ? 
+                    (item.is_qualified === true ? '✅ 通过' : item.is_qualified === false ? '❌ 不通过' : '⚠️ 已质检') : 
+                    '⏳ 待质检';
+                html += `<tr>
+                    <td><code>${item.id.substring(0, 8)}...</code></td>
+                    <td>${item.inspector || '-'}</td>
+                    <td>${status}</td>
+                    <td>${new Date(item.created_at).toLocaleString('zh-CN')}</td>
+                    <td>${item.updated_at ? new Date(item.updated_at).toLocaleString('zh-CN') : '-'}</td>
+                    <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${item.human_annotated_text?.substring(0, 50)}...</td>
+                </tr>`;
+            });
+            
+            html += `
+                        </tbody>
+                    </table>
+                    <button onclick="this.parentElement.remove()">关闭</button>
+                </div>
+                <div onclick="this.nextElementSibling.remove(); this.remove();" 
+                     style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', html);
+        };
+        
+        // 自动开始诊断
+        diagnose();
+    </script>
+</body>
+</html>
+
