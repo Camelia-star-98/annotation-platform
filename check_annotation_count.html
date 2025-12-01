@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查标注条数问题</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #1890ff;
+            margin-top: 20px;
+        }
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #40a9ff;
+        }
+        button:disabled {
+            background-color: #d9d9d9;
+            cursor: not-allowed;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .video-section {
+            background: #fafafa;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border-left: 4px solid #1890ff;
+        }
+        .annotator-info {
+            background: white;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            border: 1px solid #e8e8e8;
+        }
+        .status-good {
+            color: #52c41a;
+            font-weight: bold;
+        }
+        .status-warning {
+            color: #faad14;
+            font-weight: bold;
+        }
+        .status-error {
+            color: #f5222d;
+            font-weight: bold;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #e8e8e8;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #fafafa;
+            font-weight: bold;
+        }
+        .log {
+            background: #000;
+            color: #0f0;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .summary {
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 15px 0;
+        }
+        .detail-item {
+            margin: 5px 0;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 检查标注条数问题</h1>
+        <p>这个工具会帮你诊断为什么"所有已标注任务"页面显示的标注条数很少</p>
+        
+        <button id="checkBtn" onclick="checkAnnotationCount()">开始检查</button>
+        <button onclick="location.reload()">刷新页面</button>
+        
+        <div id="results" class="results"></div>
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        let logMessages = [];
+        
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString('zh-CN');
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : '📊';
+            const logMessage = `[${timestamp}] ${prefix} ${message}`;
+            logMessages.push(logMessage);
+            document.getElementById('log').innerHTML = logMessages.join('<br>');
+            document.getElementById('log').scrollTop = document.getElementById('log').scrollHeight;
+            console.log(logMessage);
+        }
+
+        async function checkAnnotationCount() {
+            const btn = document.getElementById('checkBtn');
+            btn.disabled = true;
+            btn.textContent = '检查中...';
+            
+            logMessages = [];
+            document.getElementById('results').innerHTML = '';
+            
+            try {
+                log('开始检查标注数据...', 'info');
+                log(`Supabase URL: ${SUPABASE_URL}`, 'info');
+                log(`Supabase 客户端已初始化: ${supabase ? '是' : '否'}`, 'info');
+                
+                // 1. 获取所有视频
+                log('Step 1: 获取所有视频', 'info');
+                const { data: videos, error: videoError } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                
+                if (videoError) {
+                    log(`获取视频失败: ${videoError.message}`, 'error');
+                    log(`错误详情: ${JSON.stringify(videoError)}`, 'error');
+                    return;
+                }
+                
+                log(`获取到 ${videos.length} 个视频`, 'success');
+                
+                // 2. 获取所有标注数据
+                log('Step 2: 获取所有标注数据', 'info');
+                const { data: allAnnotations, error: annotError } = await supabase
+                    .from('annotations')
+                    .select('video_id, sentence_no, human_annotated_text, updated_at, status, inspector, is_qualified, annotator')
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '');
+                
+                if (annotError) {
+                    log(`获取标注数据失败: ${annotError.message}`, 'error');
+                    return;
+                }
+                
+                log(`查询到 ${allAnnotations.length} 条标注记录（有标注人）`, 'success');
+                
+                // 3. 过滤有效标注
+                const validAnnotations = allAnnotations.filter(a => 
+                    a.human_annotated_text && a.human_annotated_text.trim() !== ''
+                );
+                
+                log(`过滤后有效标注: ${validAnnotations.length} 条（human_annotated_text不为空）`, 'success');
+                
+                // 4. 统计每个视频的总句子数
+                const videoTotalSentences = new Map();
+                allAnnotations.forEach(item => {
+                    if (!videoTotalSentences.has(item.video_id)) {
+                        videoTotalSentences.set(item.video_id, new Set());
+                    }
+                    videoTotalSentences.get(item.video_id).add(item.sentence_no);
+                });
+                
+                log(`统计完成，共 ${videoTotalSentences.size} 个视频有标注记录`, 'success');
+                
+                // 5. 统计每个视频每个标注员的情况
+                const videoStatsMap = new Map();
+                
+                validAnnotations.forEach(item => {
+                    const annotator = item.annotator || '未知标注员';
+                    const key = `${item.video_id}__${annotator}`;
+                    
+                    if (!videoStatsMap.has(key)) {
+                        videoStatsMap.set(key, {
+                            videoId: item.video_id,
+                            annotator,
+                            sentenceSet: new Set(),
+                            maxUpdateTime: item.updated_at || '',
+                            annotationCount: 0,
+                            passedCount: 0,
+                            rejectedCount: 0,
+                            pendingCount: 0,
+                            statusTrueCount: 0,
+                            statusFalseCount: 0,
+                            statusNullCount: 0
+                        });
+                    }
+                    const stats = videoStatsMap.get(key);
+                    
+                    // 记录句子
+                    stats.sentenceSet.add(item.sentence_no);
+                    stats.annotationCount++;
+                    
+                    // 统计 status 字段
+                    if (item.status === true) {
+                        stats.statusTrueCount++;
+                    } else if (item.status === false) {
+                        stats.statusFalseCount++;
+                    } else {
+                        stats.statusNullCount++;
+                    }
+                    
+                    // 统计质检状态（不依赖status）
+                    if (!item.inspector || item.inspector === '') {
+                        stats.pendingCount++;
+                    } else if (item.is_qualified === true) {
+                        stats.passedCount++;
+                    } else if (item.is_qualified === false) {
+                        stats.rejectedCount++;
+                    } else {
+                        stats.pendingCount++;
+                    }
+                    
+                    // 更新最新时间
+                    if (item.updated_at && item.updated_at > stats.maxUpdateTime) {
+                        stats.maxUpdateTime = item.updated_at;
+                    }
+                });
+                
+                log(`统计完成，共 ${videoStatsMap.size} 个"视频-标注员"组合`, 'success');
+                
+                // 6. 生成报告
+                const videoMap = new Map(videos.map(v => [v.id, v]));
+                const results = [];
+                
+                videoStatsMap.forEach(stats => {
+                    const video = videoMap.get(stats.videoId);
+                    const totalSentences = videoTotalSentences.get(stats.videoId)?.size || 0;
+                    const annotatedSentences = stats.sentenceSet.size;
+                    
+                    if (totalSentences > 0 && annotatedSentences > 0) {
+                        results.push({
+                            videoName: video?.name || '未知视频',
+                            subject: video?.subject || '未知',
+                            annotator: stats.annotator,
+                            totalSentences,
+                            annotatedSentences,
+                            annotationCount: stats.annotationCount,
+                            progressPercentage: Math.round((annotatedSentences / totalSentences) * 100),
+                            isCompleted: annotatedSentences === totalSentences,
+                            passedCount: stats.passedCount,
+                            rejectedCount: stats.rejectedCount,
+                            pendingCount: stats.pendingCount,
+                            statusTrueCount: stats.statusTrueCount,
+                            statusFalseCount: stats.statusFalseCount,
+                            statusNullCount: stats.statusNullCount,
+                            completedTime: stats.maxUpdateTime
+                        });
+                    }
+                });
+                
+                // 按标注条数排序
+                results.sort((a, b) => b.annotationCount - a.annotationCount);
+                
+                log(`生成报告完成，共 ${results.length} 条记录`, 'success');
+                
+                // 7. 显示结果
+                displayResults(results);
+                
+            } catch (error) {
+                log(`检查失败: ${error.message}`, 'error');
+                log(`错误类型: ${error.name}`, 'error');
+                log(`完整错误: ${JSON.stringify(error, Object.getOwnPropertyNames(error))}`, 'error');
+                console.error('详细错误:', error);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '重新检查';
+            }
+        }
+
+        function displayResults(results) {
+            const resultsDiv = document.getElementById('results');
+            
+            // 统计摘要
+            const totalTasks = results.length;
+            const completedTasks = results.filter(r => r.isCompleted).length;
+            const inProgressTasks = totalTasks - completedTasks;
+            const avgAnnotationCount = results.reduce((sum, r) => sum + r.annotationCount, 0) / totalTasks;
+            const minAnnotationCount = Math.min(...results.map(r => r.annotationCount));
+            const maxAnnotationCount = Math.max(...results.map(r => r.annotationCount));
+            
+            // 找出标注条数少的（小于10条）
+            const lowCountTasks = results.filter(r => r.annotationCount < 10);
+            
+            const summaryHTML = `
+                <div class="summary">
+                    <h2>📊 统计摘要</h2>
+                    <div class="detail-item"><strong>总任务数:</strong> ${totalTasks} 个</div>
+                    <div class="detail-item"><strong>已完成:</strong> <span class="status-good">${completedTasks}</span> 个 | <strong>进行中:</strong> <span class="status-warning">${inProgressTasks}</span> 个</div>
+                    <div class="detail-item"><strong>标注条数统计:</strong> 平均 ${avgAnnotationCount.toFixed(1)} 条 | 最少 <span class="status-error">${minAnnotationCount}</span> 条 | 最多 <span class="status-good">${maxAnnotationCount}</span> 条</div>
+                    <div class="detail-item"><strong>⚠️ 标注条数少于10条的任务:</strong> <span class="status-error">${lowCountTasks.length}</span> 个</div>
+                </div>
+            `;
+            
+            // 表格
+            let tableHTML = `
+                <h2>📋 详细列表（按标注条数降序）</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>视频名称</th>
+                            <th>科目</th>
+                            <th>标注人</th>
+                            <th>标注进度</th>
+                            <th>标注条数</th>
+                            <th>status统计</th>
+                            <th>质检状态</th>
+                            <th>完成状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            results.forEach(r => {
+                const progressClass = r.progressPercentage === 100 ? 'status-good' : 
+                                     r.progressPercentage >= 50 ? 'status-warning' : 'status-error';
+                const countClass = r.annotationCount < 10 ? 'status-error' : 
+                                  r.annotationCount < 50 ? 'status-warning' : 'status-good';
+                
+                tableHTML += `
+                    <tr>
+                        <td>${r.videoName}</td>
+                        <td>${r.subject}</td>
+                        <td>${r.annotator}</td>
+                        <td class="${progressClass}">${r.annotatedSentences} / ${r.totalSentences} (${r.progressPercentage}%)</td>
+                        <td class="${countClass}"><strong>${r.annotationCount}</strong> 条</td>
+                        <td style="font-size: 11px;">
+                            true: ${r.statusTrueCount}<br>
+                            false: ${r.statusFalseCount}<br>
+                            null: ${r.statusNullCount}
+                        </td>
+                        <td style="font-size: 11px;">
+                            ${r.pendingCount > 0 ? `待检: ${r.pendingCount}<br>` : ''}
+                            ${r.passedCount > 0 ? `<span class="status-good">通过: ${r.passedCount}</span><br>` : ''}
+                            ${r.rejectedCount > 0 ? `<span class="status-error">不通过: ${r.rejectedCount}</span>` : ''}
+                        </td>
+                        <td>${r.isCompleted ? '<span class="status-good">✅ 已完成</span>' : '<span class="status-warning">🔄 进行中</span>'}</td>
+                    </tr>
+                `;
+            });
+            
+            tableHTML += `
+                    </tbody>
+                </table>
+            `;
+            
+            // 重点问题分析
+            let issueHTML = '';
+            if (lowCountTasks.length > 0) {
+                issueHTML = `
+                    <div class="video-section">
+                        <h2>⚠️ 问题分析：标注条数少于10条的任务</h2>
+                        <p>以下任务的标注条数异常少，可能存在问题：</p>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>视频名称</th>
+                                    <th>标注人</th>
+                                    <th>标注条数</th>
+                                    <th>已标注/总句数</th>
+                                    <th>可能原因</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+                
+                lowCountTasks.forEach(r => {
+                    let reason = '';
+                    if (r.progressPercentage === 100) {
+                        reason = '✅ 视频本身句子很少';
+                    } else if (r.progressPercentage < 10) {
+                        reason = '⚠️ 刚开始标注';
+                    } else {
+                        reason = '❓ 可能存在数据问题';
+                    }
+                    
+                    issueHTML += `
+                        <tr>
+                            <td>${r.videoName}</td>
+                            <td>${r.annotator}</td>
+                            <td class="status-error"><strong>${r.annotationCount}</strong> 条</td>
+                            <td>${r.annotatedSentences} / ${r.totalSentences} (${r.progressPercentage}%)</td>
+                            <td>${reason}</td>
+                        </tr>
+                    `;
+                });
+                
+                issueHTML += `
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+            
+            resultsDiv.innerHTML = summaryHTML + issueHTML + tableHTML;
+        }
+    </script>
+</body>
+</html>
+

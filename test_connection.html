@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试 Supabase 连接</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.3/dist/umd/supabase.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .log {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .log-item {
+            padding: 5px;
+            margin: 3px 0;
+            border-left: 3px solid #ccc;
+            padding-left: 10px;
+        }
+        .success { border-color: #52c41a; color: #52c41a; }
+        .error { border-color: #f5222d; color: #f5222d; }
+        .info { border-color: #1890ff; color: #1890ff; }
+        button {
+            padding: 10px 20px;
+            background: #1890ff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #40a9ff;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 测试 Supabase 连接</h1>
+    <button onclick="testConnection()">开始测试</button>
+    <div id="log" class="log"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const logItem = document.createElement('div');
+            logItem.className = `log-item ${type}`;
+            logItem.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logDiv.appendChild(logItem);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(message);
+        }
+
+        async function testConnection() {
+            document.getElementById('log').innerHTML = '';
+            
+            try {
+                log('测试 1: 检查 Supabase 客户端', 'info');
+                log(`✓ Supabase URL: ${SUPABASE_URL}`, 'success');
+                log(`✓ 客户端对象存在: ${!!supabase}`, 'success');
+                log(`✓ window.supabase 存在: ${!!window.supabase}`, 'success');
+                
+                log('\n测试 2: 简单查询 - 获取一条视频记录', 'info');
+                const { data: video, error: videoError } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .limit(1)
+                    .single();
+                
+                if (videoError) {
+                    log(`✗ 视频查询失败: ${videoError.message}`, 'error');
+                    log(`错误代码: ${videoError.code}`, 'error');
+                    log(`错误详情: ${JSON.stringify(videoError, null, 2)}`, 'error');
+                    return;
+                }
+                
+                log(`✓ 成功获取视频: ${video.video_name}`, 'success');
+                log(`视频 ID: ${video.id}`, 'info');
+                
+                log('\n测试 3: 查询标注数据', 'info');
+                const { data: annotations, error: annotError } = await supabase
+                    .from('annotations')
+                    .select('*')
+                    .eq('video_id', video.id)
+                    .limit(5);
+                
+                if (annotError) {
+                    log(`✗ 标注查询失败: ${annotError.message}`, 'error');
+                    log(`错误详情: ${JSON.stringify(annotError, null, 2)}`, 'error');
+                    return;
+                }
+                
+                log(`✓ 成功获取 ${annotations.length} 条标注记录`, 'success');
+                
+                log('\n测试 4: 复杂查询 - 带过滤条件', 'info');
+                const { data: filteredAnnotations, error: filterError } = await supabase
+                    .from('annotations')
+                    .select('video_id, sentence_no, annotator')
+                    .not('annotator', 'is', null)
+                    .limit(10);
+                
+                if (filterError) {
+                    log(`✗ 过滤查询失败: ${filterError.message}`, 'error');
+                    log(`错误详情: ${JSON.stringify(filterError, null, 2)}`, 'error');
+                    return;
+                }
+                
+                log(`✓ 成功获取 ${filteredAnnotations.length} 条过滤后的记录`, 'success');
+                
+                log('\n✅ 所有测试通过！', 'success');
+                
+            } catch (error) {
+                log(`✗ 发生异常: ${error.message}`, 'error');
+                log(`异常堆栈: ${error.stack}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
+

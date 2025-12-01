@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>检查牛超攀的复检数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 1400px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 { color: #1890ff; margin-bottom: 20px; }
+    h2 { color: #52c41a; margin-top: 30px; }
+    h3 { color: #fa8c16; margin-top: 20px; }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover { background: #40a9ff; }
+    button:disabled { background: #d9d9d9; cursor: not-allowed; }
+    .result {
+      margin-top: 20px;
+      padding: 15px;
+      background: #f0f0f0;
+      border-radius: 4px;
+      white-space: pre-wrap;
+      font-family: 'Monaco', monospace;
+      font-size: 13px;
+    }
+    .success { background: #f6ffed; border-left: 4px solid #52c41a; }
+    .warning { background: #fffbe6; border-left: 4px solid #faad14; }
+    .error { background: #fff2f0; border-left: 4px solid #ff4d4f; }
+    .info { background: #e6f7ff; border-left: 4px solid #1890ff; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 8px 12px;
+      text-align: left;
+    }
+    th {
+      background: #fafafa;
+      font-weight: 600;
+    }
+    tr:hover { background: #fafafa; }
+    .highlight { background: #ffeb3b !important; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 检查牛超攀的复检数据问题</h1>
+    <p><strong>问题</strong>：牛超攀在视频"第5批第一轮-语文-1.mp4"中显示总标注数105条，已复检29条。为什么不是105条都已复检？</p>
+    
+    <button onclick="checkData()" id="checkBtn">开始检查</button>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const supabaseUrl = 'https://mcsqfbrpknagawxqwybc.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1jc3FmYnJwa25hZ2F3eHF3eWJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzE5MTU5NDcsImV4cCI6MjA0NzQ5MTk0N30.aZiJfaXXfv9gL8LzG97bHjf0oePD_V03gkHl9BHCnck';
+    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    async function checkData() {
+      const resultDiv = document.getElementById('result');
+      const btn = document.getElementById('checkBtn');
+      btn.disabled = true;
+      resultDiv.innerHTML = '<div class="result info">🔄 正在检查数据...</div>';
+
+      try {
+        // 1. 查找视频ID
+        console.log('📹 查找视频: 第5批第一轮-语文-1.mp4');
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('id, name')
+          .ilike('name', '%第5批第一轮-语文-1%');
+
+        if (videoError) throw videoError;
+        
+        if (!videos || videos.length === 0) {
+          resultDiv.innerHTML = '<div class="result error">❌ 未找到该视频</div>';
+          btn.disabled = false;
+          return;
+        }
+
+        const video = videos[0];
+        console.log('✅ 找到视频:', video);
+
+        // 2. 查询牛超攀的所有标注数据
+        console.log('📊 查询牛超攀的标注数据...');
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, is_qualified, updated_at, created_at')
+          .eq('video_id', video.id)
+          .eq('annotator', '牛超攀')
+          .order('sentence_no', { ascending: true });
+
+        if (annError) throw annError;
+
+        console.log(`✅ 查询到 ${annotations.length} 条原始数据`);
+
+        // 3. 去重逻辑（与 ReviewSelectPage 一致）
+        const deduplicatedMap = new Map();
+        
+        annotations.forEach(ann => {
+          const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+          const existing = deduplicatedMap.get(key);
+          
+          if (!existing) {
+            deduplicatedMap.set(key, ann);
+          } else {
+            // 优先保留有质检状态的数据
+            const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && existing.is_qualified === true;
+            const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+            
+            if (currentHasInspection && !existingHasInspection) {
+              deduplicatedMap.set(key, ann);
+            } else if (existingHasInspection && !currentHasInspection) {
+              // 保留旧数据
+            } else {
+              // 都有或都没有质检状态，保留最新的
+              const existingTime = existing.updated_at || existing.created_at || '';
+              const currentTime = ann.updated_at || ann.created_at || '';
+              if (currentTime > existingTime) {
+                deduplicatedMap.set(key, ann);
+              }
+            }
+          }
+        });
+
+        const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+        console.log(`✅ 去重后 ${deduplicatedAnnotations.length} 条数据`);
+
+        // 4. 统计分析
+        let totalAnnotations = 0;
+        let reviewedCount = 0;
+        let pendingCount = 0;
+        let unannotatedCount = 0;
+        let notQualified = 0;
+        let noInspector = 0;
+
+        const detailRows = [];
+
+        deduplicatedAnnotations.forEach(ann => {
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          
+          totalAnnotations++;
+          
+          if (hasHumanText) {
+            // 已复检
+            if (ann.review_status === true) {
+              reviewedCount++;
+              detailRows.push({
+                sentence_no: ann.sentence_no,
+                status: '✅ 已复检',
+                review_status: ann.review_status,
+                inspector: ann.inspector || '-',
+                is_qualified: ann.is_qualified,
+                reviewer: ann.reviewer || '-',
+                reason: '有标注文本 + review_status=true'
+              });
+            }
+            // 待复检：质检通过且有质检人
+            else if (ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true) {
+              pendingCount++;
+              detailRows.push({
+                sentence_no: ann.sentence_no,
+                status: '⏳ 待复检',
+                review_status: ann.review_status,
+                inspector: ann.inspector,
+                is_qualified: ann.is_qualified,
+                reviewer: ann.reviewer || '-',
+                reason: '有标注文本 + 质检通过 + 有质检人 + 未复检'
+              });
+            }
+            // 其他情况
+            else if (!ann.inspector || ann.inspector.trim() === '') {
+              noInspector++;
+              detailRows.push({
+                sentence_no: ann.sentence_no,
+                status: '❓ 无质检人',
+                review_status: ann.review_status,
+                inspector: '-',
+                is_qualified: ann.is_qualified,
+                reviewer: ann.reviewer || '-',
+                reason: '有标注文本但无质检人'
+              });
+            } else if (ann.is_qualified !== true) {
+              notQualified++;
+              detailRows.push({
+                sentence_no: ann.sentence_no,
+                status: '❌ 质检不通过',
+                review_status: ann.review_status,
+                inspector: ann.inspector,
+                is_qualified: ann.is_qualified,
+                reviewer: ann.reviewer || '-',
+                reason: '有标注文本但质检不通过'
+              });
+            }
+          } else {
+            unannotatedCount++;
+            detailRows.push({
+              sentence_no: ann.sentence_no,
+              status: '⚠️ 未标注',
+              review_status: ann.review_status,
+              inspector: ann.inspector || '-',
+              is_qualified: ann.is_qualified,
+              reviewer: ann.reviewer || '-',
+              reason: '无标注文本'
+            });
+          }
+        });
+
+        // 5. 生成报告
+        let html = '';
+        
+        html += '<div class="result success">';
+        html += '<h2>📊 数据统计总览</h2>';
+        html += `<p><strong>视频</strong>: ${video.name} (ID: ${video.id})</p>`;
+        html += `<p><strong>标注人</strong>: 牛超攀</p>`;
+        html += `<p><strong>原始数据</strong>: ${annotations.length} 条</p>`;
+        html += `<p><strong>去重后</strong>: ${deduplicatedAnnotations.length} 条</p>`;
+        html += '</div>';
+
+        html += '<div class="result ' + (totalAnnotations === 105 ? 'success' : 'warning') + '">';
+        html += '<h3>📈 统计结果（与页面显示对比）</h3>';
+        html += `<p>✅ <strong>总标注数</strong>: ${totalAnnotations} 条 ${totalAnnotations === 105 ? '(与页面一致 ✓)' : '(与页面不一致 ⚠️)'}</p>`;
+        html += `<p>${reviewedCount === 29 ? '✅' : '❌'} <strong>已复检</strong>: ${reviewedCount} 条 ${reviewedCount === 29 ? '(与页面一致 ✓)' : '(与页面不一致 ⚠️)'}</p>`;
+        html += `<p>⏳ <strong>待复检</strong>: ${pendingCount} 条</p>`;
+        html += `<p>⚠️ <strong>未标注</strong>: ${unannotatedCount} 条</p>`;
+        html += `<p>❌ <strong>质检不通过</strong>: ${notQualified} 条</p>`;
+        html += `<p>❓ <strong>无质检人</strong>: ${noInspector} 条</p>`;
+        html += '</div>';
+
+        html += '<div class="result ' + (reviewedCount === totalAnnotations ? 'success' : 'warning') + '">';
+        html += '<h3>🔍 问题原因分析</h3>';
+        
+        if (reviewedCount === totalAnnotations) {
+          html += '<p>✅ 所有标注数据都已复检完成！</p>';
+        } else {
+          html += '<p><strong>⚠️ 为什么只有29条已复检？</strong></p>';
+          html += '<p>根据复检逻辑，只有同时满足以下条件的数据才算"已复检"：</p>';
+          html += '<ul>';
+          html += '<li>✅ 有标注文本（human_annotated_text 不为空）</li>';
+          html += '<li>✅ review_status = true</li>';
+          html += '</ul>';
+          html += '<p>其他 ' + (totalAnnotations - reviewedCount) + ' 条数据的情况：</p>';
+          html += '<ul>';
+          if (pendingCount > 0) {
+            html += '<li>⏳ ' + pendingCount + ' 条是<strong>待复检</strong>（质检通过但未复检）</li>';
+          }
+          if (unannotatedCount > 0) {
+            html += '<li>⚠️ ' + unannotatedCount + ' 条是<strong>未标注</strong>（无标注文本）</li>';
+          }
+          if (notQualified > 0) {
+            html += '<li>❌ ' + notQualified + ' 条<strong>质检不通过</strong>（不应进入复检流程）</li>';
+          }
+          if (noInspector > 0) {
+            html += '<li>❓ ' + noInspector + ' 条<strong>无质检人</strong>（未经质检）</li>';
+          }
+          html += '</ul>';
+        }
+        html += '</div>';
+
+        // 详细数据表格
+        html += '<div class="result info">';
+        html += '<h3>📋 详细数据列表（前50条）</h3>';
+        html += '<table>';
+        html += '<thead><tr>';
+        html += '<th>句子号</th>';
+        html += '<th>状态</th>';
+        html += '<th>复检状态</th>';
+        html += '<th>质检人</th>';
+        html += '<th>质检结果</th>';
+        html += '<th>复检人</th>';
+        html += '<th>原因说明</th>';
+        html += '</tr></thead>';
+        html += '<tbody>';
+        
+        detailRows.slice(0, 50).forEach(row => {
+          const rowClass = row.status.includes('已复检') ? 'highlight' : '';
+          html += `<tr class="${rowClass}">`;
+          html += `<td>${row.sentence_no}</td>`;
+          html += `<td>${row.status}</td>`;
+          html += `<td>${row.review_status === true ? '✅ true' : row.review_status === false ? '❌ false' : '❓ null'}</td>`;
+          html += `<td>${row.inspector}</td>`;
+          html += `<td>${row.is_qualified === true ? '✅ 通过' : row.is_qualified === false ? '❌ 不通过' : '❓ null'}</td>`;
+          html += `<td>${row.reviewer}</td>`;
+          html += `<td>${row.reason}</td>`;
+          html += '</tr>';
+        });
+        
+        html += '</tbody></table>';
+        if (detailRows.length > 50) {
+          html += `<p style="margin-top:10px;color:#999;">只显示前50条，共${detailRows.length}条数据</p>`;
+        }
+        html += '</div>';
+
+        // 结论
+        html += '<div class="result ' + (reviewedCount < totalAnnotations ? 'warning' : 'success') + '">';
+        html += '<h3>✍️ 结论</h3>';
+        if (reviewedCount < totalAnnotations) {
+          html += '<p><strong>这不是bug！</strong>页面显示是正确的。</p>';
+          html += '<p>牛超攀在该视频中有105条标注数据，但<strong>只有29条已完成复检</strong>（review_status=true）。</p>';
+          html += '<p>其余的数据可能是：</p>';
+          html += '<ul>';
+          html += '<li>待复检（质检通过但尚未复检）</li>';
+          html += '<li>未标注（没有标注文本）</li>';
+          html += '<li>质检不通过（不应进入复检流程）</li>';
+          html += '<li>未经质检（没有质检人）</li>';
+          html += '</ul>';
+          html += '<p><strong>建议</strong>：检查为什么有这么多数据没有完成复检。</p>';
+        } else {
+          html += '<p>✅ 所有数据都已完成复检！</p>';
+        }
+        html += '</div>';
+
+        resultDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('❌ 检查失败:', error);
+        resultDiv.innerHTML = `<div class="result error">❌ 检查失败: ${error.message}</div>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
+

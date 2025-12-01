@@ -355,47 +355,47 @@ export async function getReviewedAnnotations(videoIds?: string[]): Promise<Annot
 export async function getAnnotations(videoId: string): Promise<AnnotationItem[]> {
   try {
     return await withRetry(async () => {
-      // 优化：只查询必要字段，关联视频表获取视频信息
+  // 优化：只查询必要字段，关联视频表获取视频信息
       const query = supabase
-        .from('annotations')
-        .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status, videos!inner(url, name, subject)')
-        .eq('video_id', videoId)
-        .order('sentence_no', { ascending: true });
+    .from('annotations')
+    .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status, videos!inner(url, name, subject)')
+    .eq('video_id', videoId)
+    .order('sentence_no', { ascending: true });
 
       const { data, error } = await withTimeout(query, 15000); // 15秒超时
 
-      if (error) {
-        console.error('获取标注数据失败:', error);
+  if (error) {
+    console.error('获取标注数据失败:', error);
         throw error; // 抛出错误以便重试机制处理
-      }
+  }
 
-      // 转换数据格式
-      return (data || []).map(item => {
-        const video = Array.isArray(item.videos) ? item.videos[0] : item.videos;
-        return {
-          id: item.id,
-          videoId: item.video_id,
-          sentenceNo: item.sentence_no,
-          timeRange: item.time_range,
-          startTime: item.start_time,
-          endTime: item.end_time,
-          originalText: item.original_text,
-          aiRewrittenText: item.ai_rewritten_text || '', // 修复：查询并返回大模型改写文本
-          humanAnnotatedText: item.human_annotated_text,
-          majorCategory: item.major_category,
-          minorCategory: item.minor_category,
-          remark: item.remark,
-          status: item.status,
-          annotator: item.annotator,
-          isQualified: item.is_qualified,
-          inspector: item.inspector,
-          reviewer: item.reviewer || '', // 添加复检人
-          reviewStatus: item.review_status, // 添加复检状态
-          videoUrl: video?.url || '',
-          videoName: video?.name || '',
-          subject: video?.subject || ''
-        };
-      });
+  // 转换数据格式
+  return (data || []).map(item => {
+    const video = Array.isArray(item.videos) ? item.videos[0] : item.videos;
+    return {
+      id: item.id,
+      videoId: item.video_id,
+      sentenceNo: item.sentence_no,
+      timeRange: item.time_range,
+      startTime: item.start_time,
+      endTime: item.end_time,
+      originalText: item.original_text,
+      aiRewrittenText: item.ai_rewritten_text || '', // 修复：查询并返回大模型改写文本
+      humanAnnotatedText: item.human_annotated_text,
+      majorCategory: item.major_category,
+      minorCategory: item.minor_category,
+      remark: item.remark,
+      status: item.status,
+      annotator: item.annotator,
+      isQualified: item.is_qualified,
+      inspector: item.inspector,
+      reviewer: item.reviewer || '', // 添加复检人
+      reviewStatus: item.review_status, // 添加复检状态
+      videoUrl: video?.url || '',
+      videoName: video?.name || '',
+      subject: video?.subject || ''
+    };
+  });
     }, 3, 1000); // 最多重试3次，每次间隔1秒
   } catch (error) {
     console.error('获取标注数据超时或失败（已重试）:', error);
@@ -821,32 +821,32 @@ export async function getProblemCategories(): Promise<{ majorCategory: string; m
   try {
     return await withRetry(async () => {
       const query = supabase
-        .from('problem_categories')
-        .select('*')
-        .order('major_category', { ascending: true })
-        .order('minor_category', { ascending: true });
+      .from('problem_categories')
+      .select('*')
+      .order('major_category', { ascending: true })
+      .order('minor_category', { ascending: true });
 
       const { data, error } = await withTimeout(query, 10000); // 10秒超时
 
-      if (error) {
+    if (error) {
         console.error('获取问题分类失败:', { message: error.message, details: error });
         throw error; // 抛出错误以便重试机制处理
+    }
+
+    // 按大类分组
+    const grouped = new Map<string, string[]>();
+    data?.forEach(item => {
+      if (!grouped.has(item.major_category)) {
+        grouped.set(item.major_category, []);
       }
+      grouped.get(item.major_category)!.push(item.minor_category);
+    });
 
-      // 按大类分组
-      const grouped = new Map<string, string[]>();
-      data?.forEach(item => {
-        if (!grouped.has(item.major_category)) {
-          grouped.set(item.major_category, []);
-        }
-        grouped.get(item.major_category)!.push(item.minor_category);
-      });
-
-      // 转换为数组格式
-      return Array.from(grouped.entries()).map(([majorCategory, minorCategories]) => ({
-        majorCategory,
-        minorCategories
-      }));
+    // 转换为数组格式
+    return Array.from(grouped.entries()).map(([majorCategory, minorCategories]) => ({
+      majorCategory,
+      minorCategories
+    }));
     }, 3, 1000); // 最多重试3次，每次间隔1秒
   } catch (error) {
     console.error('获取问题分类失败（已重试）:', error instanceof Error ? { message: error.message, details: error } : error);

@@ -20,10 +20,12 @@ import {
   CloseCircleOutlined,
   WarningOutlined,
   UserOutlined,
-  CloseOutlined
+  CloseOutlined,
+  HistoryOutlined
 } from '@ant-design/icons';
 import type { AnnotationItem } from '../types';
 import { getVideos, getBatchCompletedAnnotatorsCount } from '../api/database';
+import AnnotationHistoryModal from '../components/AnnotationHistoryModal';
 
 const { Header, Content } = Layout;
 const { Title, Text } = Typography;
@@ -85,6 +87,10 @@ export default function AnnotationTaskListPage() {
   const [currentTask, setCurrentTask] = useState<CompletedTask | null>(null);
   const [availableAnnotators, setAvailableAnnotators] = useState<string[]>([]);
   const [loadingAnnotators, setLoadingAnnotators] = useState(false);
+  
+  // 🆕 历史版本查看
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [currentAnnotationId, setCurrentAnnotationId] = useState<string>('');
 
   useEffect(() => {
     loadTasks();
@@ -242,104 +248,83 @@ export default function AnnotationTaskListPage() {
   const loadRejectedItems = async () => {
     try {
       const { supabase } = await import('../api/supabase');
-      const allVideos = await getVideos();
       
-      console.log('🔍 查询当前标注人被打回的数据:', annotatorName);
+      console.log('🔍 查询所有人被打回的数据（从 rejected_annotations 表）');
       
-      // 🚀 优化：直接查询被打回的数据，不需要分页
-      let { data: allAnnotations, error } = await supabase
-        .from('annotations')
-        .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at, rejection_count')
-        .eq('annotator', annotatorName)
-        .not('inspector', 'is', null)
-        .neq('inspector', '')
-        .eq('is_qualified', false);
-      
-      // 如果字段不存在，尝试不查询 rejection_count 字段
-      if (error && error.message?.includes('rejection_count')) {
-        console.log('⚠️ rejection_count 字段不存在，使用不包含该字段的查询...');
-        const { data: dataWithoutRejectionCount, error: errorWithoutRejectionCount } = await supabase
-          .from('annotations')
-          .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
-          .eq('annotator', annotatorName)
-          .not('inspector', 'is', null)
-          .neq('inspector', '')
-          .eq('is_qualified', false);
-        
-        if (!errorWithoutRejectionCount) {
-          allAnnotations = dataWithoutRejectionCount;
-          error = null;
-        }
-      }
+      // 🆕 从 rejected_annotations 表查询所有未重新提交的被打回数据（所有标注人）
+      const { data: rejectedData, error } = await supabase
+        .from('rejected_annotations')
+        .select('*')
+        .eq('is_resubmitted', false)
+        .order('rejected_at', { ascending: false });
       
       if (error) {
-        console.error('查询被打回数据失败:', error);
-        message.error('加载失败');
-        return;
-      }
-      
-      console.log('📊 被打回数据数量（is_qualified=false）:', allAnnotations?.length || 0);
-      
-      // 如果查询结果为空，尝试查询 is_qualified 为 null 但有质检人的数据（可能是旧数据）
-      if (!allAnnotations || allAnnotations.length === 0) {
-        console.log('⚠️ 未找到 is_qualified=false 的数据，尝试查询 is_qualified=null 但有质检人的数据...');
-        let { data: nullQualifiedData, error: nullError } = await supabase
+        console.error('❌ 查询 rejected_annotations 表失败:', error);
+        // 如果表不存在，回退到旧逻辑（只查询当前标注人）
+        console.log('⚠️ rejected_annotations 表可能不存在，使用旧逻辑查询 annotations 表');
+        
+        let { data: allAnnotations, error: annotationsError } = await supabase
           .from('annotations')
           .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at, rejection_count')
           .eq('annotator', annotatorName)
           .not('inspector', 'is', null)
           .neq('inspector', '')
-          .is('is_qualified', null);
+          .eq('is_qualified', false);
         
-        // 如果字段不存在，尝试不查询 rejection_count 字段
-        if (nullError && nullError.message?.includes('rejection_count')) {
-          console.log('⚠️ rejection_count 字段不存在，使用不包含该字段的查询...');
-          const { data: dataWithoutRejectionCount, error: errorWithoutRejectionCount } = await supabase
-            .from('annotations')
-            .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at')
-            .eq('annotator', annotatorName)
-            .not('inspector', 'is', null)
-            .neq('inspector', '')
-            .is('is_qualified', null);
-          
-          if (!errorWithoutRejectionCount) {
-            nullQualifiedData = dataWithoutRejectionCount;
-            nullError = null;
-          }
+        if (annotationsError) {
+          console.error('查询被打回数据失败:', annotationsError);
+          message.error('加载失败');
+          return;
         }
         
-        if (!nullError && nullQualifiedData && nullQualifiedData.length > 0) {
-          console.log('📊 找到 is_qualified=null 但有质检人的数据:', nullQualifiedData.length);
-          allAnnotations = nullQualifiedData;
-        }
+        const allVideos = await getVideos();
+        const videoMap = new Map(allVideos.map(v => [v.id, v]));
+        
+        const rejected = (allAnnotations || [])
+          .map(item => {
+            const video = videoMap.get(item.video_id);
+            return {
+              id: item.id,
+              videoId: item.video_id,
+              videoName: video?.name || '未知视频',
+              subject: video?.subject || '未知',
+              originalText: item.original_text || '',
+              annotatedText: item.human_annotated_text || '',
+              majorCategory: item.major_category || '',
+              minorCategory: item.minor_category || '',
+              inspector: item.inspector || '未知',
+              annotator: item.annotator || '',
+              rejectedTime: item.updated_at || item.created_at || '',
+              rejectionCount: item.rejection_count || 0
+            };
+          })
+          .sort((a, b) => b.rejectedTime.localeCompare(a.rejectedTime));
+        
+        setRejectedItems(rejected);
+        console.log(`✅ [旧逻辑] 加载了 ${rejected.length} 条被打回的数据`);
+        return;
       }
       
-      // 创建视频ID到视频信息的映射
-      const videoMap = new Map(allVideos.map(v => [v.id, v]));
+      console.log('📊 从 rejected_annotations 表查询到的数据数量:', rejectedData?.length || 0);
       
-      // 转换数据格式，按打回时间降序排序
-      const rejected = (allAnnotations || [])
-        .map(item => {
-          const video = videoMap.get(item.video_id);
-          return {
-            id: item.id,
-            videoId: item.video_id,
-            videoName: video?.name || '未知视频',
-            subject: video?.subject || '未知',
-            originalText: item.original_text || '',
-            annotatedText: item.human_annotated_text || '',
-            majorCategory: item.major_category || '',
-            minorCategory: item.minor_category || '',
-            inspector: item.inspector || '未知',
-            annotator: item.annotator || '',
-            rejectedTime: item.updated_at || item.created_at || '',
-            rejectionCount: item.rejection_count || 0
-          };
-        })
-        .sort((a, b) => b.rejectedTime.localeCompare(a.rejectedTime));
+      // 转换数据格式
+      const rejected: RejectedAnnotation[] = (rejectedData || []).map(item => ({
+        id: item.annotation_id, // 使用原始 annotation_id 以便跳转到标注页面
+        videoId: item.video_id,
+        videoName: item.video_name,
+        subject: item.subject,
+        originalText: item.original_text || '',
+        annotatedText: item.human_annotated_text || '',
+        majorCategory: item.major_category || '',
+        minorCategory: item.minor_category || '',
+        inspector: item.inspector || '未知',
+        annotator: item.annotator || '',
+        rejectedTime: item.rejected_at || '',
+        rejectionCount: item.rejection_count || 1
+      }));
       
       setRejectedItems(rejected);
-      console.log(`✅ 加载了 ${rejected.length} 条被打回的数据`);
+      console.log(`✅ 加载了 ${rejected.length} 条被打回的数据（所有标注人，未重新提交）`);
     } catch (error) {
       console.error('加载被打回数据失败:', error);
       message.error('加载被打回数据失败');
@@ -418,15 +403,19 @@ export default function AnnotationTaskListPage() {
         stats.sentenceSet.add(item.sentence_no);
         stats.annotationCount++;
         
-        // 统计质检状态
-        if (item.status === true) {
-          if (!item.inspector || item.inspector === '') {
-            stats.pendingCount++;
-          } else if (item.is_qualified === true) {
-            stats.passedCount++;
-          } else if (item.is_qualified === false) {
-            stats.rejectedCount++;
-          }
+        // 统计质检状态（不依赖status字段）
+        if (!item.inspector || item.inspector === '') {
+          // 没有质检人，说明待质检
+          stats.pendingCount++;
+        } else if (item.is_qualified === true) {
+          // 有质检人且通过
+          stats.passedCount++;
+        } else if (item.is_qualified === false) {
+          // 有质检人且不通过
+          stats.rejectedCount++;
+        } else {
+          // 有质检人但 is_qualified 为 null，可能是旧数据或待定
+          stats.pendingCount++;
         }
         
         // 更新最新的标注时间
@@ -687,17 +676,28 @@ export default function AnnotationTaskListPage() {
     {
       title: '操作',
       key: 'action',
-      width: 120,
+      width: 200,
       fixed: 'right' as const,
       render: (_: any, record: RejectedAnnotation) => (
-        <Button
-          type="primary"
-          danger
-          icon={<WarningOutlined />}
-          onClick={() => handleReannotate(record)}
-        >
-          重新标注
-        </Button>
+        <Space>
+          <Button
+            type="primary"
+            danger
+            icon={<WarningOutlined />}
+            onClick={() => handleReannotate(record)}
+          >
+            重新标注
+          </Button>
+          <Button
+            icon={<HistoryOutlined />}
+            onClick={() => {
+              setCurrentAnnotationId(record.id);
+              setHistoryModalVisible(true);
+            }}
+          >
+            历史
+          </Button>
+        </Space>
       )
     }
   ];
@@ -1037,6 +1037,16 @@ export default function AnnotationTaskListPage() {
             />
           </div>
         </Modal>
+
+        {/* 🆕 历史版本查看弹窗 */}
+        <AnnotationHistoryModal
+          visible={historyModalVisible}
+          onClose={() => {
+            setHistoryModalVisible(false);
+            setCurrentAnnotationId('');
+          }}
+          annotationId={currentAnnotationId}
+        />
       </Content>
     </Layout>
   );

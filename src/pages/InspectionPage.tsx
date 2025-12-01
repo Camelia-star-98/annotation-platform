@@ -16,11 +16,13 @@ import {
 import {
   ArrowLeftOutlined,
   CheckOutlined,
-  CloseOutlined
+  CloseOutlined,
+  HistoryOutlined
 } from '@ant-design/icons';
 import ReactPlayer from 'react-player';
 import { MOCK_ANNOTATED_DATA } from '../mock/data';
 import type { AnnotationItem } from '../types';
+import AnnotationHistoryModal from '../components/AnnotationHistoryModal';
 import './InspectionPage.css';
 
 const { Header, Content } = Layout;
@@ -41,6 +43,10 @@ export default function InspectionPage() {
   const [nameInputValue, setNameInputValue] = useState(defaultUserName); // 模态框中的输入值
   const [isNameModalVisible, setIsNameModalVisible] = useState(false); // 是否显示姓名输入模态框
   const pageSize = 20;
+  
+  // 🆕 历史版本查看
+  const [historyModalVisible, setHistoryModalVisible] = useState(false);
+  const [currentAnnotationId, setCurrentAnnotationId] = useState<string>('');
 
   // 页面加载时检查是否需要填写质检人姓名
   useEffect(() => {
@@ -144,11 +150,46 @@ export default function InspectionPage() {
           inspector: inspectorName.trim()
         };
         
-        // 如果质检不通过，增加 rejection_count
+        // 如果质检不通过，增加 rejection_count 并记录到 rejected_annotations 表
         if (item.isQualified === false) {
           const currentCount = rejectionCountMap.get(item.id) || 0;
           updateData.rejectionCount = currentCount + 1;
           console.log(`📝 数据 ${item.id} 被打回，rejection_count: ${currentCount} -> ${updateData.rejectionCount}`);
+          
+          // 🆕 将被打回的数据记录到 rejected_annotations 表（所有人可见）
+          try {
+            const { error: insertError } = await supabase
+              .from('rejected_annotations')
+              .insert({
+                annotation_id: item.id,
+                video_id: item.videoId,
+                video_name: item.videoName,
+                subject: item.subject,
+                sentence_no: item.sentenceNo,
+                time_range: item.timeRange,
+                start_time: item.startTime,
+                end_time: item.endTime,
+                original_text: item.originalText,
+                ai_rewritten_text: item.aiRewrittenText,
+                human_annotated_text: item.humanAnnotatedText,
+                major_category: item.majorCategory || '',
+                minor_category: item.minorCategory || '',
+                remark: item.remark || '',
+                annotator: item.annotator || '',
+                inspector: inspectorName.trim(),
+                rejection_count: updateData.rejectionCount,
+                is_resubmitted: false,
+                rejected_at: new Date().toISOString()
+              });
+            
+            if (insertError) {
+              console.error('❌ 写入 rejected_annotations 失败:', insertError);
+            } else {
+              console.log(`✅ 已将数据 ${item.id} 记录到 rejected_annotations 表`);
+            }
+          } catch (rejectionError) {
+            console.error('❌ 记录打回数据异常:', rejectionError);
+          }
         }
         
         const success = await updateAnnotation(item.id, updateData);
@@ -298,6 +339,25 @@ export default function InspectionPage() {
           </Radio.Button>
         </Radio.Group>
       )
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 100,
+      align: 'center' as const,
+      fixed: 'right' as const,
+      render: (_: any, record: AnnotationItem) => (
+        <Button
+          type="link"
+          icon={<HistoryOutlined />}
+          onClick={() => {
+            setCurrentAnnotationId(record.id);
+            setHistoryModalVisible(true);
+          }}
+        >
+          历史
+        </Button>
+      )
     }
   ];
 
@@ -367,28 +427,28 @@ export default function InspectionPage() {
             className="inspection-table-card"
             extra={
               <Space size="large" direction="vertical" align="end">
-                <Space size="large">
-                  <span>已检查：{checkedCount} / {inspectionData.length}</span>
-                  <span>通过：<span style={{ color: '#52c41a' }}>{passedCount}</span></span>
-                  <span>不通过：<span style={{ color: '#ff4d4f' }}>{failedCount}</span></span>
-                  {checkedCount > 0 && (
-                    <span>
-                      错误率：
-                      <span style={{ color: errorRate > 2 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>
-                        {errorRate.toFixed(1)}%
-                      </span>
+              <Space size="large">
+                <span>已检查：{checkedCount} / {inspectionData.length}</span>
+                <span>通过：<span style={{ color: '#52c41a' }}>{passedCount}</span></span>
+                <span>不通过：<span style={{ color: '#ff4d4f' }}>{failedCount}</span></span>
+                {checkedCount > 0 && (
+                  <span>
+                    错误率：
+                    <span style={{ color: errorRate > 2 ? '#ff4d4f' : '#52c41a', fontWeight: 'bold' }}>
+                      {errorRate.toFixed(1)}%
                     </span>
-                  )}
+                  </span>
+                )}
                 </Space>
                 <Space>
                   <span>质检人：<strong>{inspectorName || '未填写'}</strong></span>
-                  <Button 
-                    type="primary" 
-                    onClick={handleSubmit}
+                <Button 
+                  type="primary" 
+                  onClick={handleSubmit}
                     disabled={checkedCount < inspectionData.length || !inspectorName.trim()}
-                  >
-                    提交质检
-                  </Button>
+                >
+                  提交质检
+                </Button>
                 </Space>
               </Space>
             }
@@ -410,6 +470,16 @@ export default function InspectionPage() {
           </Card>
         </div>
       </Content>
+      
+      {/* 🆕 历史版本查看弹窗 */}
+      <AnnotationHistoryModal
+        visible={historyModalVisible}
+        onClose={() => {
+          setHistoryModalVisible(false);
+          setCurrentAnnotationId('');
+        }}
+        annotationId={currentAnnotationId}
+      />
     </Layout>
   );
 }

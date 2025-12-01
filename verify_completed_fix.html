@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>验证已复检数据修复</title>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 32px;
+      text-align: center;
+    }
+    h1 { font-size: 32px; margin-bottom: 8px; }
+    .subtitle { font-size: 16px; opacity: 0.9; }
+    .content { padding: 32px; }
+    .info-box {
+      background: #e8f5e9;
+      border-left: 4px solid #4caf50;
+      padding: 16px;
+      margin-bottom: 24px;
+      border-radius: 4px;
+    }
+    .warning-box {
+      background: #fff3e0;
+      border-left: 4px solid #ff9800;
+      padding: 16px;
+      margin-bottom: 24px;
+      border-radius: 4px;
+    }
+    .error-box {
+      background: #ffebee;
+      border-left: 4px solid #f44336;
+      padding: 16px;
+      margin-bottom: 24px;
+      border-radius: 4px;
+    }
+    button {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      padding: 12px 32px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      transition: transform 0.2s;
+    }
+    button:hover { transform: translateY(-2px); }
+    button:active { transform: translateY(0); }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    #loading {
+      text-align: center;
+      padding: 40px;
+      font-size: 18px;
+      color: #667eea;
+    }
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      font-size: 14px;
+    }
+    th {
+      background: #667eea;
+      color: white;
+      padding: 12px 8px;
+      text-align: left;
+      font-weight: 600;
+    }
+    td {
+      padding: 12px 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    tr:hover { background: #f5f5f5; }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .badge-success { background: #c8e6c9; color: #2e7d32; }
+    .badge-warning { background: #ffecb3; color: #f57c00; }
+    .badge-info { background: #b3e5fc; color: #0277bd; }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #f5f5f5;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-number {
+      font-size: 32px;
+      font-weight: 700;
+      color: #667eea;
+      margin-bottom: 8px;
+    }
+    .stat-label {
+      font-size: 14px;
+      color: #666;
+    }
+    .video-section {
+      margin-bottom: 32px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .video-header {
+      background: #f5f5f5;
+      padding: 16px;
+      font-weight: 600;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    .video-body { padding: 16px; }
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .comparison-item {
+      padding: 12px;
+      border-radius: 8px;
+    }
+    .comparison-before {
+      background: #ffebee;
+      border: 2px solid #f44336;
+    }
+    .comparison-after {
+      background: #e8f5e9;
+      border: 2px solid #4caf50;
+    }
+    .comparison-title {
+      font-weight: 600;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔍 验证已复检数据修复</h1>
+      <div class="subtitle">检查 sentence_no 字段缺失导致的统计错误</div>
+    </div>
+    
+    <div class="content">
+      <div class="info-box">
+        <strong>🐛 问题描述：</strong><br>
+        在"已复检"标签页中，查询语句没有包含 <code>sentence_no</code> 字段，但去重逻辑使用了该字段，<br>
+        导致所有相同标注人的数据被错误去重成只剩1条。<br><br>
+        <strong>✅ 修复方案：</strong><br>
+        在查询语句中添加 <code>sentence_no</code> 字段：<br>
+        <code>.select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified')</code>
+      </div>
+
+      <div style="margin-bottom: 24px; text-align: center;">
+        <button id="checkBtn" onclick="checkData()">🔍 开始检查</button>
+      </div>
+
+      <div id="loading" style="display: none;">
+        <div class="spinner"></div>
+        <div>正在检查数据...</div>
+      </div>
+
+      <div id="results"></div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://wsjmdbwofssmddqnhcui.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indzam1kYndvZnNzbWRkcW5oY3VpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI0NDc0NTQsImV4cCI6MjA0ODAyMzQ1NH0.i72uWUhEXoE8M7M94mN5-e4WO4Fzz07NqwI8PcXK4So';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function checkData() {
+      const btn = document.getElementById('checkBtn');
+      const loading = document.getElementById('loading');
+      const results = document.getElementById('results');
+      
+      btn.disabled = true;
+      loading.style.display = 'block';
+      results.innerHTML = '';
+
+      try {
+        console.log('📊 开始检查已复检视频数据...');
+
+        // 1. 查询所有 is_completed = true 的视频
+        const { data: completedVideos, error: videoError } = await supabase
+          .from('videos')
+          .select('id, name, subject')
+          .eq('is_completed', true)
+          .order('created_at', { ascending: false })
+          .limit(10); // 只检查前10个视频
+
+        if (videoError) {
+          throw new Error('查询视频失败: ' + videoError.message);
+        }
+
+        if (!completedVideos || completedVideos.length === 0) {
+          results.innerHTML = '<div class="warning-box">没有找到已完成复检的视频</div>';
+          return;
+        }
+
+        console.log('找到', completedVideos.length, '个已完成复检的视频');
+
+        let html = '<div class="stat-grid">';
+        html += `<div class="stat-card"><div class="stat-number">${completedVideos.length}</div><div class="stat-label">已复检视频总数</div></div>`;
+        html += '</div>';
+
+        // 2. 对每个视频进行检查
+        for (const video of completedVideos) {
+          console.log('检查视频:', video.name);
+
+          // 使用修复前的查询（不包含 sentence_no）
+          const { data: annotationsBefore, error: error1 } = await supabase
+            .from('annotations')
+            .select('video_id, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified')
+            .eq('video_id', video.id)
+            .not('annotator', 'is', null)
+            .neq('annotator', '')
+            .neq('annotator', 'unknown');
+
+          // 使用修复后的查询（包含 sentence_no）
+          const { data: annotationsAfter, error: error2 } = await supabase
+            .from('annotations')
+            .select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified')
+            .eq('video_id', video.id)
+            .not('annotator', 'is', null)
+            .neq('annotator', '')
+            .neq('annotator', 'unknown');
+
+          if (error1 || error2) {
+            console.error('查询失败:', error1 || error2);
+            continue;
+          }
+
+          // 统计修复前的数据（去重）
+          const statsBefore = processAnnotations(annotationsBefore, false);
+          
+          // 统计修复后的数据（去重）
+          const statsAfter = processAnnotations(annotationsAfter, true);
+
+          // 比较结果
+          html += `<div class="video-section">`;
+          html += `<div class="video-header">📹 ${video.name} (${video.subject || '未知科目'})</div>`;
+          html += `<div class="video-body">`;
+
+          html += `<div class="comparison">`;
+          
+          // 修复前
+          html += `<div class="comparison-item comparison-before">`;
+          html += `<div class="comparison-title">❌ 修复前（缺少 sentence_no）</div>`;
+          html += `<table><thead><tr><th>标注人</th><th>总标注数</th><th>已复检</th><th>待复检</th></tr></thead><tbody>`;
+          statsBefore.forEach(stat => {
+            html += `<tr>`;
+            html += `<td>${stat.annotator}</td>`;
+            html += `<td><span class="badge badge-info">${stat.total}</span></td>`;
+            html += `<td><span class="badge badge-success">${stat.reviewed}</span></td>`;
+            html += `<td><span class="badge badge-warning">${stat.pending}</span></td>`;
+            html += `</tr>`;
+          });
+          html += `</tbody></table>`;
+          html += `</div>`;
+
+          // 修复后
+          html += `<div class="comparison-item comparison-after">`;
+          html += `<div class="comparison-title">✅ 修复后（包含 sentence_no）</div>`;
+          html += `<table><thead><tr><th>标注人</th><th>总标注数</th><th>已复检</th><th>待复检</th></tr></thead><tbody>`;
+          statsAfter.forEach(stat => {
+            html += `<tr>`;
+            html += `<td>${stat.annotator}</td>`;
+            html += `<td><span class="badge badge-info">${stat.total}</span></td>`;
+            html += `<td><span class="badge badge-success">${stat.reviewed}</span></td>`;
+            html += `<td><span class="badge badge-warning">${stat.pending}</span></td>`;
+            html += `</tr>`;
+          });
+          html += `</tbody></table>`;
+          html += `</div>`;
+          
+          html += `</div>`; // end comparison
+          html += `</div></div>`;
+        }
+
+        results.innerHTML = html;
+        console.log('✅ 检查完成');
+
+      } catch (error) {
+        console.error('检查失败:', error);
+        results.innerHTML = `<div class="error-box"><strong>❌ 检查失败：</strong>${error.message}</div>`;
+      } finally {
+        btn.disabled = false;
+        loading.style.display = 'none';
+      }
+    }
+
+    // 处理标注数据并统计（模拟去重逻辑）
+    function processAnnotations(annotations, hasSentenceNo) {
+      const deduplicatedMap = new Map();
+      
+      annotations.forEach(ann => {
+        // 模拟去重逻辑
+        const sentenceNo = hasSentenceNo ? ann.sentence_no : undefined;
+        const key = `${ann.video_id}_${sentenceNo}_${ann.annotator}`;
+        
+        const existing = deduplicatedMap.get(key);
+        if (!existing) {
+          deduplicatedMap.set(key, ann);
+        } else {
+          // 简化的去重逻辑：保留最新的
+          const existingTime = existing.updated_at || '';
+          const currentTime = ann.updated_at || '';
+          if (currentTime > existingTime) {
+            deduplicatedMap.set(key, ann);
+          }
+        }
+      });
+
+      const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+
+      // 按标注人统计
+      const annotatorMap = new Map();
+      
+      deduplicatedAnnotations.forEach(ann => {
+        const annotator = ann.annotator;
+        const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+        
+        if (!annotatorMap.has(annotator)) {
+          annotatorMap.set(annotator, {
+            annotator: annotator,
+            total: 0,
+            reviewed: 0,
+            pending: 0
+          });
+        }
+
+        const stat = annotatorMap.get(annotator);
+        stat.total++;
+
+        if (hasHumanText) {
+          if (ann.review_status === true) {
+            stat.reviewed++;
+          } else if (ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true) {
+            stat.pending++;
+          }
+        }
+      });
+
+      return Array.from(annotatorMap.values());
+    }
+  </script>
+</body>
+</html>
+

@@ -366,37 +366,110 @@ export default function AnnotationPage() {
     }
 
     try {
-      // 使用 Supabase - 确保每条数据都有标注人姓名
-      // 重新提交时，清除质检相关字段，让数据重新进入质检流程
-      // 但要保留复检相关字段（reviewer, reviewStatus）和被打回次数（rejectionCount）
-      const annotationsWithUser = annotations.map(item => ({
-        ...item,
-        annotator: userName, // 添加标注人姓名
-        // 清除质检相关字段，重置为待质检状态
-        isQualified: undefined,
-        inspector: '',
-        // 明确保留复检相关字段和被打回次数
-        reviewer: item.reviewer,
-        reviewStatus: item.reviewStatus,
-        rejectionCount: item.rejectionCount || 0, // 保留被打回次数
-      }));
+      const { supabase } = await import('../api/supabase');
       
-      console.log('📤 提交标注数据，已清除质检状态（保留复检状态），数据将重新进入质检队列');
-      console.log('📦 准备保存的数据:', {
-        count: annotationsWithUser.length,
-        firstItem: annotationsWithUser[0]
-      });
+      // 🆕 检查是否是重新提交被打回的数据
+      const isResubmission = annotations.some(item => item.rejectionCount && item.rejectionCount > 0);
       
-      const currentVideoId = videoId || videos[currentVideoIndex]?.id || 'unknown';
-      console.log('🎯 当前视频ID:', currentVideoId);
-      
-      const success = await saveAnnotations(currentVideoId, annotationsWithUser);
-      
-      if (success) {
-        message.success(`标注完成！共标注 ${completedCount} 条数据，已保存并重新进入质检队列`);
-        setTimeout(() => navigate(-1), 1500);
+      if (isResubmission) {
+        console.log('🔄 这是一次重新提交（被打回数据），将生成新记录');
+        
+        // 保存旧的 annotation_id，用于更新 rejected_annotations 表
+        const oldAnnotationIds = annotations.map(item => item.id);
+        
+        // 🆕 生成新的ID（添加时间戳确保唯一性）
+        const timestamp = Date.now();
+        const annotationsWithNewIds = annotations.map((item, index) => ({
+          ...item,
+          id: `${item.videoId}_${item.sentenceNo}_${userName}_${timestamp}_${index}`, // 新的ID
+          annotator: userName,
+          // 清除质检相关字段，重置为待质检状态
+          isQualified: undefined,
+          inspector: '',
+          // 清除复检相关字段（重新提交从头开始）
+          reviewer: undefined,
+          reviewStatus: undefined,
+          // 保留被打回次数
+          rejectionCount: item.rejectionCount || 0,
+        }));
+        
+        console.log('📤 重新提交标注数据（生成新记录），数据将重新进入质检队列');
+        console.log('📦 准备保存的数据:', {
+          count: annotationsWithNewIds.length,
+          oldId: oldAnnotationIds[0],
+          newId: annotationsWithNewIds[0].id
+        });
+        
+        const currentVideoId = videoId || videos[currentVideoIndex]?.id || 'unknown';
+        console.log('🎯 当前视频ID:', currentVideoId);
+        
+        const success = await saveAnnotations(currentVideoId, annotationsWithNewIds);
+        
+        if (success) {
+          // 🆕 更新 rejected_annotations 表，标记为已重新提交
+          console.log('📝 更新 rejected_annotations 表，标记为已重新提交');
+          
+          const newAnnotationIds = annotationsWithNewIds.map(item => item.id);
+          
+          for (let i = 0; i < oldAnnotationIds.length; i++) {
+            const oldId = oldAnnotationIds[i];
+            const newId = newAnnotationIds[i];
+            
+            const { error: updateError } = await supabase
+              .from('rejected_annotations')
+              .update({
+                is_resubmitted: true,
+                new_annotation_id: newId,
+                resubmitted_at: new Date().toISOString()
+              })
+              .eq('annotation_id', oldId)
+              .eq('is_resubmitted', false); // 只更新未重新提交的记录
+            
+            if (updateError) {
+              console.error(`❌ 更新 rejected_annotations 失败 (${oldId}):`, updateError);
+            } else {
+              console.log(`✅ 已标记 ${oldId} 为已重新提交，新记录ID: ${newId}`);
+            }
+          }
+          
+          message.success(`重新提交完成！共提交 ${completedCount} 条数据，已生成新记录并重新进入质检队列`);
+          setTimeout(() => navigate(-1), 1500);
+        } else {
+          message.error('保存失败，请重试');
+        }
       } else {
-        message.error('保存失败，请重试');
+        console.log('📤 这是首次标注提交');
+        
+        // 首次提交：使用原有逻辑
+        const annotationsWithUser = annotations.map(item => ({
+          ...item,
+          annotator: userName, // 添加标注人姓名
+          // 清除质检相关字段，重置为待质检状态
+          isQualified: undefined,
+          inspector: '',
+          // 明确保留复检相关字段和被打回次数
+          reviewer: item.reviewer,
+          reviewStatus: item.reviewStatus,
+          rejectionCount: item.rejectionCount || 0, // 保留被打回次数
+        }));
+        
+        console.log('📤 提交标注数据，已清除质检状态（保留复检状态），数据将重新进入质检队列');
+        console.log('📦 准备保存的数据:', {
+          count: annotationsWithUser.length,
+          firstItem: annotationsWithUser[0]
+        });
+        
+        const currentVideoId = videoId || videos[currentVideoIndex]?.id || 'unknown';
+        console.log('🎯 当前视频ID:', currentVideoId);
+        
+        const success = await saveAnnotations(currentVideoId, annotationsWithUser);
+        
+        if (success) {
+          message.success(`标注完成！共标注 ${completedCount} 条数据，已保存并重新进入质检队列`);
+          setTimeout(() => navigate(-1), 1500);
+        } else {
+          message.error('保存失败，请重试');
+        }
       }
     } catch (error) {
       console.error('❌ 保存标注数据失败:', error);
@@ -560,17 +633,17 @@ export default function AnnotationPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
           <span>标注状态</span>
           {!viewOnly && (
-            <Button 
-              type="link" 
-              size="small" 
-              onClick={() => {
-                const allChecked = annotations.every(item => item.status);
-                setAnnotations(annotations.map(item => ({ ...item, status: !allChecked })));
-              }}
-              style={{ padding: 0, height: 'auto' }}
-            >
-              {annotations.every(item => item.status) ? '取消全选' : '全选'}
-            </Button>
+          <Button 
+            type="link" 
+            size="small" 
+            onClick={() => {
+              const allChecked = annotations.every(item => item.status);
+              setAnnotations(annotations.map(item => ({ ...item, status: !allChecked })));
+            }}
+            style={{ padding: 0, height: 'auto' }}
+          >
+            {annotations.every(item => item.status) ? '取消全选' : '全选'}
+          </Button>
           )}
         </div>
       ),
@@ -668,9 +741,9 @@ export default function AnnotationPage() {
                 {viewOnly ? (
                   <Tag color="blue">查看模式（只读）</Tag>
                 ) : (
-                  <Button type="primary" onClick={handleSubmit}>
-                    提交标注
-                  </Button>
+                <Button type="primary" onClick={handleSubmit}>
+                  提交标注
+                </Button>
                 )}
               </Space>
             }

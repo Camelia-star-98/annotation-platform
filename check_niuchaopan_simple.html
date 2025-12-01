@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>检查牛超攀数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>检查牛超攀数据</h1>
+  <button onclick="check()">开始检查</button>
+  <pre id="result"></pre>
+
+  <script>
+    const supabase = window.supabase.createClient(
+      'https://mcsqfbrpknagawxqwybc.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1jc3FmYnJwa25hZ2F3eHF3eWJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzE5MTU5NDcsImV4cCI6MjA0NzQ5MTk0N30.aZiJfaXXfv9gL8LzG97bHjf0oePD_V03gkHl9BHCnck'
+    );
+
+    async function check() {
+      const result = document.getElementById('result');
+      result.textContent = '正在查询...';
+
+      try {
+        // 1. 找到视频ID
+        const { data: videos } = await supabase
+          .from('videos')
+          .select('id, name')
+          .ilike('name', '%第5批第一轮-语文-1%');
+        
+        if (!videos || videos.length === 0) {
+          result.textContent = '未找到视频';
+          return;
+        }
+
+        const videoId = videos[0].id;
+        result.textContent = `视频ID: ${videoId}\n视频名: ${videos[0].name}\n\n`;
+
+        // 2. 查询牛超攀的所有标注
+        const { data: annotations } = await supabase
+          .from('annotations')
+          .select('id, sentence_no, human_annotated_text, review_status, is_qualified, inspector, reviewer, updated_at, created_at')
+          .eq('video_id', videoId)
+          .eq('annotator', '牛超攀')
+          .order('sentence_no');
+
+        result.textContent += `原始数据: ${annotations.length} 条\n\n`;
+
+        // 3. 去重（与代码逻辑一致）
+        const deduplicatedMap = new Map();
+        annotations.forEach(ann => {
+          const key = `${videoId}_${ann.sentence_no}_牛超攀`;
+          const existing = deduplicatedMap.get(key);
+          
+          if (!existing) {
+            deduplicatedMap.set(key, ann);
+          } else {
+            const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && existing.is_qualified === true;
+            const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
+            
+            if (currentHasInspection && !existingHasInspection) {
+              deduplicatedMap.set(key, ann);
+            } else if (!existingHasInspection || currentHasInspection) {
+              const existingTime = existing.updated_at || existing.created_at || '';
+              const currentTime = ann.updated_at || ann.created_at || '';
+              if (currentTime > existingTime) {
+                deduplicatedMap.set(key, ann);
+              }
+            }
+          }
+        });
+
+        const deduplicated = Array.from(deduplicatedMap.values());
+        result.textContent += `去重后: ${deduplicated.length} 条\n\n`;
+
+        // 4. 统计（与代码逻辑一致）
+        let totalAnnotations = 0;
+        let reviewedCount = 0;
+        let pendingCount = 0;
+        let unannotatedCount = 0;
+        let otherCount = 0;
+
+        const details = [];
+
+        deduplicated.forEach(ann => {
+          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          
+          totalAnnotations++;
+          
+          if (hasHumanText) {
+            if (ann.review_status === true) {
+              reviewedCount++;
+              details.push({
+                no: ann.sentence_no,
+                status: '✅已复检',
+                text: ann.human_annotated_text.substring(0, 20),
+                review_status: ann.review_status,
+                inspector: ann.inspector || '-',
+                is_qualified: ann.is_qualified
+              });
+            } else if (ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true) {
+              pendingCount++;
+              details.push({
+                no: ann.sentence_no,
+                status: '⏳待复检',
+                text: ann.human_annotated_text.substring(0, 20),
+                review_status: ann.review_status,
+                inspector: ann.inspector,
+                is_qualified: ann.is_qualified
+              });
+            } else {
+              otherCount++;
+              details.push({
+                no: ann.sentence_no,
+                status: '❓其他',
+                text: ann.human_annotated_text.substring(0, 20),
+                review_status: ann.review_status,
+                inspector: ann.inspector || '-',
+                is_qualified: ann.is_qualified
+              });
+            }
+          } else {
+            unannotatedCount++;
+            details.push({
+              no: ann.sentence_no,
+              status: '⚠️未标注',
+              text: '-',
+              review_status: ann.review_status,
+              inspector: ann.inspector || '-',
+              is_qualified: ann.is_qualified
+            });
+          }
+        });
+
+        result.textContent += `统计结果：\n`;
+        result.textContent += `总标注数: ${totalAnnotations}\n`;
+        result.textContent += `已复检: ${reviewedCount}\n`;
+        result.textContent += `待复检: ${pendingCount}\n`;
+        result.textContent += `未标注: ${unannotatedCount}\n`;
+        result.textContent += `其他: ${otherCount}\n\n`;
+
+        result.textContent += `详细数据（前30条）：\n`;
+        result.textContent += `句号 | 状态 | 文本 | review_status | inspector | is_qualified\n`;
+        result.textContent += `${'='.repeat(80)}\n`;
+        
+        details.slice(0, 30).forEach(d => {
+          result.textContent += `${d.no} | ${d.status} | ${d.text} | ${d.review_status} | ${d.inspector} | ${d.is_qualified}\n`;
+        });
+
+      } catch (error) {
+        result.textContent = `错误: ${error.message}\n${error.stack}`;
+      }
+    }
+  </script>
+</body>
+</html>
+

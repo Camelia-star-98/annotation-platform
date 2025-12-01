@@ -602,6 +602,14 @@ export default function InspectionManagePage() {
       }
     },
     {
+      title: '标注文件名称',
+      dataIndex: 'videoName',
+      key: 'videoNameDetail',
+      width: 200,
+      ellipsis: { showTitle: false },
+      render: (text: string, record: any) => record.isGroup ? null : (text || '-')
+    },
+    {
       title: '时间范围',
       dataIndex: 'timeRange',
       key: 'timeRange',
