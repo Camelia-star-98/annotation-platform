@@ -62,6 +62,7 @@ export default function InspectionManagePage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false); // 是否正在加载更多
   const [isLoadingData, setIsLoadingData] = useState(false); // 防止重复加载
   const [statistics, setStatistics] = useState({ pendingCount: 0, inspectedCount: 0, passedCount: 0, failedCount: 0 }); // 统计数据
+  const [videoTotalSentences, setVideoTotalSentences] = useState<Map<string, number>>(new Map()); // 每个视频的总句子数
 
   // 按视频分组数据 - 使用 useCallback 优化
   const groupByVideo = useCallback((data: AnnotationItem[]) => {
@@ -80,6 +81,7 @@ export default function InspectionManagePage() {
     const result: any[] = [];
     videoGroups.forEach((items, videoId) => {
       const videoName = items[0]?.videoName || videoId;
+      const totalSentences = videoTotalSentences.get(videoId) || 0;
       
       // 父级行（视频）
       result.push({
@@ -88,6 +90,7 @@ export default function InspectionManagePage() {
         videoId,
         videoName,
         itemCount: items.length,
+        totalSentences, // 添加总句子数
         children: items.map(item => ({
           ...item,
           key: item.id,
@@ -97,7 +100,7 @@ export default function InspectionManagePage() {
     });
     
     return result;
-  }, []);
+  }, [videoTotalSentences]);
 
   // 优化数据加载，添加分页和延迟加载（使用 useCallback 避免重复创建）
   const loadData = useCallback(async (isLoadMore = false) => {
@@ -224,13 +227,13 @@ export default function InspectionManagePage() {
         const offset = (currentPage - 1) * pageSize;
         
         // 性能优化：只查询必要的字段，不查询大文本字段，并支持分页
+        // 质检所有句子（包括未标注和已标注的）
         // 排除已复检完成的数据（review_status 不为 null）
         const { data: annotationsData, error: annotationsError, count } = await supabase
           .from('annotations')
           .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at', { count: 'exact' })
-          .not('human_annotated_text', 'is', null)
-          .neq('human_annotated_text', '')
-          .is('inspector', null)  // 只查询未质检的数据
+          // ✅ 移除了 human_annotated_text 和 inspector 的限制
+          // ✅ 质检员应该能看到所有句子
           .is('review_status', null)  // 排除已复检完成的数据
           .order('created_at', { ascending: false })
           .range(offset, offset + pageSize - 1);
@@ -310,6 +313,35 @@ export default function InspectionManagePage() {
     }
   }, [selectedVideoId, videoName, samplePercentage, pageSize]);
 
+  // 单独查询每个视频的总句子数（从 videos 表读取）
+  const loadVideoTotalSentences = useCallback(async () => {
+    try {
+      // 从 videos 表直接读取 total_sentences 字段
+      const { getVideos } = await import('../api/database');
+      const allVideos = await getVideos();
+      
+      // 转换为 Map<string, number>
+      const totalSentences = new Map<string, number>();
+      allVideos.forEach(video => {
+        if (video.total_sentences) {
+          totalSentences.set(video.id, video.total_sentences);
+        }
+      });
+      
+      // 如果指定了视频ID，只保留该视频的数据
+      if (selectedVideoId && totalSentences.has(selectedVideoId)) {
+        const videoTotal = totalSentences.get(selectedVideoId);
+        totalSentences.clear();
+        totalSentences.set(selectedVideoId, videoTotal!);
+      }
+      
+      console.log('📊 视频总句子数统计（从 videos.total_sentences 读取）:', Object.fromEntries(totalSentences));
+      setVideoTotalSentences(totalSentences);
+    } catch (error) {
+      console.error('加载视频总句子数失败:', error);
+    }
+  }, [selectedVideoId]);
+
   // 单独查询统计数据（从数据库查询，考虑去重）
   const loadStatistics = useCallback(async () => {
     try {
@@ -325,8 +357,8 @@ export default function InspectionManagePage() {
         let query = supabase
           .from('annotations')
           .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
-          .not('human_annotated_text', 'is', null)
-          .neq('human_annotated_text', '')
+          // ✅ 移除了 human_annotated_text 和 inspector 的限制
+          // ✅ 质检员应该能看到所有句子
           .is('review_status', null);  // 排除已复检完成的数据
         
         // 🔧 如果指定了视频ID，只查询该视频的数据
@@ -384,10 +416,10 @@ export default function InspectionManagePage() {
       const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
       
       // 计算统计数据
+      // ✅ 修改：待质检 = 所有句子（包括未标注和已标注的）且未质检
       const pendingCount = deduplicatedAnnotations.filter(item => {
-        const hasHumanText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
         const notInspected = !item.inspector || item.inspector.trim() === '';
-        return hasHumanText && notInspected;
+        return notInspected; // 所有未质检的句子都算"待质检"
       }).length;
       
       const inspectedCount = deduplicatedAnnotations.filter(item => 
@@ -419,6 +451,7 @@ export default function InspectionManagePage() {
 
   // 加载数据（只在 selectedVideoId 变化时重新加载）
   useEffect(() => {
+    loadVideoTotalSentences(); // 先加载总句子数
     loadData(false);
     loadStatistics(); // 同时加载统计数据
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -430,12 +463,11 @@ export default function InspectionManagePage() {
     
     switch (filterStatus) {
       case 'pending':
-        // 待质检的：有人工标注文本且未质检（没有inspector）且未复检完成
+        // ✅ 修改：待质检 = 所有未质检的句子（包括未标注和已标注的）
         filtered = allAnnotations.filter(item => {
-          const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
           const notInspected = !item.inspector;
           const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
-          return hasHumanText && notInspected && notReviewed;
+          return notInspected && notReviewed;
         });
         break;
       case 'inspected':
@@ -600,7 +632,7 @@ export default function InspectionManagePage() {
                 }}
               />
               <strong style={{ fontSize: '14px' }}>
-                📹 {text} <Tag color="blue">{record.itemCount} 条</Tag>
+                📹 {text} <Tag color="blue">总标注数: {record.totalSentences || 0} 条</Tag>
               </strong>
             </Space>
           );

@@ -32,6 +32,7 @@ export interface VideoInfo {
   subject: string;
   duration: number;
   required_annotators?: number; // 待标注数量
+  total_sentences?: number; // 视频总句数（上传的标注文件中的句子总数）
   created_at?: string;
   is_published?: boolean;
   is_completed?: boolean; // 是否完成所有流程（标注→质检→复检）

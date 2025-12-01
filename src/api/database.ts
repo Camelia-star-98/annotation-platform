@@ -51,7 +51,7 @@ async function withRetry<T>(
 export async function getVideos(): Promise<VideoInfo[]> {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, name, url, subject, duration, required_annotators, created_at, is_published, is_completed')
+    .select('id, name, url, subject, duration, required_annotators, total_sentences, created_at, is_published, is_completed')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -67,7 +67,7 @@ export async function getVideo(videoId: string): Promise<VideoInfo | null> {
   try {
     const query = supabase
       .from('videos')
-      .select('id, name, url, subject, duration, required_annotators, created_at, is_published, is_completed')
+      .select('id, name, url, subject, duration, required_annotators, total_sentences, created_at, is_published, is_completed')
       .eq('id', videoId)
       .single();
     
@@ -109,7 +109,8 @@ export async function addVideo(video: VideoInfo): Promise<VideoInfo | null> {
     url: video.url || '', // 允许空URL
     subject: video.subject,
     duration: video.duration || 0,
-    required_annotators: video.required_annotators || 1 // 添加待标注数量字段
+    required_annotators: video.required_annotators || 1, // 添加待标注数量字段
+    total_sentences: video.total_sentences || 0 // 添加视频总句数字段
     // is_published 默认为 false（数据库默认值），需要手动发布
   };
   
@@ -409,14 +410,16 @@ export async function getPendingInspectionAnnotations(
   options?: { limit?: number; offset?: number }
 ): Promise<{ data: AnnotationItem[]; total: number }> {
   try {
-    // 构建查询
+    // 构建查询 - 质检所有句子（包括未标注和已标注的）
     let query = supabase
       .from('annotations')
       .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
       .eq('video_id', videoId)
-      .not('human_annotated_text', 'is', null)
-      .neq('human_annotated_text', '')
-      .is('inspector', null)  // 未质检
+      // ✅ 移除了 human_annotated_text 和 inspector 的限制
+      // ✅ 质检员应该能看到所有句子，包括：
+      //    - 未标注的句子（human_annotated_text 为空）
+      //    - 已标注但未质检的句子
+      //    - 已标注且已质检的句子
       .is('review_status', null)  // 未复检
       .order('sentence_no', { ascending: true });
 

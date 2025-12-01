@@ -360,13 +360,12 @@ export default function AnnotationTaskListPage() {
       
       console.log('📊 有效标注数据（human_annotated_text不为空）:', validAnnotations.length);
       
-      // 统计每个视频的总句子数（同时进行，不需要额外查询）
-      const videoTotalSentences = new Map<string, Set<number>>();
-      allAnnotations?.forEach(item => {
-        if (!videoTotalSentences.has(item.video_id)) {
-          videoTotalSentences.set(item.video_id, new Set());
+      // 🆕 从 videos 表直接读取视频总句数（上传时已保存）
+      const videoTotalSentences = new Map<string, number>();
+      allVideos.forEach(video => {
+        if (video.total_sentences) {
+          videoTotalSentences.set(video.id, video.total_sentences);
         }
-        videoTotalSentences.get(item.video_id)!.add(item.sentence_no);
       });
       
       // 统计每个视频每位标注员的标注情况
@@ -438,7 +437,8 @@ export default function AnnotationTaskListPage() {
       
       videoStatsMap.forEach(stats => {
         const { videoId, annotator } = stats;
-        const totalSentences = videoTotalSentences.get(videoId)?.size || 0;
+        const totalSentences = videoTotalSentences.get(videoId) || 0;
+        // 该标注员标注的句子数
         const annotatedSentences = stats.sentenceSet.size;
         
         // 只要有标注数据就显示

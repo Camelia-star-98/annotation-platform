@@ -572,7 +572,7 @@ export default function ReviewSelectPage() {
           } else {
             annotatorData.unannotatedCount++;
           }
-          
+        
           if (ann.inspector && !annotatorData.inspectors.includes(ann.inspector)) {
             annotatorData.inspectors.push(ann.inspector);
           }

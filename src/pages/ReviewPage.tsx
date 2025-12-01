@@ -402,11 +402,11 @@ export default function ReviewPage() {
       // 使用循环来保存每条数据（因为备注、分类和文本可能不同）
       const updatePromises = reviewedItems.map((item, index) => {
         const updateData = {
-          reviewer: reviewerName,
-          review_status: true,
-          status: true,
-          remark: item.remark || '', // 保存备注
-          major_category: item.majorCategory || '', // 保存问题大类
+            reviewer: reviewerName,
+            review_status: true,
+            status: true,
+            remark: item.remark || '', // 保存备注
+            major_category: item.majorCategory || '', // 保存问题大类
           minor_category: item.minorCategory || '', // 保存问题小类
           original_text: item.originalText || '', // 保存修改后的原文文本
           ai_rewritten_text: item.aiRewrittenText || '', // 保存修改后的大模型改写文本
@@ -503,18 +503,18 @@ export default function ReviewPage() {
         
         if (allAnnotatorsCompleted) {
           console.log('✅ 该视频的所有标注人都已完成复检，标记视频为完成状态');
-          
-          // 标记视频为已完成
-          const { error: videoError } = await supabase
-            .from('videos')
-            .update({
-              is_completed: true,
-              review_completed_at: new Date().toISOString()
-            })
-            .eq('id', videoId);
+        
+        // 标记视频为已完成
+        const { error: videoError } = await supabase
+          .from('videos')
+          .update({
+            is_completed: true,
+            review_completed_at: new Date().toISOString()
+          })
+          .eq('id', videoId);
 
-          if (videoError) {
-            console.error('❌ 更新视频状态失败:', videoError);
+        if (videoError) {
+          console.error('❌ 更新视频状态失败:', videoError);
             message.warning('复检数据已保存，但更新视频状态失败');
           } else {
             console.log('✅ 视频已标记为完成');

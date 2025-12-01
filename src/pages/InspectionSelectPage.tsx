@@ -37,6 +37,7 @@ interface VideoInspectionData {
   passedInspection: number;
   failedInspection: number;
   uploadTime: string;
+  annotators: string[]; // 标注人列表
 }
 
 export default function InspectionSelectPage() {
@@ -68,7 +69,7 @@ export default function InspectionSelectPage() {
       console.time('⏱️ 查询视频列表');
       const { data: allVideos, error: videosError } = await supabase
         .from('videos')
-        .select('id, name, subject, created_at, is_completed')
+        .select('id, name, subject, created_at, is_completed, total_sentences')
         .or('is_completed.is.null,is_completed.eq.false')
         .order('created_at', { ascending: false });
       console.timeEnd('⏱️ 查询视频列表');
@@ -145,13 +146,16 @@ export default function InspectionSelectPage() {
         const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
         
         // 计算统计数据
+        // 🔧 修复：待质检数量应该包括所有未质检的数据（不限制是否有标注文本）
+        const pendingCount = deduplicatedAnnotations.filter(item => 
+          (!item.inspector || item.inspector.trim() === '') &&
+          !item.review_status
+        ).length;
+        
+        // 已通过和未通过的数据只统计有标注文本的
         const validAnnotations = deduplicatedAnnotations.filter(item => 
           item.human_annotated_text && item.human_annotated_text.trim() !== ''
         );
-        
-        const pendingCount = validAnnotations.filter(item => 
-          !item.inspector || item.inspector.trim() === ''
-        ).length;
         
         const passedCount = validAnnotations.filter(item => 
           item.is_qualified === true && item.inspector && item.inspector.trim() !== ''
@@ -161,15 +165,25 @@ export default function InspectionSelectPage() {
           item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
         ).length;
         
+        // 收集所有标注人姓名（去重）
+        const annotatorsSet = new Set<string>();
+        deduplicatedAnnotations.forEach(item => {
+          if (item.annotator && item.annotator.trim() !== '' && item.annotator !== 'unknown') {
+            annotatorsSet.add(item.annotator.trim());
+          }
+        });
+        const annotators = Array.from(annotatorsSet).sort(); // 按字母排序
+        
         videoStats.push({
           id: video.id,
           videoName: video.name,
           subject: video.subject || '未知',
-          totalAnnotations: validAnnotations.length,
+          totalAnnotations: video.total_sentences || validAnnotations.length, // 优先使用 total_sentences，否则回退到统计值
           pendingInspection: pendingCount,
           passedInspection: passedCount,
           failedInspection: failedCount,
-          uploadTime: video.created_at || ''
+          uploadTime: video.created_at || '',
+          annotators: annotators // 添加标注人列表
         });
       }
       console.timeEnd('⏱️ 内存中分组统计');
@@ -228,10 +242,40 @@ export default function InspectionSelectPage() {
       render: (text: string) => <Tag color="blue">{text}</Tag>
     },
     {
+      title: '标注人',
+      dataIndex: 'annotators',
+      key: 'annotators',
+      width: 150,
+      render: (annotators: string[]) => {
+        if (!annotators || annotators.length === 0) {
+          return <Tag color="default">无标注人</Tag>;
+        }
+        // 如果标注人较多，只显示前2个，其余用省略号表示
+        if (annotators.length <= 2) {
+          return (
+            <Space size={4} wrap>
+              {annotators.map(name => (
+                <Tag key={name} color="green">{name}</Tag>
+              ))}
+            </Space>
+          );
+        }
+        return (
+          <Tooltip title={annotators.join(', ')}>
+            <Space size={4}>
+              <Tag color="green">{annotators[0]}</Tag>
+              <Tag color="green">{annotators[1]}</Tag>
+              <Tag color="default">+{annotators.length - 2}</Tag>
+            </Space>
+          </Tooltip>
+        );
+      }
+    },
+    {
       title: () => (
         <Space>
           <span>总标注数</span>
-          <Tooltip title="显示的是：有标注内容 + 未完成复检的数据。不包括：无标注内容、已复检完成的数据。">
+          <Tooltip title="视频上传时标注文件中的总句数（从 videos.total_sentences 读取）">
             <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'help' }} />
           </Tooltip>
         </Space>
