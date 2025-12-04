@@ -235,13 +235,13 @@ export default function InspectionManagePage() {
           const offset = currentPageNum * localPageSize;
           
           // 性能优化：只查询必要的字段，不查询大文本字段，并支持分页
-          // 质检所有句子（包括未标注、已标注、已质检、已复检的）
-          // ✅ 不再过滤任何数据，让质检员看到所有数据
+          // ✅ 只质检已标注的句子（有人工标注内容的）
           const { data: annotationsData, error: annotationsError, count } = await supabase
             .from('annotations')
             .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at', { count: 'exact' })
-            // ✅ 移除了所有限制条件
-            // .is('review_status', null)  // ❌ 移除这个限制！会导致数据"丢失"
+            // ✅ 只查询已标注的数据（有人工标注内容的）
+            .not('human_annotated_text', 'is', null)
+            .neq('human_annotated_text', '')
             .order('created_at', { ascending: false })
             .range(offset, offset + localPageSize - 1);
           
@@ -346,8 +346,9 @@ export default function InspectionManagePage() {
         let query = supabase
           .from('annotations')
           .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
-          // ✅ 移除了所有限制条件，让质检员看到所有数据
-          // .is('review_status', null);  // ❌ 移除这个限制！
+          // ✅ 只查询已标注的数据（有人工标注内容的）
+          .not('human_annotated_text', 'is', null)
+          .neq('human_annotated_text', '');
         
         // 🔧 如果指定了视频ID，只查询该视频的数据
         if (selectedVideoId) {
