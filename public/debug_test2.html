@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>视频展示 - 测试2</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 32px;
+    }
+    .status {
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 8px;
+      font-size: 16px;
+      text-align: center;
+    }
+    .loading {
+      background: #e3f2fd;
+      color: #1976d2;
+      border-left: 4px solid #1976d2;
+    }
+    .success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border-left: 4px solid #4caf50;
+    }
+    .error {
+      background: #ffebee;
+      color: #c62828;
+      border-left: 4px solid #f44336;
+    }
+    .video-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 25px;
+      margin-top: 30px;
+    }
+    .video-card {
+      background: #f9f9f9;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      transition: transform 0.3s, box-shadow 0.3s;
+    }
+    .video-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    }
+    .video-wrapper {
+      position: relative;
+      padding-top: 56.25%; /* 16:9 Aspect Ratio */
+      background: #000;
+    }
+    .video-wrapper video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .video-info {
+      padding: 20px;
+    }
+    .video-title {
+      font-size: 20px;
+      font-weight: bold;
+      color: #333;
+      margin-bottom: 10px;
+    }
+    .video-details {
+      font-size: 14px;
+      color: #666;
+      line-height: 1.8;
+    }
+    .video-details p {
+      margin: 5px 0;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-top: 10px;
+    }
+    .badge-completed {
+      background: #4caf50;
+      color: white;
+    }
+    .badge-pending {
+      background: #ff9800;
+      color: white;
+    }
+    .stats {
+      display: flex;
+      justify-content: space-around;
+      margin: 30px 0;
+      flex-wrap: wrap;
+    }
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 30px;
+      border-radius: 10px;
+      text-align: center;
+      min-width: 150px;
+      margin: 10px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    .stat-card .label {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 8px;
+    }
+    .stat-card .value {
+      font-size: 36px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 视频展示</h1>
+    <div id="status" class="status loading">正在加载视频...</div>
+    <div id="stats" class="stats"></div>
+    <div id="videos" class="video-grid"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pnoegnlzzslrpdxfjagv.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBub2Vnbmx6enNscnBkeGZqYWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI1MTY0NzksImV4cCI6MjA0ODA5MjQ3OX0.E8KR4KsZayao-P43c5yQfwhkRPXtVb6e1XIKMI2fD2Y';
+
+    let supabase;
+
+    window.addEventListener('load', function() {
+      if (!window.supabase) {
+        document.getElementById('status').innerHTML = '❌ Supabase 库加载失败';
+        document.getElementById('status').className = 'status error';
+        return;
+      }
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+      loadVideos();
+    });
+
+    function setStatus(message, type = 'loading') {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = message;
+      statusDiv.className = `status ${type}`;
+    }
+
+    async function loadVideos() {
+      try {
+        setStatus('正在加载视频...', 'loading');
+
+        // 查询所有视频
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (videoError) {
+          throw new Error(`查询视频失败: ${videoError.message}`);
+        }
+
+        if (!videos || videos.length === 0) {
+          setStatus('❌ 没有找到任何视频', 'error');
+          return;
+        }
+
+        // 查询所有标注数据
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .select('video_id, annotator, inspector, is_qualified');
+
+        if (annError) {
+          throw new Error(`查询标注数据失败: ${annError.message}`);
+        }
+
+        // 统计每个视频的标注情况
+        const videoStats = {};
+        videos.forEach(video => {
+          videoStats[video.id] = {
+            total: 0,
+            pending: 0,
+            passed: 0,
+            failed: 0
+          };
+        });
+
+        // 去重并统计
+        const deduplicatedMap = new Map();
+        annotations.forEach(ann => {
+          const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+          const existing = deduplicatedMap.get(key);
+          
+          if (!existing) {
+            deduplicatedMap.set(key, ann);
+          } else {
+            const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && 
+                                          existing.is_qualified !== null && existing.is_qualified !== undefined;
+            const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && 
+                                        ann.is_qualified !== null && ann.is_qualified !== undefined;
+            
+            if (currentHasInspection && !existingHasInspection) {
+              deduplicatedMap.set(key, ann);
+            }
+          }
+        });
+
+        const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+
+        deduplicatedAnnotations.forEach(ann => {
+          if (videoStats[ann.video_id]) {
+            videoStats[ann.video_id].total++;
+            
+            if (!ann.inspector || ann.inspector.trim() === '') {
+              videoStats[ann.video_id].pending++;
+            } else if (ann.is_qualified === true) {
+              videoStats[ann.video_id].passed++;
+            } else if (ann.is_qualified === false) {
+              videoStats[ann.video_id].failed++;
+            }
+          }
+        });
+
+        // 显示统计信息
+        const totalVideos = videos.length;
+        const completedVideos = videos.filter(v => v.is_completed).length;
+        const totalAnnotations = deduplicatedAnnotations.length;
+
+        document.getElementById('stats').innerHTML = `
+          <div class="stat-card">
+            <div class="label">视频总数</div>
+            <div class="value">${totalVideos}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">已完成</div>
+            <div class="value">${completedVideos}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">总标注数</div>
+            <div class="value">${totalAnnotations}</div>
+          </div>
+        `;
+
+        // 显示视频
+        const videosHtml = videos.map(video => {
+          const stats = videoStats[video.id];
+          const badge = video.is_completed 
+            ? '<span class="badge badge-completed">✅ 已完成</span>'
+            : '<span class="badge badge-pending">⏳ 进行中</span>';
+
+          return `
+            <div class="video-card">
+              <div class="video-wrapper">
+                <video controls>
+                  <source src="${video.video_url}" type="video/mp4">
+                  您的浏览器不支持视频播放。
+                </video>
+              </div>
+              <div class="video-info">
+                <div class="video-title">${video.name || '未命名视频'}</div>
+                <div class="video-details">
+                  <p><strong>主题：</strong>${video.subject || '未知'}</p>
+                  <p><strong>总标注：</strong>${stats.total} 条</p>
+                  <p><strong>待质检：</strong>${stats.pending} 条</p>
+                  <p><strong>已通过：</strong>${stats.passed} 条</p>
+                  <p><strong>未通过：</strong>${stats.failed} 条</p>
+                  ${badge}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+        document.getElementById('videos').innerHTML = videosHtml;
+        setStatus(`✅ 成功加载 ${videos.length} 个视频`, 'success');
+
+      } catch (error) {
+        console.error('加载视频失败:', error);
+        setStatus(`❌ 错误: ${error.message}`, 'error');
+      }
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>调试"测试2"视频数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1400px;
+      margin: 20px auto;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+      margin-bottom: 30px;
+      font-size: 28px;
+    }
+    .status {
+      padding: 15px;
+      margin: 15px 0;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    .loading {
+      background: #e3f2fd;
+      color: #1976d2;
+      border-left: 4px solid #1976d2;
+    }
+    .success {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border-left: 4px solid #4caf50;
+    }
+    .error {
+      background: #ffebee;
+      color: #c62828;
+      border-left: 4px solid #f44336;
+    }
+    .warning {
+      background: #fff3e0;
+      color: #ef6c00;
+      border-left: 4px solid #ff9800;
+    }
+    .info-box {
+      background: #f5f5f5;
+      padding: 20px;
+      border-radius: 8px;
+      margin: 20px 0;
+    }
+    .info-box h3 {
+      margin-top: 0;
+      color: #1976d2;
+    }
+    pre {
+      background: #263238;
+      color: #aed581;
+      padding: 15px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background: #1976d2;
+      color: white;
+      font-weight: 600;
+    }
+    tr:hover {
+      background: #f5f5f5;
+    }
+    .stat-card {
+      display: inline-block;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px 30px;
+      border-radius: 10px;
+      margin: 10px;
+      min-width: 150px;
+      text-align: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    .stat-card .label {
+      font-size: 14px;
+      opacity: 0.9;
+      margin-bottom: 5px;
+    }
+    .stat-card .value {
+      font-size: 32px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 调试"测试2"视频数据</h1>
+    <div id="status" class="status loading">正在连接数据库...</div>
+    <div id="results"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pnoegnlzzslrpdxfjagv.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBub2Vnbmx6enNscnBkeGZqYWd2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI1MTY0NzksImV4cCI6MjA0ODA5MjQ3OX0.E8KR4KsZayao-P43c5yQfwhkRPXtVb6e1XIKMI2fD2Y';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    function setStatus(message, type = 'loading') {
+      const statusDiv = document.getElementById('status');
+      statusDiv.textContent = message;
+      statusDiv.className = `status ${type}`;
+    }
+
+    function addResult(html) {
+      document.getElementById('results').innerHTML += html;
+    }
+
+    async function debugTest2Video() {
+      try {
+        setStatus('正在查询"测试2"视频...', 'loading');
+
+        // 1. 查找"测试2"视频
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .ilike('name', '%测试2%');
+
+        if (videoError) {
+          throw new Error(`查询视频失败: ${videoError.message}`);
+        }
+
+        if (!videos || videos.length === 0) {
+          setStatus('❌ 未找到"测试2"视频', 'error');
+          addResult(`
+            <div class="info-box">
+              <h3>⚠️ 未找到视频</h3>
+              <p>在 videos 表中未找到名称包含"测试2"的视频。</p>
+            </div>
+          `);
+          return;
+        }
+
+        const video = videos[0];
+        addResult(`
+          <div class="info-box">
+            <h3>✅ 找到视频</h3>
+            <table>
+              <tr><th>字段</th><th>值</th></tr>
+              <tr><td>ID</td><td>${video.id}</td></tr>
+              <tr><td>名称</td><td>${video.name}</td></tr>
+              <tr><td>主题</td><td>${video.subject || '未知'}</td></tr>
+              <tr><td>创建时间</td><td>${video.created_at}</td></tr>
+            </table>
+          </div>
+        `);
+
+        // 2. 查询该视频的所有标注数据
+        setStatus(`正在查询视频 ${video.id} 的标注数据...`, 'loading');
+
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .select('*')
+          .eq('video_id', video.id);
+
+        if (annError) {
+          throw new Error(`查询标注数据失败: ${annError.message}`);
+        }
+
+        addResult(`
+          <div class="stat-card">
+            <div class="label">总标注数</div>
+            <div class="value">${annotations.length}</div>
+          </div>
+        `);
+
+        if (annotations.length === 0) {
+          addResult(`
+            <div class="info-box">
+              <h3>⚠️ 没有标注数据</h3>
+              <p>该视频在 annotations 表中没有任何标注数据。</p>
+            </div>
+          `);
+          setStatus('完成：该视频没有标注数据', 'warning');
+          return;
+        }
+
+        // 3. 分析标注数据
+        const deduplicatedMap = new Map();
+        annotations.forEach(ann => {
+          const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+          const existing = deduplicatedMap.get(key);
+          
+          if (!existing) {
+            deduplicatedMap.set(key, ann);
+          } else {
+            const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && 
+                                          existing.is_qualified !== null && existing.is_qualified !== undefined;
+            const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && 
+                                        ann.is_qualified !== null && ann.is_qualified !== undefined;
+            
+            if (currentHasInspection && !existingHasInspection) {
+              deduplicatedMap.set(key, ann);
+            }
+          }
+        });
+
+        const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+
+        const pendingCount = deduplicatedAnnotations.filter(item => 
+          (!item.inspector || item.inspector.trim() === '')
+        ).length;
+        
+        const passedCount = deduplicatedAnnotations.filter(item => 
+          item.is_qualified === true && item.inspector && item.inspector.trim() !== ''
+        ).length;
+        
+        const failedCount = deduplicatedAnnotations.filter(item => 
+          item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
+        ).length;
+
+        // 收集标注人
+        const annotatorsSet = new Set();
+        deduplicatedAnnotations.forEach(item => {
+          if (item.annotator && item.annotator.trim() !== '' && item.annotator !== 'unknown') {
+            annotatorsSet.add(item.annotator.trim());
+          }
+        });
+
+        addResult(`
+          <div class="stat-card">
+            <div class="label">去重后数量</div>
+            <div class="value">${deduplicatedAnnotations.length}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">待质检</div>
+            <div class="value">${pendingCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">已通过</div>
+            <div class="value">${passedCount}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">未通过</div>
+            <div class="value">${failedCount}</div>
+          </div>
+        `);
+
+        addResult(`
+          <div class="info-box">
+            <h3>📊 统计汇总</h3>
+            <ul>
+              <li><strong>原始标注数：</strong>${annotations.length} 条</li>
+              <li><strong>去重后数量：</strong>${deduplicatedAnnotations.length} 条</li>
+              <li><strong>待质检：</strong>${pendingCount} 条</li>
+              <li><strong>已质检（通过+不通过）：</strong>${passedCount + failedCount} 条</li>
+              <li><strong>标注人列表：</strong>${Array.from(annotatorsSet).join(', ') || '无'}</li>
+            </ul>
+          </div>
+        `);
+
+        // 4. 显示前10条原始数据
+        addResult(`
+          <div class="info-box">
+            <h3>📄 前10条原始标注数据</h3>
+            <table>
+              <thead>
+                <tr>
+                  <th>句子号</th>
+                  <th>标注人</th>
+                  <th>质检员</th>
+                  <th>是否合格</th>
+                  <th>手型数量</th>
+                  <th>创建时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${annotations.slice(0, 10).map(ann => `
+                  <tr>
+                    <td>${ann.sentence_no}</td>
+                    <td>${ann.annotator || '未知'}</td>
+                    <td>${ann.inspector || '未分配'}</td>
+                    <td>${ann.is_qualified === null ? '未质检' : (ann.is_qualified ? '✅ 通过' : '❌ 不通过')}</td>
+                    <td>${ann.handshape_data ? JSON.parse(ann.handshape_data).length : 0}</td>
+                    <td>${ann.created_at}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        `);
+
+        // 5. 显示去重key分布
+        const keyDistribution = {};
+        annotations.forEach(ann => {
+          const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+          keyDistribution[key] = (keyDistribution[key] || 0) + 1;
+        });
+
+        const duplicateKeys = Object.entries(keyDistribution)
+          .filter(([_, count]) => count > 1)
+          .sort((a, b) => b[1] - a[1]);
+
+        if (duplicateKeys.length > 0) {
+          addResult(`
+            <div class="info-box">
+              <h3>🔄 重复数据分析（前10个）</h3>
+              <p>以下是出现重复的 video_id_sentence_no_annotator 组合：</p>
+              <table>
+                <thead>
+                  <tr>
+                    <th>句子号_标注人</th>
+                    <th>重复次数</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${duplicateKeys.slice(0, 10).map(([key, count]) => {
+                    const parts = key.split('_');
+                    const sentenceNo = parts[parts.length - 2];
+                    const annotator = parts[parts.length - 1];
+                    return `
+                      <tr>
+                        <td>句子 ${sentenceNo} - ${annotator}</td>
+                        <td>${count} 次</td>
+                      </tr>
+                    `;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          `);
+        }
+
+        setStatus('✅ 调试完成！', 'success');
+
+      } catch (error) {
+        console.error('调试出错:', error);
+        setStatus(`❌ 错误: ${error.message}`, 'error');
+        addResult(`
+          <div class="info-box">
+            <h3>❌ 错误详情</h3>
+            <pre>${error.stack}</pre>
+          </div>
+        `);
+      }
+    }
+
+    // 页面加载后立即执行
+    debugTest2Video();
+  </script>
+</body>
+</html>
+

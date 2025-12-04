@@ -176,7 +176,7 @@ export default function ReviewSelectPage() {
         // 注意：需要查询 inspector 字段来判断是否已质检，还需要 sentence_no 用于去重
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('id, video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, status, review_status, reviewer, inspector, updated_at, is_qualified')
           .eq('video_id', videoId)
           .not('annotator', 'is', null)
           .neq('annotator', '')
@@ -224,7 +224,7 @@ export default function ReviewSelectPage() {
           const deduplicatedCount = deduplicatedAnnotations.length;
           const withInspector = deduplicatedAnnotations.filter(a => a.inspector && a.inspector.trim() !== '').length;
           const withReviewStatus = deduplicatedAnnotations.filter(a => a.review_status === true).length;
-          const withHumanText = deduplicatedAnnotations.filter(a => a.human_annotated_text && a.human_annotated_text.trim() !== '').length;
+          const withCompleted = deduplicatedAnnotations.filter(a => a.status === true).length;
           const qualified = deduplicatedAnnotations.filter(a => a.is_qualified === true).length;
           const withInspectorAndQualified = deduplicatedAnnotations.filter(a => 
             a.inspector && a.inspector.trim() !== '' && a.is_qualified === true
@@ -233,7 +233,7 @@ export default function ReviewSelectPage() {
             原始数量: originalCount,
             去重后数量: deduplicatedCount,
             去除了: originalCount - deduplicatedCount,
-            有标注文本: withHumanText,
+            已完成标注: withCompleted,
             有质检人: withInspector,
             质检通过: qualified,
             有质检人且通过: withInspectorAndQualified,
@@ -244,10 +244,10 @@ export default function ReviewSelectPage() {
         // 🔧 第一步：先检查每个标注人是否有质检通过的数据（抽检逻辑）
         const annotatorQualifiedMap = new Map<string, boolean>();
         deduplicatedAnnotations.forEach(ann => {
-          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isCompleted = ann.status === true;
           const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
           
-          if (hasHumanText && isQualified) {
+          if (isCompleted && isQualified) {
             annotatorQualifiedMap.set(ann.annotator, true);
           }
         });
@@ -257,7 +257,7 @@ export default function ReviewSelectPage() {
         
         deduplicatedAnnotations.forEach(ann => {
           const annotator = ann.annotator;
-          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isCompleted = ann.status === true;
           
           if (!annotatorMap.has(annotator)) {
             annotatorMap.set(annotator, {
@@ -278,7 +278,7 @@ export default function ReviewSelectPage() {
           // 🔧 抽检逻辑：只要该标注人有任意一条数据被质检通过，则所有有标注的数据都可以进入复检
           const annotatorHasQualified = annotatorQualifiedMap.get(annotator) === true;
           
-          if (hasHumanText) {
+          if (isCompleted) {
             // 已复检完成的数据
             if (ann.review_status === true) {
               annotatorData.reviewedCount++;
@@ -292,7 +292,7 @@ export default function ReviewSelectPage() {
               }
             } 
             // 🔧 新逻辑：待复检的数据
-            // 只要该标注人有质检通过的数据（抽检通过），则所有有标注文本且未复检的数据都计入待复检
+            // 只要该标注人有质检通过的数据（抽检通过），则所有已完成标注且未复检的数据都计入待复检
             else if (annotatorHasQualified) {
               annotatorData.pendingCount++;
             }
@@ -323,9 +323,9 @@ export default function ReviewSelectPage() {
         // 🔧 新逻辑：只要视频有质检通过的内容，就将该视频加载到待复检
         // 检查该视频是否有质检通过的数据
         const hasQualifiedData = deduplicatedAnnotations.some(ann => {
-          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isCompleted = ann.status === true;
           const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
-          return hasHumanText && isQualified;
+          return isCompleted && isQualified;
         });
         
         if (!hasQualifiedData) {
@@ -516,10 +516,10 @@ export default function ReviewSelectPage() {
         // 🔧 第一步：先检查每个标注人是否有质检通过的数据（抽检逻辑）
         const annotatorQualifiedMap = new Map<string, boolean>();
         deduplicatedAnnotations.forEach(ann => {
-          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isCompleted = ann.status === true;
           const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
           
-          if (hasHumanText && isQualified) {
+          if (isCompleted && isQualified) {
             annotatorQualifiedMap.set(ann.annotator, true);
           }
         });
@@ -529,7 +529,7 @@ export default function ReviewSelectPage() {
         
         deduplicatedAnnotations.forEach(ann => {
           const annotator = ann.annotator;
-          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isCompleted = ann.status === true;
           
           if (!annotatorMap.has(annotator)) {
             annotatorMap.set(annotator, {
@@ -550,7 +550,7 @@ export default function ReviewSelectPage() {
           // 🔧 抽检逻辑：只要该标注人有任意一条数据被质检通过，则所有有标注的数据都可以进入复检
           const annotatorHasQualified = annotatorQualifiedMap.get(annotator) === true;
         
-          if (hasHumanText) {
+          if (isCompleted) {
             // 已复检完成的数据
             if (ann.review_status === true) {
               annotatorData.reviewedCount++;
@@ -564,7 +564,7 @@ export default function ReviewSelectPage() {
               }
             } 
             // 🔧 新逻辑：待复检的数据
-            // 只要该标注人有质检通过的数据（抽检通过），则所有有标注文本且未复检的数据都计入待复检
+            // 只要该标注人有质检通过的数据（抽检通过），则所有已完成标注且未复检的数据都计入待复检
             else if (annotatorHasQualified) {
               annotatorData.pendingCount++;
             }

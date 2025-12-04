@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>调试质检选择页面</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f5f5f5; }
+    .section { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    h2 { color: #1890ff; border-bottom: 2px solid #1890ff; padding-bottom: 10px; }
+    .data { background: #f0f0f0; padding: 10px; margin: 10px 0; border-radius: 4px; }
+    .success { color: #52c41a; }
+    .error { color: #ff4d4f; }
+    .warning { color: #faad14; }
+    pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 4px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #1890ff; color: white; }
+    tr:nth-child(even) { background-color: #f9f9f9; }
+  </style>
+</head>
+<body>
+  <h1>🔍 质检选择页面数据调试</h1>
+  
+  <div class="section">
+    <h2>步骤 1: 查询所有视频</h2>
+    <div id="videos-result">正在查询...</div>
+  </div>
+  
+  <div class="section">
+    <h2>步骤 2: 查询标注数据</h2>
+    <div id="annotations-result">等待中...</div>
+  </div>
+  
+  <div class="section">
+    <h2>步骤 3: 数据统计</h2>
+    <div id="stats-result">等待中...</div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://yegubypynftxnjhqugel.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InllZ3VieXB5bmZ0eG5qaHF1Z2VsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMzMDgzMjUsImV4cCI6MjA0ODg4NDMyNX0.o92u1KfRFNiXPyOL9X5wIGpEn70rHDKcMxnY2IHTC2M';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    
+    async function debugInspectionPage() {
+      try {
+        // 步骤 1: 查询所有视频
+        console.log('📹 查询所有视频...');
+        const { data: allVideos, error: videosError } = await supabase
+          .from('videos')
+          .select('id, name, subject, created_at, total_sentences')
+          .order('created_at', { ascending: false });
+        
+        if (videosError) {
+          document.getElementById('videos-result').innerHTML = `
+            <div class="error">❌ 查询视频失败: ${videosError.message}</div>
+          `;
+          throw videosError;
+        }
+        
+        if (!allVideos || allVideos.length === 0) {
+          document.getElementById('videos-result').innerHTML = `
+            <div class="warning">⚠️ 没有找到任何视频</div>
+          `;
+          return;
+        }
+        
+        document.getElementById('videos-result').innerHTML = `
+          <div class="success">✅ 找到 ${allVideos.length} 个视频</div>
+          <table>
+            <tr>
+              <th>视频ID</th>
+              <th>视频名称</th>
+              <th>学科</th>
+              <th>total_sentences</th>
+              <th>创建时间</th>
+            </tr>
+            ${allVideos.map(v => `
+              <tr>
+                <td>${v.id}</td>
+                <td>${v.name}</td>
+                <td>${v.subject || '未知'}</td>
+                <td>${v.total_sentences || '-'}</td>
+                <td>${v.created_at}</td>
+              </tr>
+            `).join('')}
+          </table>
+        `;
+        
+        // 步骤 2: 查询标注数据
+        console.log('📝 查询所有标注数据...');
+        const videoIds = allVideos.map(v => v.id);
+        const { data: allAnnotations, error: annotationsError } = await supabase
+          .from('annotations')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status')
+          .in('video_id', videoIds);
+        
+        if (annotationsError) {
+          document.getElementById('annotations-result').innerHTML = `
+            <div class="error">❌ 查询标注失败: ${annotationsError.message}</div>
+          `;
+          throw annotationsError;
+        }
+        
+        document.getElementById('annotations-result').innerHTML = `
+          <div class="success">✅ 找到 ${allAnnotations?.length || 0} 条标注数据</div>
+          <div class="data">
+            <strong>按视频分组统计：</strong>
+            <pre>${JSON.stringify(
+              allAnnotations?.reduce((acc, ann) => {
+                acc[ann.video_id] = (acc[ann.video_id] || 0) + 1;
+                return acc;
+              }, {}),
+              null,
+              2
+            )}</pre>
+          </div>
+        `;
+        
+        // 步骤 3: 按照 InspectionSelectPage 的逻辑统计
+        console.log('📊 统计数据...');
+        const videoMap = new Map();
+        (allAnnotations || []).forEach(ann => {
+          if (!videoMap.has(ann.video_id)) {
+            videoMap.set(ann.video_id, []);
+          }
+          videoMap.get(ann.video_id).push(ann);
+        });
+        
+        const videoStats = [];
+        
+        for (const video of allVideos) {
+          const videoAnnotations = videoMap.get(video.id) || [];
+          
+          // 去重：按 video_id + sentence_no + annotator
+          const deduplicatedMap = new Map();
+          videoAnnotations.forEach(ann => {
+            const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+            if (!deduplicatedMap.has(key)) {
+              deduplicatedMap.set(key, ann);
+            }
+          });
+          const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+          
+          // 统计
+          const pendingCount = deduplicatedAnnotations.filter(item => 
+            (!item.inspector || item.inspector.trim() === '')
+          ).length;
+          
+          const passedCount = deduplicatedAnnotations.filter(item => 
+            item.is_qualified === true && item.inspector && item.inspector.trim() !== ''
+          ).length;
+          
+          const failedCount = deduplicatedAnnotations.filter(item => 
+            item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
+          ).length;
+          
+          // 统计标注人
+          const annotators = [...new Set(
+            deduplicatedAnnotations
+              .map(ann => ann.annotator)
+              .filter(annotator => annotator && annotator.trim() !== '')
+          )];
+          
+          videoStats.push({
+            id: video.id,
+            videoName: video.name,
+            subject: video.subject || '未知',
+            totalAnnotations: deduplicatedAnnotations.length,
+            pendingInspection: pendingCount,
+            passedInspection: passedCount,
+            failedInspection: failedCount,
+            uploadTime: video.created_at || '',
+            annotators: annotators
+          });
+        }
+        
+        document.getElementById('stats-result').innerHTML = `
+          <div class="success">✅ 统计完成</div>
+          <table>
+            <tr>
+              <th>视频名称</th>
+              <th>学科</th>
+              <th>总标注数</th>
+              <th>待质检</th>
+              <th>已通过</th>
+              <th>未通过</th>
+              <th>标注人</th>
+            </tr>
+            ${videoStats.map(stat => `
+              <tr>
+                <td>${stat.videoName}</td>
+                <td>${stat.subject}</td>
+                <td>${stat.totalAnnotations}</td>
+                <td>${stat.pendingInspection}</td>
+                <td>${stat.passedInspection}</td>
+                <td>${stat.failedInspection}</td>
+                <td>${stat.annotators.join(', ') || '无'}</td>
+              </tr>
+            `).join('')}
+          </table>
+          
+          <div class="data">
+            <strong>完整统计数据：</strong>
+            <pre>${JSON.stringify(videoStats, null, 2)}</pre>
+          </div>
+        `;
+        
+        console.log('✅ 调试完成');
+        
+      } catch (error) {
+        console.error('调试失败:', error);
+        document.body.innerHTML += `
+          <div class="section">
+            <div class="error">❌ 调试过程出错: ${error.message}</div>
+            <pre>${error.stack}</pre>
+          </div>
+        `;
+      }
+    }
+    
+    // 立即执行
+    debugInspectionPage();
+  </script>
+</body>
+</html>
+

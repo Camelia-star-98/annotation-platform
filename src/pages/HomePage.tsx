@@ -120,7 +120,7 @@ export default function HomePage() {
       while (hasMore) {
         const { data, error } = await supabase
           .from('annotations')
-          .select('video_id, annotator, human_annotated_text, review_status')
+          .select('video_id, annotator, human_annotated_text, review_status, status')
           .not('annotator', 'is', null)
           .neq('annotator', '')
           .neq('annotator', 'unknown')
@@ -152,10 +152,10 @@ export default function HomePage() {
       allAnnotations.forEach(item => {
         const videoId = item.video_id;
         const annotator = item.annotator;
-        const hasHumanText = item.human_annotated_text && item.human_annotated_text.trim() !== '';
+        const isCompleted = item.status === true;
         
-        // 只统计有人工标注文本的数据
-        if (!hasHumanText) return;
+        // 只统计已完成的标注（status = true）
+        if (!isCompleted) return;
         
         if (!videoAnnotatorMap.has(videoId)) {
           videoAnnotatorMap.set(videoId, new Map());

@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查"测试2"状态 - 浏览器版</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    button {
+      background: #4CAF50;
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      font-size: 16px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    button:disabled {
+      background: #cccccc;
+      cursor: not-allowed;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f9f9f9;
+      border-left: 4px solid #4CAF50;
+      border-radius: 4px;
+    }
+    .error {
+      background: #ffebee;
+      border-left-color: #f44336;
+      color: #c62828;
+    }
+    .success {
+      background: #e8f5e9;
+      border-left-color: #4CAF50;
+      color: #2e7d32;
+    }
+    .warning {
+      background: #fff3e0;
+      border-left-color: #ff9800;
+      color: #e65100;
+    }
+    .info {
+      background: #e3f2fd;
+      border-left-color: #2196F3;
+      color: #1565c0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+      background: white;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background: #4CAF50;
+      color: white;
+      font-weight: 600;
+    }
+    tr:hover {
+      background: #f5f5f5;
+    }
+    .status-true {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+    .status-false {
+      color: #f44336;
+      font-weight: bold;
+    }
+    .status-null {
+      color: #ff9800;
+      font-weight: bold;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      text-align: center;
+    }
+    .stat-number {
+      font-size: 32px;
+      font-weight: bold;
+      color: #4CAF50;
+      margin: 10px 0;
+    }
+    .stat-label {
+      color: #666;
+      font-size: 14px;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+    .loading {
+      display: inline-block;
+      width: 20px;
+      height: 20px;
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #4CAF50;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔍 检查"测试2"任务状态</h1>
+    
+    <div class="section info">
+      <p><strong>📋 说明：</strong>这个工具会检查"测试2"任务在数据库中的实际状态，找出为什么任务还在待标注列表中。</p>
+      <p><strong>👤 当前检查用户：</strong>standardhuman</p>
+    </div>
+
+    <div>
+      <button id="checkBtn" onclick="checkTest2Status()">🚀 开始检查</button>
+      <button onclick="location.reload()">🔄 刷新页面</button>
+    </div>
+
+    <div id="results"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>
+    const SUPABASE_URL = 'https://ybuemblpmndtaizohdck.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlidWVtYmxwbW5kdGFpem9oZGNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIxNzA5MDcsImV4cCI6MjA0Nzc0NjkwN30.qfb4-JX-lE7QYu26K6ifQDhxY1zGN39DPZnPkfXfPiU';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    const currentUser = 'standardhuman';
+    const videoId = '测试2';
+
+    async function checkTest2Status() {
+      const resultsDiv = document.getElementById('results');
+      const checkBtn = document.getElementById('checkBtn');
+      
+      checkBtn.disabled = true;
+      resultsDiv.innerHTML = '<div class="section"><div class="loading"></div> 正在查询数据...</div>';
+
+      try {
+        // 1. 查询annotations表
+        const { data: annotations, error: annError } = await supabase
+          .from('annotations')
+          .select('video_id, sentence_no, annotator, status, human_annotated_text, updated_at')
+          .eq('video_id', videoId)
+          .order('sentence_no', { ascending: true });
+
+        if (annError) {
+          throw annError;
+        }
+
+        // 2. 统计信息
+        const totalSentences = annotations.length;
+        const withAnnotator = annotations.filter(a => a.annotator && a.annotator.trim() !== '').length;
+        const statusTrue = annotations.filter(a => a.status === true).length;
+        const statusFalse = annotations.filter(a => a.status === false).length;
+        const statusNull = annotations.filter(a => a.status === null || a.status === undefined).length;
+        const withText = annotations.filter(a => a.human_annotated_text && a.human_annotated_text.trim() !== '').length;
+
+        // 3. 用户任务统计
+        const userAnnotations = annotations.filter(a => a.annotator === currentUser);
+        const userCompleted = userAnnotations.filter(a => a.status === true).length;
+        const userTotal = userAnnotations.length;
+        const progress = userTotal > 0 ? ((userCompleted / userTotal) * 100).toFixed(1) : 0;
+
+        // 4. 未完成的句子
+        const incomplete = userAnnotations.filter(a => a.status !== true);
+
+        // 5. 渲染结果
+        let html = '';
+
+        // 总体统计
+        html += '<div class="section success">';
+        html += '<h2>📊 总体统计</h2>';
+        html += '<div class="stats">';
+        html += `<div class="stat-card"><div class="stat-number">${totalSentences}</div><div class="stat-label">总句子数</div></div>`;
+        html += `<div class="stat-card"><div class="stat-number">${withAnnotator}</div><div class="stat-label">已分配标注员</div></div>`;
+        html += `<div class="stat-card"><div class="stat-number status-true">${statusTrue}</div><div class="stat-label">status = true</div></div>`;
+        html += `<div class="stat-card"><div class="stat-number status-false">${statusFalse}</div><div class="stat-label">status = false</div></div>`;
+        html += `<div class="stat-card"><div class="stat-number status-null">${statusNull}</div><div class="stat-label">status = null</div></div>`;
+        html += `<div class="stat-card"><div class="stat-number">${withText}</div><div class="stat-label">有标注文本</div></div>`;
+        html += '</div>';
+        html += '</div>';
+
+        // 用户任务统计
+        html += '<div class="section ' + (userTotal === userCompleted ? 'success' : 'warning') + '">';
+        html += `<h2>👤 用户 "${currentUser}" 的任务</h2>`;
+        html += `<p><strong>分配的句子：</strong>${userTotal} 条</p>`;
+        html += `<p><strong>已完成：</strong>${userCompleted} 条 (status = true)</p>`;
+        html += `<p><strong>进度：</strong>${progress}%</p>`;
+        
+        if (userTotal === userCompleted) {
+          html += '<div class="section success" style="margin-top: 15px;">';
+          html += '<h3>✅ 所有句子都已完成！</h3>';
+          html += '<p>如果任务还在待标注列表中，可能是以下原因：</p>';
+          html += '<ul>';
+          html += '<li>页面缓存问题 - 尝试刷新页面 (Ctrl+Shift+R / Cmd+Shift+R)</li>';
+          html += '<li>videos表的total_sentences字段不匹配 - 需要同步更新</li>';
+          html += '</ul>';
+          html += '</div>';
+        } else {
+          html += '<div class="section error" style="margin-top: 15px;">';
+          html += `<h3>⚠️ 还有 ${userTotal - userCompleted} 条句子未完成</h3>`;
+          html += '<p><strong>这就是为什么任务还在待标注列表里！</strong></p>';
+          html += '</div>';
+        }
+        html += '</div>';
+
+        // 未完成的句子列表
+        if (incomplete.length > 0) {
+          html += '<div class="section error">';
+          html += '<h2>🎯 未完成的句子（需要处理）</h2>';
+          html += '<p>以下句子的 status 不为 true，导致任务无法移到"已完成"列表：</p>';
+          html += '<table>';
+          html += '<tr><th>句子号</th><th>status</th><th>标注文本</th><th>更新时间</th></tr>';
+          incomplete.forEach(ann => {
+            const statusClass = ann.status === true ? 'status-true' : ann.status === false ? 'status-false' : 'status-null';
+            const statusText = ann.status === true ? 'true ✅' : ann.status === false ? 'false ❌' : 'null ⚠️';
+            const text = ann.human_annotated_text || '<em>null</em>';
+            const updateTime = ann.updated_at ? new Date(ann.updated_at).toLocaleString('zh-CN') : '<em>null</em>';
+            html += `<tr>`;
+            html += `<td><strong>${ann.sentence_no}</strong></td>`;
+            html += `<td class="${statusClass}">${statusText}</td>`;
+            html += `<td>${text}</td>`;
+            html += `<td>${updateTime}</td>`;
+            html += `</tr>`;
+          });
+          html += '</table>';
+          
+          html += '<div class="section warning" style="margin-top: 15px;">';
+          html += '<h3>💡 解决方案</h3>';
+          html += '<ol>';
+          html += '<li><strong>打开标注页面：</strong>访问 http://localhost:3000/annotate?videoId=测试2</li>';
+          html += '<li><strong>找到这些句子：</strong>上表中列出的句子号</li>';
+          html += '<li><strong>重新提交：</strong>对每个句子点击"提交"按钮</li>';
+          html += '<li><strong>检查提交：</strong>打开浏览器开发者工具(F12)，查看Network标签</li>';
+          html += '<li><strong>确认更新：</strong>提交后应该看到成功的API响应</li>';
+          html += '<li><strong>刷新任务列表：</strong>回到任务列表页面刷新</li>';
+          html += '</ol>';
+          html += '</div>';
+        }
+
+        // 所有句子详细列表
+        html += '<div class="section">';
+        html += '<h2>📋 所有句子详细信息</h2>';
+        html += '<table>';
+        html += '<tr><th>句子号</th><th>标注员</th><th>status</th><th>标注文本</th><th>更新时间</th></tr>';
+        annotations.forEach(ann => {
+          const statusClass = ann.status === true ? 'status-true' : ann.status === false ? 'status-false' : 'status-null';
+          const statusText = ann.status === true ? 'true ✅' : ann.status === false ? 'false ❌' : 'null ⚠️';
+          const annotator = ann.annotator || '<em>null</em>';
+          const text = ann.human_annotated_text ? (ann.human_annotated_text.length > 50 ? ann.human_annotated_text.substring(0, 50) + '...' : ann.human_annotated_text) : '<em>null</em>';
+          const updateTime = ann.updated_at ? new Date(ann.updated_at).toLocaleString('zh-CN') : '<em>null</em>';
+          const rowClass = ann.annotator === currentUser && ann.status !== true ? 'style="background: #fff3e0;"' : '';
+          html += `<tr ${rowClass}>`;
+          html += `<td><strong>${ann.sentence_no}</strong></td>`;
+          html += `<td>${annotator}</td>`;
+          html += `<td class="${statusClass}">${statusText}</td>`;
+          html += `<td>${text}</td>`;
+          html += `<td>${updateTime}</td>`;
+          html += `</tr>`;
+        });
+        html += '</table>';
+        html += '</div>';
+
+        // 诊断建议
+        html += '<div class="section info">';
+        html += '<h2>🔬 诊断建议</h2>';
+        html += '<h3>常见问题和解决方案：</h3>';
+        html += '<ul>';
+        html += '<li><strong>问题1：</strong>句子的status字段不为true';
+        html += '<ul><li><strong>原因：</strong>提交时出现错误，或者根本没有提交</li>';
+        html += '<li><strong>解决：</strong>重新打开标注页面，对这些句子点击"提交"</li></ul></li>';
+        
+        html += '<li><strong>问题2：</strong>提交时出现网络错误';
+        html += '<ul><li><strong>检查：</strong>打开浏览器开发者工具(F12) → Network标签</li>';
+        html += '<li><strong>观察：</strong>提交时是否有红色的请求失败</li>';
+        html += '<li><strong>解决：</strong>检查网络连接，或查看服务器日志</li></ul></li>';
+        
+        html += '<li><strong>问题3：</strong>代码逻辑问题';
+        html += '<ul><li><strong>检查：</strong>AnnotationPage.tsx 的 handleSave 函数</li>';
+        html += '<li><strong>确认：</strong>是否正确调用了 supabase.update() 并设置 status = true</li></ul></li>';
+        
+        html += '<li><strong>问题4：</strong>total_sentences不匹配';
+        html += '<ul><li><strong>查询：</strong>videos表中"测试2"的total_sentences字段</li>';
+        html += '<li><strong>对比：</strong>是否等于实际的句子数</li>';
+        html += '<li><strong>解决：</strong>如果不匹配，需要更新videos表</li></ul></li>';
+        html += '</ul>';
+        html += '</div>';
+
+        resultsDiv.innerHTML = html;
+
+      } catch (error) {
+        resultsDiv.innerHTML = `
+          <div class="section error">
+            <h2>❌ 查询失败</h2>
+            <p><strong>错误信息：</strong></p>
+            <pre>${error.message}</pre>
+            <p><strong>可能的原因：</strong></p>
+            <ul>
+              <li>网络连接问题</li>
+              <li>Supabase服务不可用</li>
+              <li>API密钥过期</li>
+            </ul>
+          </div>
+        `;
+      } finally {
+        checkBtn.disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>
+

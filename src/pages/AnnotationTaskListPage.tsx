@@ -160,11 +160,11 @@ export default function AnnotationTaskListPage() {
         videoTotalSentences.get(item.video_id)!.add(item.sentence_no);
       });
       
-      // 统计每个标注员已完成的句子（只统计有内容的标注）
+      // 统计每个标注员已完成的句子（只统计已完成的标注）
       allSentences?.forEach(item => {
-        // 只统计有标注人且有标注内容的记录
+        // 只统计有标注人且已完成的记录
         if (item.annotator && item.annotator.trim() !== '' && 
-            item.human_annotated_text && item.human_annotated_text.trim() !== '') {
+            item.status === true) {
           if (!videoAnnotatorSentences.has(item.video_id)) {
             videoAnnotatorSentences.set(item.video_id, new Map());
           }
@@ -338,12 +338,9 @@ export default function AnnotationTaskListPage() {
       
       console.log('🔍 加载所有已标注任务（全体标注员）');
       
-      // 🚀 优化：一次性查询所有需要的数据，不用分页
+      // 🚀 使用 RPC 函数查询所有标注数据（无1000条限制）
       const { data: allAnnotations, error } = await supabase
-        .from('annotations')
-        .select('video_id, sentence_no, human_annotated_text, updated_at, status, inspector, is_qualified, annotator')
-        .not('annotator', 'is', null)
-        .neq('annotator', '');
+        .rpc('get_all_annotations');
       
       if (error) {
         console.error('❌ 查询标注数据失败:', error);
@@ -353,12 +350,12 @@ export default function AnnotationTaskListPage() {
       
       console.log('📊 查询到标注数据总数:', allAnnotations?.length || 0);
       
-      // 过滤出真正有标注内容的数据
+      // 过滤出已完成的标注数据（status = true）
       const validAnnotations = allAnnotations?.filter(a => 
-        a.human_annotated_text && a.human_annotated_text.trim() !== ''
+        a.status === true
       ) || [];
       
-      console.log('📊 有效标注数据（human_annotated_text不为空）:', validAnnotations.length);
+      console.log('📊 有效标注数据（status = true）:', validAnnotations.length);
       
       // 🆕 从 videos 表直接读取视频总句数（上传时已保存）
       const videoTotalSentences = new Map<string, number>();

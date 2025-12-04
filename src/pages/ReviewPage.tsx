@@ -112,20 +112,20 @@ export default function ReviewPage() {
       
       // 🔧 抽检逻辑：检查该标注人是否有至少一条质检通过的数据
       const hasQualifiedData = deduplicatedAnnotations.some(item => {
-        const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
+        const isCompleted = item.status === true;
         const isQualified = item.inspector && item.inspector.trim() !== '' && item.isQualified === true;
-        return item.annotator === annotatorName && hasHumanText && isQualified;
+        return item.annotator === annotatorName && isCompleted && isQualified;
       });
       
-      // 🔧 新逻辑：如果该标注人有质检通过的数据（抽检通过），则加载所有有标注文本的数据
+      // 🔧 新逻辑：如果该标注人有质检通过的数据（抽检通过），则加载所有已完成的标注数据
       // 否则只加载质检通过的数据（旧逻辑）
       const annotatorData = deduplicatedAnnotations.filter(item => {
         if (item.annotator !== annotatorName) return false;
         
-        const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-        if (!hasHumanText) return false; // 没有标注文本的不加载
+        const isCompleted = item.status === true;
+        if (!isCompleted) return false; // 未完成的标注不加载
         
-        // 如果该标注人通过了抽检，加载所有有标注文本的数据
+        // 如果该标注人通过了抽检，加载所有已完成的标注数据
         if (hasQualifiedData) {
           return true;
         }
@@ -136,9 +136,9 @@ export default function ReviewPage() {
       
       const totalForAnnotator = deduplicatedAnnotations.filter(item => item.annotator === annotatorName).length;
       const originalTotal = annotations.filter(item => item.annotator === annotatorName).length;
-      const withHumanText = deduplicatedAnnotations.filter(item => {
-        const hasHumanText = item.humanAnnotatedText && item.humanAnnotatedText.trim() !== '';
-        return item.annotator === annotatorName && hasHumanText;
+      const withCompleted = deduplicatedAnnotations.filter(item => {
+        const isCompleted = item.status === true;
+        return item.annotator === annotatorName && isCompleted;
       }).length;
       const withInspector = deduplicatedAnnotations.filter(item => 
         item.annotator === annotatorName && item.inspector && item.inspector.trim() !== ''
@@ -160,7 +160,7 @@ export default function ReviewPage() {
         原始总数: originalTotal,
         去重后总数: totalForAnnotator,
         去除了: originalTotal - totalForAnnotator,
-        有标注文本: withHumanText,
+        已完成标注: withCompleted,
         有质检人: withInspector,
         质检通过: qualified,
         有质检人且通过: qualifiedWithInspector,
@@ -454,7 +454,7 @@ export default function ReviewPage() {
         
         allVideoAnnotations.forEach(ann => {
           const annotator = ann.annotator;
-          const hasHumanText = ann.human_annotated_text && ann.human_annotated_text.trim() !== '';
+          const isCompleted = ann.status === true;
           
           if (!annotatorMap.has(annotator)) {
             annotatorMap.set(annotator, { total: 0, reviewed: 0, hasQualified: false });
@@ -464,12 +464,12 @@ export default function ReviewPage() {
           
           // 检查该标注人是否有质检通过的数据（抽检逻辑）
           const isQualified = ann.inspector && ann.inspector.trim() !== '' && ann.is_qualified === true;
-          if (hasHumanText && isQualified) {
+          if (isCompleted && isQualified) {
             stats.hasQualified = true;
           }
           
-          // 统计有标注文本的数据
-          if (hasHumanText) {
+          // 统计已完成的标注数据
+          if (isCompleted) {
             stats.total++;
             if (ann.review_status === true) {
               stats.reviewed++;

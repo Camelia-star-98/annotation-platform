@@ -415,12 +415,9 @@ export async function getPendingInspectionAnnotations(
       .from('annotations')
       .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
       .eq('video_id', videoId)
-      // ✅ 移除了 human_annotated_text 和 inspector 的限制
-      // ✅ 质检员应该能看到所有句子，包括：
-      //    - 未标注的句子（human_annotated_text 为空）
-      //    - 已标注但未质检的句子
-      //    - 已标注且已质检的句子
-      .is('review_status', null)  // 未复检
+      // ✅ 移除了所有限制条件
+      // ✅ 质检员应该能看到视频的所有句子（不论是否标注、质检或复检）
+      // .is('review_status', null)  // ❌ 移除这个限制！会导致数据"丢失"
       .order('sentence_no', { ascending: true });
 
     // 应用分页
@@ -777,7 +774,7 @@ export async function getBatchCompletedAnnotatorsCount(
     // 简化查询：只查询必要字段，条件在前端过滤
     const { data, error } = await supabase
       .from('annotations')
-      .select('video_id, annotator, human_annotated_text')
+      .select('video_id, annotator, status')
       .in('video_id', videoIds);
 
     if (error) {
@@ -789,14 +786,13 @@ export async function getBatchCompletedAnnotatorsCount(
     const videoAnnotatorMap = new Map<string, Set<string>>();
     
     data?.forEach(item => {
-      // 前端过滤：有标注人、不是unknown、有人工标注文本
+      // 前端过滤：有标注人、不是unknown、标注状态为已完成
       const hasValidAnnotator = item.annotator && 
                                 item.annotator.trim() !== '' && 
                                 item.annotator !== 'unknown';
-      const hasHumanText = item.human_annotated_text && 
-                          item.human_annotated_text.trim() !== '';
+      const isCompleted = item.status === true;
       
-      if (hasValidAnnotator && hasHumanText) {
+      if (hasValidAnnotator && isCompleted) {
         if (!videoAnnotatorMap.has(item.video_id)) {
           videoAnnotatorMap.set(item.video_id, new Set());
         }

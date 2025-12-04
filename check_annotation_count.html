@@ -188,10 +188,10 @@
                 
                 // 3. 过滤有效标注
                 const validAnnotations = allAnnotations.filter(a => 
-                    a.human_annotated_text && a.human_annotated_text.trim() !== ''
+                    a.status === true
                 );
                 
-                log(`过滤后有效标注: ${validAnnotations.length} 条（human_annotated_text不为空）`, 'success');
+                log(`过滤后有效标注: ${validAnnotations.length} 条（status = true）`, 'success');
                 
                 // 4. 统计每个视频的总句子数
                 const videoTotalSentences = new Map();

@@ -84,17 +84,19 @@ export default function InspectionSelectPage() {
         return;
       }
       
-      // 2. 一次性查询所有相关视频的标注数据
+      // 2. 一次性查询所有相关视频的标注数据（移除所有过滤条件）
       console.time('⏱️ 查询所有标注数据');
       const videoIds = allVideos.map(v => v.id);
+      console.log('🔍 准备查询标注数据，视频ID列表:', videoIds);
+      console.log('🔍 视频数量:', videoIds.length);
+      
       const { data: allAnnotations, error: annotationsError } = await supabase
         .from('annotations')
         .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status')
-        .in('video_id', videoIds)
-        .not('human_annotated_text', 'is', null)
-        .neq('human_annotated_text', '')
-        .is('review_status', null);  // 排除已复检完成的数据
+        .in('video_id', videoIds);
       console.timeEnd('⏱️ 查询所有标注数据');
+      
+      console.log('🔍 查询到的标注数据总数:', allAnnotations?.length || 0);
       
       if (annotationsError) {
         throw annotationsError;
@@ -110,10 +112,15 @@ export default function InspectionSelectPage() {
         videoMap.get(ann.video_id)!.push(ann);
       });
       
+      console.log('🔍 videoMap 中的视频数量:', videoMap.size);
+      console.log('🔍 videoMap 中的视频ID:', Array.from(videoMap.keys()));
+      
       const videoStats: VideoInspectionData[] = [];
       
       for (const video of allVideos) {
         const annotations = videoMap.get(video.id) || [];
+        
+        console.log(`🔍 视频 ${video.name} (ID: ${video.id}) 的标注数量:`, annotations.length);
         
         if (annotations.length === 0) {
           continue; // 跳过没有标注数据的视频
@@ -146,22 +153,17 @@ export default function InspectionSelectPage() {
         const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
         
         // 计算统计数据
-        // 🔧 修复：待质检数量应该包括所有未质检的数据（不限制是否有标注文本）
+        // 🔧 待质检数量 = 所有去重后的数据（移除过滤条件，与总数一致）
         const pendingCount = deduplicatedAnnotations.filter(item => 
-          (!item.inspector || item.inspector.trim() === '') &&
-          !item.review_status
+          (!item.inspector || item.inspector.trim() === '')
         ).length;
         
-        // 已通过和未通过的数据只统计有标注文本的
-        const validAnnotations = deduplicatedAnnotations.filter(item => 
-          item.human_annotated_text && item.human_annotated_text.trim() !== ''
-        );
-        
-        const passedCount = validAnnotations.filter(item => 
+        // 已通过和未通过的数据
+        const passedCount = deduplicatedAnnotations.filter(item => 
           item.is_qualified === true && item.inspector && item.inspector.trim() !== ''
         ).length;
         
-        const failedCount = validAnnotations.filter(item => 
+        const failedCount = deduplicatedAnnotations.filter(item => 
           item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
         ).length;
         
@@ -178,7 +180,7 @@ export default function InspectionSelectPage() {
           id: video.id,
           videoName: video.name,
           subject: video.subject || '未知',
-          totalAnnotations: video.total_sentences || validAnnotations.length, // 优先使用 total_sentences，否则回退到统计值
+          totalAnnotations: deduplicatedAnnotations.length, // 使用去重后的实际数据量
           pendingInspection: pendingCount,
           passedInspection: passedCount,
           failedInspection: failedCount,
@@ -275,7 +277,7 @@ export default function InspectionSelectPage() {
       title: () => (
         <Space>
           <span>总标注数</span>
-          <Tooltip title="视频上传时标注文件中的总句数（从 videos.total_sentences 读取）">
+          <Tooltip title="去重后的实际标注数据量（按 video_id + sentence_no + annotator 去重）">
             <QuestionCircleOutlined style={{ color: '#1890ff', cursor: 'help' }} />
           </Tooltip>
         </Space>
@@ -389,14 +391,14 @@ export default function InspectionSelectPage() {
         >
           <Space direction="vertical" size="small">
             <Text strong style={{ color: '#1890ff' }}>
-              <QuestionCircleOutlined /> 数据过滤说明
+              <QuestionCircleOutlined /> 数据说明
             </Text>
             <Text style={{ color: '#595959' }}>
-              本页面显示的数据已经过过滤，只包含：
-              <span style={{ color: '#52c41a', fontWeight: 500 }}> ✓ 有人工标注内容 </span> 且 
-              <span style={{ color: '#52c41a', fontWeight: 500 }}> ✓ 未完成复检 </span> 的数据。
+              本页面显示所有视频的标注数据。
+              <span style={{ color: '#52c41a', fontWeight: 500 }}> ✓ 总标注数 </span> 为去重后的实际数据量。
               <br />
-              <span style={{ color: '#ff4d4f' }}>不包括：无标注内容的数据、已复检完成的数据。</span>
+              <span style={{ color: '#faad14', fontWeight: 500 }}> ✓ 待质检 </span> = 尚未分配质检员的数据。
+              <span style={{ color: '#1890ff', fontWeight: 500 }}> ✓ 已质检 </span> = 已分配质检员的数据（包括通过和不通过）。
             </Text>
           </Space>
         </Card>

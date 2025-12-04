@@ -59,7 +59,7 @@ export default function DiagnosticPage() {
       for (const video of batch5Chinese) {
         const { data: annotations, error: annError } = await supabase
           .from('annotations')
-          .select('video_id, annotator, human_annotated_text, review_status, reviewer')
+          .select('video_id, annotator, human_annotated_text, status, review_status, reviewer')
           .eq('video_id', video.id);
 
         if (annError) {
@@ -69,8 +69,8 @@ export default function DiagnosticPage() {
 
         // 统计
         const total = annotations.length;
-        const hasText = annotations.filter(a => 
-          a.human_annotated_text && a.human_annotated_text.trim() !== ''
+        const hasCompleted = annotations.filter(a => 
+          a.status === true
         ).length;
         const reviewed = annotations.filter(a => a.review_status === true).length;
         const pending = annotations.filter(a => !a.review_status).length;
@@ -80,7 +80,7 @@ export default function DiagnosticPage() {
           ...video,
           annotationStats: {
             total,
-            hasText,
+            hasCompleted,
             reviewed,
             pending,
             annotators
@@ -94,9 +94,9 @@ export default function DiagnosticPage() {
           );
         }
 
-        if (!video.is_completed && pending === 0 && hasText > 0) {
+        if (!video.is_completed && pending === 0 && hasCompleted > 0) {
           problems.push(
-            `视频 "${video.name}" 未标记为已完成(is_completed=false)，但所有数据(${hasText}条)都已复检`
+            `视频 "${video.name}" 未标记为已完成(is_completed=false)，但所有数据(${hasCompleted}条)都已复检`
           );
         }
       }
@@ -151,10 +151,10 @@ export default function DiagnosticPage() {
       render: (_: any, record: any) => record.annotationStats?.total || 0,
     },
     {
-      title: '有内容',
-      key: 'hasText',
+      title: '已完成',
+      key: 'hasCompleted',
       width: 100,
-      render: (_: any, record: any) => record.annotationStats?.hasText || 0,
+      render: (_: any, record: any) => record.annotationStats?.hasCompleted || 0,
     },
     {
       title: '已复检',

@@ -112,13 +112,16 @@ export default function InspectionManagePage() {
     
     setIsLoadingData(true);
     
+    // 🔧 如果是 isLoadMore=true，直接返回（因为新逻辑已经自动加载所有数据）
     if (isLoadMore) {
-      setIsLoadingMore(true);
-    } else {
-      setLoading(true);
-      setPage(1);
-      setAllAnnotations([]); // 重置数据
+      console.log('✅ 已加载所有数据，无需加载更多');
+      setIsLoadingData(false);
+      return;
     }
+    
+    setLoading(true);
+    setPage(1);
+    setAllAnnotations([]); // 重置数据
     
     try {
       const { getVideo, getPendingInspectionAnnotations } = await import('../api/database');
@@ -213,39 +216,54 @@ export default function InspectionManagePage() {
           }
         }
       } else {
-        // 否则加载所有数据 - 优化：只加载有人工标注文本且未质检的数据（精简字段，支持分页）
-        // 计算分页参数（使用函数式更新避免闭包问题）
-        let currentPage = 1;
-        if (isLoadMore) {
-          setPage(prev => {
-            currentPage = prev + 1;
-            return currentPage;
-          });
-        } else {
-          currentPage = 1;
+        // 否则加载所有数据 - 使用分页循环加载所有数据
+        let allAnnotationsData: any[] = [];
+        let currentPageNum = 0;
+        const localPageSize = 1000;
+        let hasMoreData = true;
+        let totalCount = 0;
+        
+        // 🔧 循环加载所有数据，避免只加载第一页
+        while (hasMoreData) {
+          const offset = currentPageNum * localPageSize;
+          
+          // 性能优化：只查询必要的字段，不查询大文本字段，并支持分页
+          // 质检所有句子（包括未标注、已标注、已质检、已复检的）
+          // ✅ 不再过滤任何数据，让质检员看到所有数据
+          const { data: annotationsData, error: annotationsError, count } = await supabase
+            .from('annotations')
+            .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at', { count: 'exact' })
+            // ✅ 移除了所有限制条件
+            // .is('review_status', null)  // ❌ 移除这个限制！会导致数据"丢失"
+            .order('created_at', { ascending: false })
+            .range(offset, offset + localPageSize - 1);
+          
+          if (annotationsError) {
+            console.error('加载标注数据失败（第' + (currentPageNum + 1) + '页）:', annotationsError);
+            message.error('加载数据失败，请重试');
+            break;
+          }
+          
+          if (count !== null && totalCount === 0) {
+            totalCount = count;
+          }
+          
+          if (annotationsData && annotationsData.length > 0) {
+            allAnnotationsData = allAnnotationsData.concat(annotationsData);
+          }
+          
+          hasMoreData = annotationsData && annotationsData.length === localPageSize;
+          currentPageNum++;
+          
+          console.log(`✅ 已加载第 ${currentPageNum} 页，本页 ${annotationsData?.length || 0} 条，累计 ${allAnnotationsData.length} 条`);
         }
-        const offset = (currentPage - 1) * pageSize;
         
-        // 性能优化：只查询必要的字段，不查询大文本字段，并支持分页
-        // 质检所有句子（包括未标注和已标注的）
-        // 排除已复检完成的数据（review_status 不为 null）
-        const { data: annotationsData, error: annotationsError, count } = await supabase
-          .from('annotations')
-          .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at', { count: 'exact' })
-          // ✅ 移除了 human_annotated_text 和 inspector 的限制
-          // ✅ 质检员应该能看到所有句子
-          .is('review_status', null)  // 排除已复检完成的数据
-          .order('created_at', { ascending: false })
-          .range(offset, offset + pageSize - 1);
+        console.log(`🎉 全部加载完成！共 ${allAnnotationsData.length} 条数据（总数：${totalCount}）`);
         
-        if (annotationsError) {
-          console.error('加载标注数据失败:', annotationsError);
-          message.error('加载数据失败，请重试');
-          return;
-        }
+        setTotalCount(totalCount);
+        setHasMore(false); // 已加载所有数据，无需再加载更多
         
-        setTotalCount(count || 0);
-        setHasMore(offset + (annotationsData?.length || 0) < (count || 0));
+        const annotationsData = allAnnotationsData;
         
         // 优化：只查询相关视频的基本信息（id, name, url），减少数据传输
         // 提取所有唯一的 video_id
@@ -290,18 +308,11 @@ export default function InspectionManagePage() {
           };
         });
         
-        // 合并数据（加载更多时追加，否则替换）
-        if (isLoadMore) {
-          setAllAnnotations(prev => [...prev, ...annotationsWithVideoName]);
-          setPage(currentPage);
-        } else {
-          setAllAnnotations(annotationsWithVideoName);
-          setPage(1);
-        }
+        // 直接设置所有数据（不再需要 isLoadMore 逻辑，因为已经一次性加载所有数据）
+        setAllAnnotations(annotationsWithVideoName);
+        setPage(1);
         
-        if (!isLoadMore) {
-          message.success(`加载了 ${annotationsWithVideoName.length} 条待质检数据（共 ${count || 0} 条）`);
-        }
+        message.success(`加载了 ${annotationsWithVideoName.length} 条数据（共 ${totalCount} 条）`);
       }
     } catch (error) {
       console.error('加载数据失败:', error);
@@ -311,7 +322,7 @@ export default function InspectionManagePage() {
       setIsLoadingMore(false);
       setIsLoadingData(false); // 重置加载标志
     }
-  }, [selectedVideoId, videoName, samplePercentage, pageSize]);
+  }, [selectedVideoId, videoName, samplePercentage]);
 
   // 单独查询每个视频的总句子数（从 videos 表读取）
   const loadVideoTotalSentences = useCallback(async () => {
@@ -357,9 +368,8 @@ export default function InspectionManagePage() {
         let query = supabase
           .from('annotations')
           .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
-          // ✅ 移除了 human_annotated_text 和 inspector 的限制
-          // ✅ 质检员应该能看到所有句子
-          .is('review_status', null);  // 排除已复检完成的数据
+          // ✅ 移除了所有限制条件，让质检员看到所有数据
+          // .is('review_status', null);  // ❌ 移除这个限制！
         
         // 🔧 如果指定了视频ID，只查询该视频的数据
         if (selectedVideoId) {
@@ -463,25 +473,23 @@ export default function InspectionManagePage() {
     
     switch (filterStatus) {
       case 'pending':
-        // ✅ 修改：待质检 = 所有未质检的句子（包括未标注和已标注的）
+        // ✅ 待质检 = 所有未质检的句子（不论是否复检）
         filtered = allAnnotations.filter(item => {
           const notInspected = !item.inspector;
-          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
-          return notInspected && notReviewed;
+          return notInspected;
         });
         break;
       case 'inspected':
-        // 已质检的（有质检人）且未复检完成
+        // 已质检的（有质检人，不论是否复检）
         filtered = allAnnotations.filter(item => {
           const hasInspector = item.inspector && item.inspector.trim() !== '';
-          const notReviewed = item.reviewStatus == null; // 排除已复检完成的数据
-          return hasInspector && notReviewed;
+          return hasInspector;
         });
         break;
       case 'all':
       default:
-        // 全部：排除已复检完成的数据
-        filtered = allAnnotations.filter(item => item.reviewStatus == null);
+        // 全部：显示所有数据（包括已复检的）
+        filtered = allAnnotations;
         break;
     }
     
