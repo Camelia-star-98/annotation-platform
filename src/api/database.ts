@@ -410,14 +410,14 @@ export async function getPendingInspectionAnnotations(
   options?: { limit?: number; offset?: number }
 ): Promise<{ data: AnnotationItem[]; total: number }> {
   try {
-    // 构建查询 - 质检所有句子（包括未标注和已标注的）
+    // 构建查询 - 只质检已标注的句子
     let query = supabase
       .from('annotations')
       .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
       .eq('video_id', videoId)
-      // ✅ 移除了所有限制条件
-      // ✅ 质检员应该能看到视频的所有句子（不论是否标注、质检或复检）
-      // .is('review_status', null)  // ❌ 移除这个限制！会导致数据"丢失"
+      // ✅ 只查询已标注的数据（有人工标注内容的）
+      .not('human_annotated_text', 'is', null)
+      .neq('human_annotated_text', '')
       .order('sentence_no', { ascending: true });
 
     // 应用分页
