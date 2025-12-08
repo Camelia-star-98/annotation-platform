@@ -128,7 +128,7 @@ export default function VideoManagePage() {
           id: video.id,
           videoName: video.url ? (video.name || '未命名视频') : '无', // 如果没有视频URL，显示"无"
           videoUrl: video.url || '', // 添加 videoUrl 字段
-          excelName: `${video.name || '未命名'}_标注数据`,
+          excelName: video.annotation_file_name || `${video.name || '未命名'}_标注数据`, // 优先使用上传的文件名，否则使用默认格式
           requiredAnnotators: video.required_annotators || 1, // 待标注数量
           completedAnnotators: 0, // TODO: 后续需要计算已完成的标注人数
           uploadTime: video.created_at || new Date().toISOString(),
