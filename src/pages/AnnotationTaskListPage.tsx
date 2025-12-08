@@ -532,6 +532,15 @@ export default function AnnotationTaskListPage() {
       }
     },
     {
+      title: '标注表格数据',
+      dataIndex: 'totalSentences',
+      key: 'totalSentences',
+      width: 130,
+      render: (count: number) => (
+        <Tag color="cyan">{count || 0} 条</Tag>
+      )
+    },
+    {
       title: '标注人',
       dataIndex: 'annotator',
       key: 'annotator',
@@ -948,7 +957,7 @@ export default function AnnotationTaskListPage() {
                       showSizeChanger: true,
                       showTotal: (total) => `共 ${total} 个任务`
                     }}
-                    scroll={{ x: 1000 }}
+                    scroll={{ x: 1130 }}
                   />
                 )
               },
