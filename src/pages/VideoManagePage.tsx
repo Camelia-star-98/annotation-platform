@@ -707,7 +707,7 @@ export default function VideoManagePage() {
         duration: 0,
         required_annotators: annotationOnlyRequiredAnnotators,
         total_sentences: parsedAnnotations.length, // 保存视频总句数
-        annotation_file_name: annotationOnlyExcelFile.name // 保存标注数据文件名
+        annotation_file_name: annotationOnlyVideoName // 使用用户输入的数据集名称
       };
 
       console.log('💾 创建虚拟视频记录:', video);
