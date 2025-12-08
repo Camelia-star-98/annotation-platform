@@ -38,6 +38,7 @@ interface AnnotationTask {
   requiredAnnotators: number;
   completedAnnotators: number;
   uploadTime: string;
+  annotationTableName?: string; // 标注表格数据名称
 }
 
 interface RejectedAnnotation {
@@ -138,7 +139,8 @@ export default function AnnotationTaskListPage() {
           duration: video.duration || 0,
           requiredAnnotators: video.required_annotators || 1,
           completedAnnotators: completedCountMap[video.id] || 0,
-          uploadTime: video.created_at || ''
+          uploadTime: video.created_at || '',
+          annotationTableName: video.annotation_table_name
         }));
         setTasks(publishedTasks);
         message.warning(`加载了 ${publishedTasks.length} 个任务（无法过滤已完成任务）`);
@@ -232,7 +234,8 @@ export default function AnnotationTaskListPage() {
           duration: video.duration || 0,
           requiredAnnotators: video.required_annotators || 1,
           completedAnnotators: completedCountMap[video.id] || 0,
-          uploadTime: video.created_at || ''
+          uploadTime: video.created_at || '',
+          annotationTableName: video.annotation_table_name
         }));
       
       setTasks(publishedTasks);
@@ -533,11 +536,11 @@ export default function AnnotationTaskListPage() {
     },
     {
       title: '标注表格数据',
-      dataIndex: 'totalSentences',
-      key: 'totalSentences',
+      dataIndex: 'annotationTableName',
+      key: 'annotationTableName',
       width: 130,
-      render: (count: number) => (
-        <Tag color="cyan">{count || 0} 条</Tag>
+      render: (name: string) => (
+        <Tag color="cyan">{name || '-'}</Tag>
       )
     },
     {

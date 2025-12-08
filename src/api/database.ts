@@ -51,7 +51,7 @@ async function withRetry<T>(
 export async function getVideos(): Promise<VideoInfo[]> {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, name, url, subject, duration, required_annotators, total_sentences, created_at, is_published, is_completed')
+    .select('id, name, url, subject, duration, required_annotators, total_sentences, annotation_table_name, created_at, is_published, is_completed')
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -67,7 +67,7 @@ export async function getVideo(videoId: string): Promise<VideoInfo | null> {
   try {
     const query = supabase
       .from('videos')
-      .select('id, name, url, subject, duration, required_annotators, total_sentences, created_at, is_published, is_completed')
+      .select('id, name, url, subject, duration, required_annotators, total_sentences, annotation_table_name, created_at, is_published, is_completed')
       .eq('id', videoId)
       .single();
     
