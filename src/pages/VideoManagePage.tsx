@@ -592,6 +592,7 @@ export default function VideoManagePage() {
       
       console.log('✅ 视频记录创建成功，URL:', videoUrl);
       console.log('✅ 待标注数量:', requiredAnnotators);
+      console.log('✅ 标注文件名:', excelFile.name);
 
       // 5. 保存标注数据（添加 videoName）
       setUploadProgress(90);
@@ -699,9 +700,9 @@ export default function VideoManagePage() {
       const videoId = `annotation_only_${Date.now()}`;
       
       // 3. 创建虚拟视频记录（没有URL）
-      // 从 Excel 文件名中提取标注文件名（去掉.xlsx/.xls后缀）
+      // 使用 Excel 文件名作为标注文件名
       const excelFileName = annotationOnlyExcelFile.name;
-      const annotationFileName = excelFileName.replace(/\.(xlsx|xls)$/i, '');
+      const annotationFileName = excelFileName; // 保留完整的文件名（包括后缀）
       
       const video = {
         id: videoId,
@@ -711,7 +712,7 @@ export default function VideoManagePage() {
         duration: 0,
         required_annotators: annotationOnlyRequiredAnnotators,
         total_sentences: parsedAnnotations.length, // 保存视频总句数
-        annotation_file_name: annotationFileName // 保存标注文件名（去掉后缀）
+        annotation_file_name: annotationFileName // 使用Excel文件名作为标注文件名
       };
 
       console.log('💾 创建虚拟视频记录:', video);
@@ -724,9 +725,12 @@ export default function VideoManagePage() {
       setUploadProgress(60);
 
       // 4. 转换并保存标注数据（使用parseExcel解析的结果）
+      // 使用标注文件名（去掉.xlsx/.xls后缀）作为标注数据ID的前缀
+      const annotationIdPrefix = annotationFileName.replace(/\.(xlsx|xls)$/i, '');
+      
       const annotations = parsedAnnotations.map((item: any, index: number) => {
         return {
-          id: `${videoId}_${index + 1}`,
+          id: `${annotationIdPrefix}_${index + 1}`, // 使用标注文件名作为前缀
           videoId: videoId,
           sentenceNo: item.sentenceNo || index + 1,
           timeRange: item.timeRange || '-',

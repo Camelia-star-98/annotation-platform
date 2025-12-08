@@ -96,6 +96,7 @@ export async function addVideo(video: VideoInfo): Promise<VideoInfo | null> {
   console.log('  - subject:', video.subject);
   console.log('  - duration:', video.duration);
   console.log('  - required_annotators:', video.required_annotators);
+  console.log('  - annotation_file_name:', video.annotation_file_name);
   
   // 允许空URL（用于只上传标注数据的场景）
   if (!video.url) {
@@ -110,7 +111,8 @@ export async function addVideo(video: VideoInfo): Promise<VideoInfo | null> {
     subject: video.subject,
     duration: video.duration || 0,
     required_annotators: video.required_annotators || 1, // 添加待标注数量字段
-    total_sentences: video.total_sentences || 0 // 添加视频总句数字段
+    total_sentences: video.total_sentences || 0, // 添加视频总句数字段
+    annotation_file_name: video.annotation_file_name || '' // 添加标注数据文件名
     // is_published 默认为 false（数据库默认值），需要手动发布
   };
   
