@@ -51,7 +51,7 @@ async function withRetry<T>(
 export async function getVideos(): Promise<VideoInfo[]> {
   const { data, error } = await supabase
     .from('videos')
-    .select('id, name, url, subject, duration, required_annotators, total_sentences, created_at, is_published, is_completed')
+    .select('id, name, url, subject, duration, required_annotators, total_sentences, annotation_file_name, created_at, is_published, is_completed')
     .order('created_at', { ascending: false });
 
   if (error) {

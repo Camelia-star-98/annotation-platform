@@ -39,6 +39,7 @@ interface AnnotationTask {
   completedAnnotators: number;
   uploadTime: string;
   totalSentences?: number; // 视频总句子数
+  annotationFileName?: string; // 标注数据文件名
 }
 
 interface RejectedAnnotation {
@@ -72,6 +73,7 @@ interface CompletedTask {
   passedCount: number; // 质检通过数
   rejectedCount: number; // 质检不通过数
   pendingCount: number; // 待质检数
+  annotationFileName?: string; // 标注数据文件名
 }
 
 export default function AnnotationTaskListPage() {
@@ -235,7 +237,8 @@ export default function AnnotationTaskListPage() {
           requiredAnnotators: video.required_annotators || 1,
           completedAnnotators: completedCountMap[video.id] || 0,
           uploadTime: video.created_at || '',
-          totalSentences: video.total_sentences || 0
+          totalSentences: video.total_sentences || 0,
+          annotationFileName: video.annotation_file_name
         }));
       
       setTasks(publishedTasks);
@@ -464,7 +467,8 @@ export default function AnnotationTaskListPage() {
               isCompleted,
               passedCount: stats.passedCount,
               rejectedCount: stats.rejectedCount,
-              pendingCount: stats.pendingCount
+              pendingCount: stats.pendingCount,
+              annotationFileName: video.annotation_file_name
             });
           }
         }
@@ -541,6 +545,15 @@ export default function AnnotationTaskListPage() {
       width: 100,
       render: (count: number) => (
         <Tag color="blue">{count || '-'}</Tag>
+      )
+    },
+    {
+      title: '标注文件名',
+      dataIndex: 'annotationFileName',
+      key: 'annotationFileName',
+      width: 180,
+      render: (name: string) => (
+        <Tag color="cyan">{name || '-'}</Tag>
       )
     },
     {
@@ -798,6 +811,15 @@ export default function AnnotationTaskListPage() {
           </div>
         );
       }
+    },
+    {
+      title: '标注文件名',
+      dataIndex: 'annotationFileName',
+      key: 'annotationFileName',
+      width: 180,
+      render: (name: string) => (
+        <Tag color="cyan">{name || '-'}</Tag>
+      )
     },
     {
       title: '状态',

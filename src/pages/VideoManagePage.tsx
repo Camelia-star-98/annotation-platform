@@ -317,7 +317,8 @@ export default function VideoManagePage() {
       subject: '未知',
       duration: 0,
       required_annotators: requiredAnnotators,
-      total_sentences: excelData.length // 保存视频总句数
+      total_sentences: excelData.length, // 保存视频总句数
+      annotation_file_name: excelFile.name // 保存标注数据文件名
     });
     
     // 4. 保存标注数据
@@ -585,7 +586,8 @@ export default function VideoManagePage() {
         subject: '未知',
         duration: 0,
         required_annotators: requiredAnnotators, // 保存待标注数量
-        total_sentences: excelData.length // 保存视频总句数
+        total_sentences: excelData.length, // 保存视频总句数
+        annotation_file_name: excelFile.name // 保存标注数据文件名
       });
       
       console.log('✅ 视频记录创建成功，URL:', videoUrl);
@@ -704,7 +706,8 @@ export default function VideoManagePage() {
         subject: annotationOnlySubject || '未知',
         duration: 0,
         required_annotators: annotationOnlyRequiredAnnotators,
-        total_sentences: parsedAnnotations.length // 保存视频总句数
+        total_sentences: parsedAnnotations.length, // 保存视频总句数
+        annotation_file_name: excelFile.name // 保存标注数据文件名
       };
 
       console.log('💾 创建虚拟视频记录:', video);
