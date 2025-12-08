@@ -426,11 +426,15 @@ export default function HomePage() {
       width: 250,
       ellipsis: true,
       render: (_: any, record: VideoInfo) => {
+        // 优先显示数据库中保存的 annotation_file_name
+        if (record.annotation_file_name) {
+          return record.annotation_file_name;
+        }
         // 如果视频名称为空、只有ID或者是annotation_only_开头的，显示"无"
         if (!record.name || record.name === record.id || record.name.startsWith('annotation_only_')) {
           return <span style={{ color: '#999' }}>无</span>;
         }
-        // 标注文件名通常是：视频名称_标注数据.xlsx
+        // 兜底：标注文件名通常是：视频名称_标注数据.xlsx
         // 如果视频名称已经包含扩展名，去掉扩展名
         const baseName = record.name.replace(/\.(mp4|avi|mov|wmv|flv|mkv)$/i, '');
         return `${baseName}_标注数据.xlsx`;
