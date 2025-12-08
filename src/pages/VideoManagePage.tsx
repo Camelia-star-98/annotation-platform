@@ -699,6 +699,10 @@ export default function VideoManagePage() {
       const videoId = `annotation_only_${Date.now()}`;
       
       // 3. 创建虚拟视频记录（没有URL）
+      // 从 Excel 文件名中提取标注文件名（去掉.xlsx/.xls后缀）
+      const excelFileName = annotationOnlyExcelFile.name;
+      const annotationFileName = excelFileName.replace(/\.(xlsx|xls)$/i, '');
+      
       const video = {
         id: videoId,
         name: annotationOnlyVideoName,
@@ -707,7 +711,7 @@ export default function VideoManagePage() {
         duration: 0,
         required_annotators: annotationOnlyRequiredAnnotators,
         total_sentences: parsedAnnotations.length, // 保存视频总句数
-        annotation_file_name: annotationOnlyVideoName // 使用用户输入的数据集名称
+        annotation_file_name: annotationFileName // 保存标注文件名（去掉后缀）
       };
 
       console.log('💾 创建虚拟视频记录:', video);
