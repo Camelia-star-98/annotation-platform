@@ -38,7 +38,7 @@ interface AnnotationTask {
   requiredAnnotators: number;
   completedAnnotators: number;
   uploadTime: string;
-  annotationTableName?: string; // 标注表格数据名称
+  totalSentences?: number; // 视频总句子数
 }
 
 interface RejectedAnnotation {
@@ -140,7 +140,7 @@ export default function AnnotationTaskListPage() {
           requiredAnnotators: video.required_annotators || 1,
           completedAnnotators: completedCountMap[video.id] || 0,
           uploadTime: video.created_at || '',
-          annotationTableName: video.annotation_table_name
+          totalSentences: video.total_sentences || 0
         }));
         setTasks(publishedTasks);
         message.warning(`加载了 ${publishedTasks.length} 个任务（无法过滤已完成任务）`);
@@ -235,7 +235,7 @@ export default function AnnotationTaskListPage() {
           requiredAnnotators: video.required_annotators || 1,
           completedAnnotators: completedCountMap[video.id] || 0,
           uploadTime: video.created_at || '',
-          annotationTableName: video.annotation_table_name
+          totalSentences: video.total_sentences || 0
         }));
       
       setTasks(publishedTasks);
@@ -535,12 +535,12 @@ export default function AnnotationTaskListPage() {
       }
     },
     {
-      title: '标注表格数据',
-      dataIndex: 'annotationTableName',
-      key: 'annotationTableName',
-      width: 130,
-      render: (name: string) => (
-        <Tag color="cyan">{name || '-'}</Tag>
+      title: '总句数',
+      dataIndex: 'totalSentences',
+      key: 'totalSentences',
+      width: 100,
+      render: (count: number) => (
+        <Tag color="blue">{count || '-'}</Tag>
       )
     },
     {
