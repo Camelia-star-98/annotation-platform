@@ -1,186 +1,169 @@
-# 修复前端显示 total_sentences 问题
+# 修复：质检数据管理页面"总句数"显示错误
 
 ## 📋 问题描述
 
-前端页面（质检选择页面）显示的"总标注数"很少，不符合实际的视频句子总数。
+**问题**：质检数据管理页面显示的"已标注总数"比视频实际的句子数量多很多。
 
 **示例**：
-- "第5批第一轮-英语-1.mp4" 显示 **4 条**，实际应该是 **95 句**
-- "第5批第一轮-数学-1.mp4" 显示 **32 条**，实际应该更多
+- 用户反馈：视频 `语文02.mp4` 有 184 句，但页面显示"已标注总数: 200+ 条"
+- 原因：系统统计的是**所有已标注数据的数量**（包括重复标注、多人标注等），而不是视频的实际总句子数
 
-## 🔍 根本原因
+## 🔍 问题根源
 
-1. **后端字段已存在**：`videos.total_sentences` 字段已经添加并正确填充（183 个视频已更新）
-2. **前端查询缺失**：前端代码在查询视频时**没有包含** `total_sentences` 字段
+### 旧逻辑（错误）
 
-### 问题代码位置
+**位置**：`src/pages/InspectionManagePage.tsx`
 
-#### 1. `src/pages/InspectionSelectPage.tsx` (质检选择页面)
-
-**第 71 行**：查询视频时缺少 `total_sentences`
-
+1. **第206行** - 设置 `totalAnnotated` 时使用了错误的数据源：
 ```typescript
-// ❌ 修复前
-const { data: allVideos, error: videosError } = await supabase
-  .from('videos')
-  .select('id, name, subject, created_at, is_completed')  // 缺少 total_sentences
+// ❌ 旧代码：使用查询到的已标注数据数量
+const { data: pendingAnnotations, total } = await getPendingInspectionAnnotations(...);
+newTotalAnnotated.set(selectedVideoId, total); // total 是已标注数据数量，不是视频总句数
 ```
 
-**第 168 行**：尝试使用但值为 undefined
-
+2. **第626行** - 显示时使用了误导性的标签：
 ```typescript
-totalAnnotations: video.total_sentences || validAnnotations.length,
-// 因为 total_sentences 未查询，所以总是 undefined，回退到 validAnnotations.length
+<Tag color="blue">已标注总数: {record.totalAnnotated || 0} 条</Tag>
 ```
 
-#### 2. `src/api/database.ts` (数据库API)
+### 问题分析
 
-**第 54 行**：`getVideos()` 函数缺少 `total_sentences`
+- `getPendingInspectionAnnotations` 返回的 `total` 是**已标注数据的数量**
+- 这个数量包括：
+  - 多个标注人对同一句子的标注（如果有重复）
+  - 所有已质检和未质检的数据
+  - 可能存在的历史遗留重复数据
+- **不等于**视频的实际总句子数
 
-```typescript
-// ❌ 修复前
-.select('id, name, url, subject, duration, required_annotators, created_at, is_published, is_completed')
-```
+## ✅ 解决方案
 
-**第 70 行**：`getVideo()` 函数也缺少 `total_sentences`
+### 修改内容
 
-## ✅ 修复方案
-
-### 修改 1: `src/pages/InspectionSelectPage.tsx`
-
-```typescript
-// ✅ 修复后：添加 total_sentences 字段
-const { data: allVideos, error: videosError } = await supabase
-  .from('videos')
-  .select('id, name, subject, created_at, is_completed, total_sentences')  // ✅ 添加
-  .or('is_completed.is.null,is_completed.eq.false')
-  .order('created_at', { ascending: false });
-```
-
-### 修改 2: `src/api/database.ts`
-
-#### `getVideos()` 函数
+#### 1. 获取视频的 `total_sentences` 字段
 
 ```typescript
-// ✅ 修复后
-export async function getVideos(): Promise<VideoInfo[]> {
-  const { data, error } = await supabase
-    .from('videos')
-    .select('id, name, url, subject, duration, required_annotators, total_sentences, created_at, is_published, is_completed')  // ✅ 添加
-    .order('created_at', { ascending: false });
-  // ...
+// ✅ 新代码：从 videos 表获取实际总句子数
+let videoTotalSentences = 0; // 视频实际总句子数
+try {
+  const currentVideo = await getVideo(selectedVideoId);
+  videoUrl = currentVideo?.url || '';
+  annotationFileName = currentVideo?.annotation_file_name || '';
+  videoTotalSentences = currentVideo?.total_sentences || 0; // 获取视频实际总句子数
+} catch (error) {
+  console.error('获取视频信息失败，将继续使用传入的视频名称:', error);
 }
 ```
 
-#### `getVideo()` 函数
+#### 2. 使用 `total_sentences` 而不是查询统计
 
 ```typescript
-// ✅ 修复后
-export async function getVideo(videoId: string): Promise<VideoInfo | null> {
-  try {
-    const query = supabase
-      .from('videos')
-      .select('id, name, url, subject, duration, required_annotators, total_sentences, created_at, is_published, is_completed')  // ✅ 添加
-      .eq('id', videoId)
-      .single();
-    // ...
-  }
+// 🔧 更新视频总句子数：使用 videos 表的 total_sentences 字段（视频实际总句子数）
+if (selectedVideoId && videoTotalSentences > 0) {
+  const newTotalAnnotated = new Map(videoTotalAnnotated);
+  newTotalAnnotated.set(selectedVideoId, videoTotalSentences);
+  setVideoTotalAnnotated(newTotalAnnotated);
 }
 ```
 
-## 🎯 修复后的效果
+#### 3. 修改显示文本
 
-修复后，前端页面会正确显示每个视频的总句数：
-
-| 视频名称 | 修复前 | 修复后 | 说明 |
-|---------|-------|-------|------|
-| 第5批第一轮-英语-1.mp4 | 4 条 | 95 条 | ✅ 从 videos.total_sentences 读取 |
-| 第5批第一轮-数学-1.mp4 | 32 条 | 正确数值 | ✅ 从 videos.total_sentences 读取 |
-| 第5批第一轮-物理-01.mp4 | 1 条 | 正确数值 | ✅ 从 videos.total_sentences 读取 |
-| 第5批第一轮-语文-1.mp4 | 1 条 | 正确数值 | ✅ 从 videos.total_sentences 读取 |
-
-## 📊 数据流程
-
-```
-┌─────────────────────────────────────────────────┐
-│  1. 上传视频时                                   │
-│     - addVideo() 写入 total_sentences           │
-│     - 自动更新脚本可以补充/修复数据              │
-└─────────────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────────────┐
-│  2. 数据库                                       │
-│     videos.total_sentences = 实际句子总数        │
-└─────────────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────────────┐
-│  3. 前端查询（修复后）                           │
-│     ✅ SELECT ... total_sentences ...           │
-└─────────────────────────────────────────────────┘
-                    ↓
-┌─────────────────────────────────────────────────┐
-│  4. 前端显示                                     │
-│     totalAnnotations: video.total_sentences     │
-│     ✅ 显示正确的句子总数                        │
-└─────────────────────────────────────────────────┘
+```typescript
+// ✅ 新显示：更准确的标签文本
+<Tag color="blue">视频总句数: {record.totalAnnotated || 0} 句</Tag>
 ```
 
-## 🚀 部署步骤
+## 📊 修改影响
 
-1. ✅ **后端数据准备**（已完成）
-   - 添加 `videos.total_sentences` 字段
-   - 运行 `auto_update_sentences_standalone.js` 更新数据
-   - 验证：183 个视频数据正确
+### ✅ 修改后的行为
 
-2. ✅ **前端代码修复**（已完成）
-   - 修改 `InspectionSelectPage.tsx`
-   - 修改 `database.ts` 的 `getVideos()` 和 `getVideo()`
+| 场景 | 修改前 | 修改后 |
+|------|--------|--------|
+| **显示的数字** | 已标注数据数量（可能有重复） | 视频实际总句子数 |
+| **数据来源** | 查询 `annotations` 表统计 | 读取 `videos.total_sentences` 字段 |
+| **标签文本** | "已标注总数: X 条" | "视频总句数: X 句" |
+| **准确性** | ❌ 可能偏高（包含重复） | ✅ 准确（来自上传文件） |
 
-3. ✅ **重新构建**（已完成）
-   ```bash
-   npm run build
+### 示例对比
+
+假设视频 `语文02.mp4` 有 184 句：
+
+| 指标 | 修改前 | 修改后 |
+|------|--------|--------|
+| 显示数字 | 200+ 条 | 184 句 |
+| 说明 | 包含多人标注、重复数据等 | 视频实际总句子数 |
+
+## 🔧 数据库支持
+
+### `videos.total_sentences` 字段
+
+该字段在之前的版本中已添加（参见 `ADD_TOTAL_SENTENCES_FIELD.md`）：
+
+```sql
+ALTER TABLE videos 
+ADD COLUMN IF NOT EXISTS total_sentences INTEGER DEFAULT 0;
+
+COMMENT ON COLUMN videos.total_sentences IS '视频总句数（上传的标注文件中的句子总数）';
+```
+
+**特点**：
+- ✅ 在上传标注文件时自动填充
+- ✅ 反映视频的实际句子总数
+- ✅ 不受标注、质检、复审等操作影响
+- ✅ 稳定可靠，不会因数据重复而变化
+
+## 📝 相关文件
+
+### 修改的文件
+
+1. **`src/pages/InspectionManagePage.tsx`**
+   - 第134-139行：获取 `total_sentences` 字段
+   - 第205-210行：使用 `total_sentences` 设置 `totalAnnotated`
+   - 第627行：修改显示文本为"视频总句数"
+
+### 相关的 API
+
+1. **`src/api/database.ts`** - `getVideo()` 函数
+   - 第70行：已包含 `total_sentences` 字段的查询
+
+## ✅ 验证方法
+
+### 验证步骤
+
+1. **打开质检数据管理页面**
+   - 路径：首页 → 质检 → 选择视频 → 进入质检管理
+
+2. **查看视频信息**
+   - 展开视频行，查看"视频总句数"标签
+   - 确认数字与视频实际句子数一致
+
+3. **对比数据库**
+   ```sql
+   SELECT 
+     v.name AS 视频名称,
+     v.total_sentences AS 总句数,
+     COUNT(DISTINCT a.sentence_no) AS 实际不同句子数,
+     COUNT(*) AS 标注数据总数
+   FROM videos v
+   LEFT JOIN annotations a ON a.video_id = v.id
+   GROUP BY v.id, v.name, v.total_sentences
+   ORDER BY v.created_at DESC;
    ```
 
-4. 🔄 **刷新页面**
-   - 清除浏览器缓存
-   - 重新加载页面
-   - 验证"总标注数"显示正确
+### 预期结果
 
-## 🔧 验证方法
+- "视频总句数"应该等于 `videos.total_sentences`
+- 不再显示误导性的"已标注总数"
+- 数字应该与上传的标注文件中的句子数一致
 
-1. 打开质检选择页面：`/inspection-select`
-2. 查看"总标注数"列
-3. 应该显示视频的实际句子总数（而不是当前标注的条数）
-4. hover 到问号图标，tooltip 显示："视频上传时标注文件中的总句数（从 videos.total_sentences 读取）"
+## 🎉 效果
 
-## 📝 注意事项
+- ✅ 显示准确的视频总句子数
+- ✅ 不受数据重复、多人标注等因素影响
+- ✅ 用户可以清晰地了解视频的规模
+- ✅ 标签文本更清晰：从"已标注总数"改为"视频总句数"
 
-1. **字段含义**：
-   - `total_sentences`：视频的总句子数（固定值，上传时确定）
-   - `validAnnotations.length`：当前已标注的条数（动态值）
+## 🔖 版本信息
 
-2. **回退逻辑**：
-   ```typescript
-   totalAnnotations: video.total_sentences || validAnnotations.length
-   ```
-   - 优先使用 `total_sentences`（推荐）
-   - 如果为空则回退到实际标注数（兼容旧数据）
-
-3. **其他页面**：
-   - `ReviewSelectPage` 使用 `getVideos()` 获取数据，已自动修复
-   - `InspectionManagePage` 也使用了 `getVideos()`，已自动修复
-   - 所有使用 `database.ts` API 的页面都会受益
-
-## 📌 相关文件
-
-- ✅ `src/pages/InspectionSelectPage.tsx`
-- ✅ `src/api/database.ts`
-- ✅ `src/types/index.ts` (VideoInfo 接口已有 total_sentences 字段)
-- ✅ `auto_update_sentences_standalone.js` (数据更新脚本)
-
----
-
-**修复完成时间**: 2025-12-01  
-**影响范围**: 质检选择、复检选择、视频管理等所有使用 `getVideos()` 的页面  
-**测试状态**: ✅ 已构建成功，待部署验证
-
+- **修复版本**: v1.0.2-annotation-tools
+- **修复日期**: 2025-12-09
+- **问题类型**: 数据显示错误
