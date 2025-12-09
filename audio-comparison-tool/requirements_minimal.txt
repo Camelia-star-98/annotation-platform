@@ -1,0 +1,8 @@
+# 音频对比工具 - 最小依赖版本
+# 用于运行 simple_demo.py
+
+numpy>=1.24.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+dtw-python>=1.3.0
+

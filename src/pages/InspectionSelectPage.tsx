@@ -93,7 +93,9 @@ export default function InspectionSelectPage() {
       const { data: allAnnotations, error: annotationsError } = await supabase
         .from('annotations')
         .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status')
-        .in('video_id', videoIds);
+        .in('video_id', videoIds)
+        .not('annotator', 'is', null)
+        .neq('annotator', '');
       console.timeEnd('⏱️ 查询所有标注数据');
       
       console.log('🔍 查询到的标注数据总数:', allAnnotations?.length || 0);
@@ -131,6 +133,11 @@ export default function InspectionSelectPage() {
         const deduplicatedMap = new Map<string, any>();
         
         annotations.forEach(ann => {
+          // 🔧 过滤掉 annotator 为空的记录
+          if (!ann.annotator || ann.annotator.trim() === '') {
+            return;
+          }
+          
           const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
           const existing = deduplicatedMap.get(key);
           

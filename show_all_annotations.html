@@ -1,0 +1,711 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>所有标注数据查看</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      margin-bottom: 10px;
+    }
+
+    .header p {
+      font-size: 16px;
+      opacity: 0.9;
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 20px;
+      padding: 30px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      text-align: center;
+      transition: transform 0.2s;
+    }
+
+    .stat-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .stat-card .number {
+      font-size: 36px;
+      font-weight: bold;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    .stat-card .label {
+      color: #666;
+      font-size: 14px;
+    }
+
+    .filters {
+      padding: 30px;
+      background: white;
+      border-bottom: 1px solid #e0e0e0;
+    }
+
+    .filter-row {
+      display: flex;
+      gap: 15px;
+      flex-wrap: wrap;
+      margin-bottom: 15px;
+    }
+
+    .filter-group {
+      flex: 1;
+      min-width: 200px;
+    }
+
+    .filter-group label {
+      display: block;
+      margin-bottom: 8px;
+      color: #333;
+      font-weight: 500;
+      font-size: 14px;
+    }
+
+    .filter-group input,
+    .filter-group select {
+      width: 100%;
+      padding: 10px 15px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 14px;
+      transition: border-color 0.3s;
+    }
+
+    .filter-group input:focus,
+    .filter-group select:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #667eea;
+      border: 2px solid #667eea;
+    }
+
+    .btn-secondary:hover {
+      background: #f8f9fa;
+    }
+
+    .btn-export {
+      background: #28a745;
+      color: white;
+    }
+
+    .btn-export:hover {
+      background: #218838;
+    }
+
+    .table-container {
+      padding: 30px;
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+
+    th {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 15px 10px;
+      text-align: left;
+      font-weight: 600;
+      font-size: 13px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    td {
+      padding: 12px 10px;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 13px;
+      color: #333;
+    }
+
+    tr:hover {
+      background: #f8f9fa;
+    }
+
+    .status-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .status-completed {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status-pending {
+      background: #fff3cd;
+      color: #856404;
+    }
+
+    .status-qualified {
+      background: #d1ecf1;
+      color: #0c5460;
+    }
+
+    .status-rejected {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .text-truncate {
+      max-width: 300px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .text-truncate:hover {
+      white-space: normal;
+      word-break: break-all;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: #666;
+    }
+
+    .loading::after {
+      content: '...';
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+
+    @keyframes dots {
+      0%, 20% { content: '.'; }
+      40% { content: '..'; }
+      60%, 100% { content: '...'; }
+    }
+
+    .error {
+      background: #f8d7da;
+      color: #721c24;
+      padding: 20px;
+      margin: 30px;
+      border-radius: 8px;
+      border: 1px solid #f5c6cb;
+    }
+
+    .pagination {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+      padding: 30px;
+      background: #f8f9fa;
+    }
+
+    .pagination button {
+      padding: 8px 16px;
+      border: 1px solid #667eea;
+      background: white;
+      color: #667eea;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .pagination button:hover:not(:disabled) {
+      background: #667eea;
+      color: white;
+    }
+
+    .pagination button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .pagination .page-info {
+      font-size: 14px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📊 所有标注数据</h1>
+      <p>查看和管理所有有效的标注记录</p>
+    </div>
+
+    <div class="stats-grid" id="stats">
+      <div class="stat-card">
+        <div class="number" id="totalCount">-</div>
+        <div class="label">总标注数</div>
+      </div>
+      <div class="stat-card">
+        <div class="number" id="videoCount">-</div>
+        <div class="label">视频数</div>
+      </div>
+      <div class="stat-card">
+        <div class="number" id="annotatorCount">-</div>
+        <div class="label">标注人数</div>
+      </div>
+      <div class="stat-card">
+        <div class="number" id="qualifiedCount">-</div>
+        <div class="label">已质检通过</div>
+      </div>
+      <div class="stat-card">
+        <div class="number" id="reviewedCount">-</div>
+        <div class="label">已审核</div>
+      </div>
+    </div>
+
+    <div class="filters">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>视频ID</label>
+          <input type="text" id="filterVideoId" placeholder="输入视频ID">
+        </div>
+        <div class="filter-group">
+          <label>标注人</label>
+          <select id="filterAnnotator">
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>质检人</label>
+          <select id="filterInspector">
+            <option value="">全部</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>审核人</label>
+          <select id="filterReviewer">
+            <option value="">全部</option>
+          </select>
+        </div>
+      </div>
+      <div class="filter-row">
+        <div class="filter-group">
+          <label>句子编号</label>
+          <input type="number" id="filterSentenceNo" placeholder="输入句子编号">
+        </div>
+        <div class="filter-group">
+          <label>质检状态</label>
+          <select id="filterQualified">
+            <option value="">全部</option>
+            <option value="true">已通过</option>
+            <option value="false">未通过</option>
+            <option value="null">未质检</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>审核状态</label>
+          <select id="filterReviewStatus">
+            <option value="">全部</option>
+            <option value="true">已审核</option>
+            <option value="false">未审核</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>标注状态</label>
+          <select id="filterStatus">
+            <option value="">全部</option>
+            <option value="true">已完成</option>
+            <option value="false">未完成</option>
+          </select>
+        </div>
+      </div>
+      <div class="button-group">
+        <button class="btn btn-primary" onclick="applyFilters()">🔍 应用筛选</button>
+        <button class="btn btn-secondary" onclick="resetFilters()">🔄 重置</button>
+        <button class="btn btn-export" onclick="exportToCSV()">📥 导出 CSV</button>
+      </div>
+    </div>
+
+    <div class="table-container">
+      <div id="loading" class="loading">加载中</div>
+      <div id="error" class="error" style="display: none;"></div>
+      <table id="dataTable" style="display: none;">
+        <thead>
+          <tr>
+            <th>视频ID</th>
+            <th>句子号</th>
+            <th>标注人</th>
+            <th>原始文本</th>
+            <th>AI改写文本</th>
+            <th>人工标注文本</th>
+            <th>大类</th>
+            <th>小类</th>
+            <th>备注</th>
+            <th>标注状态</th>
+            <th>质检人</th>
+            <th>质检状态</th>
+            <th>审核人</th>
+            <th>审核状态</th>
+            <th>退回次数</th>
+            <th>创建时间</th>
+          </tr>
+        </thead>
+        <tbody id="tableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="pagination" id="pagination" style="display: none;">
+      <button onclick="goToPage(1)">首页</button>
+      <button onclick="goToPage(currentPage - 1)" id="prevBtn">上一页</button>
+      <span class="page-info">第 <span id="currentPageText">1</span> 页 / 共 <span id="totalPagesText">1</span> 页</span>
+      <button onclick="goToPage(currentPage + 1)" id="nextBtn">下一页</button>
+      <button onclick="goToPage(totalPages)" id="lastBtn">末页</button>
+    </div>
+  </div>
+
+  <script>
+    // Supabase 配置
+    const SUPABASE_URL = 'https://bpivzznuvvbafsyvzxqm.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJwaXZ6em51dnZiYWZzeXZ6eHFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM0MDg1NjIsImV4cCI6MjA0ODk4NDU2Mn0.cXDE2rwda9N9o_eBSZeW10_YuVNCN6BCHc0kcNCuTRw';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let allData = [];
+    let filteredData = [];
+    let currentPage = 1;
+    let totalPages = 1;
+    const pageSize = 50;
+
+    // 加载数据
+    async function loadData() {
+      try {
+        console.log('正在调用 RPC 函数...');
+        const { data, error } = await supabase.rpc('get_all_annotations');
+
+        if (error) {
+          console.error('Supabase 错误:', error);
+          showError(`加载失败: ${error.message}`);
+          return;
+        }
+
+        console.log('获取到数据:', data?.length, '条');
+        allData = data || [];
+        filteredData = [...allData];
+        
+        updateStats();
+        populateFilters();
+        renderTable();
+        
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('dataTable').style.display = 'table';
+        document.getElementById('pagination').style.display = 'flex';
+      } catch (err) {
+        console.error('加载数据失败:', err);
+        showError(`加载数据失败: ${err.message}`);
+      }
+    }
+
+    // 更新统计数据
+    function updateStats() {
+      const totalCount = filteredData.length;
+      const videoIds = new Set(filteredData.map(d => d.video_id));
+      const annotators = new Set(filteredData.map(d => d.annotator).filter(Boolean));
+      const qualifiedCount = filteredData.filter(d => d.is_qualified === true).length;
+      const reviewedCount = filteredData.filter(d => d.review_status === true).length;
+
+      document.getElementById('totalCount').textContent = totalCount.toLocaleString();
+      document.getElementById('videoCount').textContent = videoIds.size.toLocaleString();
+      document.getElementById('annotatorCount').textContent = annotators.size.toLocaleString();
+      document.getElementById('qualifiedCount').textContent = qualifiedCount.toLocaleString();
+      document.getElementById('reviewedCount').textContent = reviewedCount.toLocaleString();
+    }
+
+    // 填充筛选器选项
+    function populateFilters() {
+      const annotators = [...new Set(allData.map(d => d.annotator).filter(Boolean))].sort();
+      const inspectors = [...new Set(allData.map(d => d.inspector).filter(Boolean))].sort();
+      const reviewers = [...new Set(allData.map(d => d.reviewer).filter(Boolean))].sort();
+
+      populateSelect('filterAnnotator', annotators);
+      populateSelect('filterInspector', inspectors);
+      populateSelect('filterReviewer', reviewers);
+    }
+
+    function populateSelect(selectId, options) {
+      const select = document.getElementById(selectId);
+      const currentValue = select.value;
+      
+      // 保留"全部"选项
+      select.innerHTML = '<option value="">全部</option>';
+      
+      options.forEach(option => {
+        const opt = document.createElement('option');
+        opt.value = option;
+        opt.textContent = option;
+        select.appendChild(opt);
+      });
+
+      select.value = currentValue;
+    }
+
+    // 应用筛选
+    function applyFilters() {
+      const videoId = document.getElementById('filterVideoId').value.trim().toLowerCase();
+      const annotator = document.getElementById('filterAnnotator').value;
+      const inspector = document.getElementById('filterInspector').value;
+      const reviewer = document.getElementById('filterReviewer').value;
+      const sentenceNo = document.getElementById('filterSentenceNo').value;
+      const qualified = document.getElementById('filterQualified').value;
+      const reviewStatus = document.getElementById('filterReviewStatus').value;
+      const status = document.getElementById('filterStatus').value;
+
+      filteredData = allData.filter(item => {
+        if (videoId && !item.video_id?.toLowerCase().includes(videoId)) return false;
+        if (annotator && item.annotator !== annotator) return false;
+        if (inspector && item.inspector !== inspector) return false;
+        if (reviewer && item.reviewer !== reviewer) return false;
+        if (sentenceNo && item.sentence_no !== parseInt(sentenceNo)) return false;
+        
+        if (qualified === 'true' && item.is_qualified !== true) return false;
+        if (qualified === 'false' && item.is_qualified !== false) return false;
+        if (qualified === 'null' && item.is_qualified !== null) return false;
+        
+        if (reviewStatus === 'true' && item.review_status !== true) return false;
+        if (reviewStatus === 'false' && item.review_status !== false) return false;
+        
+        if (status === 'true' && item.status !== true) return false;
+        if (status === 'false' && item.status !== false) return false;
+        
+        return true;
+      });
+
+      currentPage = 1;
+      updateStats();
+      renderTable();
+    }
+
+    // 重置筛选
+    function resetFilters() {
+      document.getElementById('filterVideoId').value = '';
+      document.getElementById('filterAnnotator').value = '';
+      document.getElementById('filterInspector').value = '';
+      document.getElementById('filterReviewer').value = '';
+      document.getElementById('filterSentenceNo').value = '';
+      document.getElementById('filterQualified').value = '';
+      document.getElementById('filterReviewStatus').value = '';
+      document.getElementById('filterStatus').value = '';
+      
+      filteredData = [...allData];
+      currentPage = 1;
+      updateStats();
+      renderTable();
+    }
+
+    // 渲染表格
+    function renderTable() {
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+
+      totalPages = Math.ceil(filteredData.length / pageSize);
+      const start = (currentPage - 1) * pageSize;
+      const end = start + pageSize;
+      const pageData = filteredData.slice(start, end);
+
+      pageData.forEach(item => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${item.video_id || '-'}</td>
+          <td>${item.sentence_no || '-'}</td>
+          <td>${item.annotator || '-'}</td>
+          <td class="text-truncate">${item.original_text || '-'}</td>
+          <td class="text-truncate">${item.ai_rewritten_text || '-'}</td>
+          <td class="text-truncate">${item.human_annotated_text || '-'}</td>
+          <td>${item.major_category || '-'}</td>
+          <td>${item.minor_category || '-'}</td>
+          <td class="text-truncate">${item.remark || '-'}</td>
+          <td>${getStatusBadge(item.status, 'status')}</td>
+          <td>${item.inspector || '-'}</td>
+          <td>${getStatusBadge(item.is_qualified, 'qualified')}</td>
+          <td>${item.reviewer || '-'}</td>
+          <td>${getStatusBadge(item.review_status, 'review')}</td>
+          <td>${item.rejection_count || 0}</td>
+          <td>${formatDate(item.created_at)}</td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      updatePagination();
+    }
+
+    // 获取状态徽章
+    function getStatusBadge(value, type) {
+      if (type === 'status') {
+        if (value === true) return '<span class="status-badge status-completed">已完成</span>';
+        return '<span class="status-badge status-pending">未完成</span>';
+      }
+      
+      if (type === 'qualified') {
+        if (value === true) return '<span class="status-badge status-qualified">通过</span>';
+        if (value === false) return '<span class="status-badge status-rejected">未通过</span>';
+        return '<span class="status-badge status-pending">未质检</span>';
+      }
+      
+      if (type === 'review') {
+        if (value === true) return '<span class="status-badge status-completed">已审核</span>';
+        return '<span class="status-badge status-pending">未审核</span>';
+      }
+      
+      return '-';
+    }
+
+    // 格式化日期
+    function formatDate(dateString) {
+      if (!dateString) return '-';
+      const date = new Date(dateString);
+      return date.toLocaleString('zh-CN', { 
+        year: 'numeric', 
+        month: '2-digit', 
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+
+    // 更新分页
+    function updatePagination() {
+      document.getElementById('currentPageText').textContent = currentPage;
+      document.getElementById('totalPagesText').textContent = totalPages;
+      document.getElementById('prevBtn').disabled = currentPage === 1;
+      document.getElementById('nextBtn').disabled = currentPage === totalPages;
+      document.getElementById('lastBtn').disabled = currentPage === totalPages;
+    }
+
+    // 跳转页面
+    function goToPage(page) {
+      if (page < 1 || page > totalPages) return;
+      currentPage = page;
+      renderTable();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // 导出CSV
+    function exportToCSV() {
+      const headers = [
+        '视频ID', '句子编号', '标注人', '原始文本', 'AI改写文本', '人工标注文本',
+        '大类', '小类', '备注', '标注状态', '质检人', '质检状态',
+        '审核人', '审核状态', '退回次数', '创建时间'
+      ];
+      
+      const rows = filteredData.map(item => [
+        item.video_id || '',
+        item.sentence_no || '',
+        item.annotator || '',
+        item.original_text || '',
+        item.ai_rewritten_text || '',
+        item.human_annotated_text || '',
+        item.major_category || '',
+        item.minor_category || '',
+        item.remark || '',
+        item.status ? '已完成' : '未完成',
+        item.inspector || '',
+        item.is_qualified === true ? '通过' : item.is_qualified === false ? '未通过' : '未质检',
+        item.reviewer || '',
+        item.review_status ? '已审核' : '未审核',
+        item.rejection_count || 0,
+        formatDate(item.created_at)
+      ]);
+
+      const csv = [headers, ...rows]
+        .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+      
+      const BOM = '\uFEFF';
+      const blob = new Blob([BOM + csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `标注数据_${new Date().toISOString().slice(0, 10)}.csv`;
+      link.click();
+    }
+
+    // 显示错误
+    function showError(message) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('error').style.display = 'block';
+      document.getElementById('error').textContent = message;
+    }
+
+    // 页面加载时获取数据
+    window.addEventListener('load', loadData);
+  </script>
+</body>
+</html>
+

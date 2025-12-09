@@ -129,7 +129,9 @@ export default function AnnotationTaskListPage() {
       const { data: allSentences, error: statsError } = await supabase
         .from('annotations')
         .select('video_id, sentence_no, annotator, human_annotated_text')
-        .in('video_id', videoIds);
+        .in('video_id', videoIds)
+        .not('annotator', 'is', null)
+        .neq('annotator', '');
       
       if (statsError) {
         console.error('❌ 查询标注统计失败:', statsError);
@@ -384,7 +386,12 @@ export default function AnnotationTaskListPage() {
       }>();
       
       validAnnotations.forEach(item => {
-        const annotator = item.annotator || '未知标注员';
+        // 🔧 过滤掉 annotator 为空的记录
+        if (!item.annotator || item.annotator.trim() === '') {
+          return;
+        }
+        
+        const annotator = item.annotator;
         const key = `${item.video_id}__${annotator}`;
         
         if (!videoStatsMap.has(key)) {

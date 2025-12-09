@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查待质检数据详情</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      line-height: 1.6;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 5px;
+    }
+    h2 {
+      color: #333;
+      margin-top: 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #f4f4f4;
+    }
+    .loading {
+      color: #666;
+      font-style: italic;
+    }
+    .error {
+      color: red;
+    }
+    .success {
+      color: green;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查待质检数据详情</h1>
+  
+  <div class="section">
+    <h2>📊 统计概览</h2>
+    <div id="stats" class="loading">正在加载...</div>
+  </div>
+  
+  <div class="section">
+    <h2>📋 各视频待质检数量（前20个）</h2>
+    <div id="videoList" class="loading">正在加载...</div>
+  </div>
+  
+  <div class="section">
+    <h2>🔬 数据质量分析</h2>
+    <div id="quality" class="loading">正在加载...</div>
+  </div>
+
+  <script>
+    const supabaseUrl = 'https://wbweipgvbecxkxojkfes.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indid2VpcGd2YmVjeGt4b2prZmVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI3MTk0NDEsImV4cCI6MjA0ODI5NTQ0MX0.rDl85gF9dBD6t0Fl0TjMi5cwIm9Nxqm4JMDkQMbPM1M';
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+    async function checkPendingDetail() {
+      try {
+        console.log('🔍 开始检查待质检数据详情...');
+        
+        // 1. 使用 RPC 函数查询所有有效标注数据
+        console.log('📡 使用 RPC 函数查询数据...');
+        const { data: allData, error: rpcError } = await supabase.rpc('get_all_annotations');
+        
+        if (rpcError) {
+          console.error('❌ RPC 查询失败:', rpcError);
+          throw rpcError;
+        }
+        
+        // 2. 过滤 status=true 的数据
+        const allAnnotations = allData.filter(a => a.status === true);
+        
+        console.log('📦 查询到的数据总数（status=true）:', allAnnotations.length);
+        
+        // 2. 分析数据
+        const validAnnotations = allAnnotations.filter(a => 
+          a.human_annotated_text && a.human_annotated_text.trim() !== ''
+        );
+        
+        const invalidAnnotations = allAnnotations.filter(a => 
+          !a.human_annotated_text || a.human_annotated_text.trim() === ''
+        );
+        
+        const pendingInspection = validAnnotations.filter(a => 
+          !a.inspector || a.inspector.trim() === ''
+        );
+        
+        const inspected = validAnnotations.filter(a => 
+          a.inspector && a.inspector.trim() !== ''
+        );
+        
+        // 3. 去重后的统计
+        const deduplicatedMap = new Map();
+        validAnnotations.forEach(ann => {
+          const key = `${ann.video_id}_${ann.sentence_no}`;
+          if (!deduplicatedMap.has(key)) {
+            deduplicatedMap.set(key, ann);
+          }
+        });
+        
+        const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+        const deduplicatedPending = deduplicatedAnnotations.filter(a => 
+          !a.inspector || a.inspector.trim() === ''
+        );
+        
+        // 4. 按视频统计
+        const videoStats = new Map();
+        validAnnotations.forEach(ann => {
+          const videoId = ann.video_id;
+          if (!videoStats.has(videoId)) {
+            videoStats.set(videoId, { total: 0, pending: 0, inspected: 0 });
+          }
+          const stats = videoStats.get(videoId);
+          stats.total++;
+          if (!ann.inspector || ann.inspector.trim() === '') {
+            stats.pending++;
+          } else {
+            stats.inspected++;
+          }
+        });
+        
+        // 显示统计结果
+        document.getElementById('stats').innerHTML = `
+          <table>
+            <tr>
+              <th>指标</th>
+              <th>未去重</th>
+              <th>已去重</th>
+            </tr>
+            <tr>
+              <td>📦 status=true 的总数据</td>
+              <td>${allAnnotations.length}</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>✅ 有效标注（有标注内容）</td>
+              <td>${validAnnotations.length}</td>
+              <td>${deduplicatedAnnotations.length}</td>
+            </tr>
+            <tr>
+              <td>❌ 无效标注（无标注内容）</td>
+              <td>${invalidAnnotations.length}</td>
+              <td>-</td>
+            </tr>
+            <tr>
+              <td>⏳ 待质检</td>
+              <td class="error"><strong>${pendingInspection.length}</strong></td>
+              <td class="error"><strong>${deduplicatedPending.length}</strong></td>
+            </tr>
+            <tr>
+              <td>✔️ 已质检</td>
+              <td>${inspected.length}</td>
+              <td>${deduplicatedAnnotations.length - deduplicatedPending.length}</td>
+            </tr>
+          </table>
+          <p style="margin-top: 15px; color: #666;">
+            💡 <strong>分析：</strong>如果"未去重"的待质检数量 = 8,216，说明这就是页面显示的来源。
+          </p>
+        `;
+        
+        // 显示各视频统计（按待质检数量降序）
+        const videoStatsArray = Array.from(videoStats.entries())
+          .map(([videoId, stats]) => ({ videoId, ...stats }))
+          .sort((a, b) => b.pending - a.pending)
+          .slice(0, 20);
+        
+        document.getElementById('videoList').innerHTML = `
+          <table>
+            <tr>
+              <th>视频ID</th>
+              <th>总标注数</th>
+              <th>待质检</th>
+              <th>已质检</th>
+            </tr>
+            ${videoStatsArray.map(v => `
+              <tr>
+                <td>${v.videoId}</td>
+                <td>${v.total}</td>
+                <td class="error"><strong>${v.pending}</strong></td>
+                <td>${v.inspected}</td>
+              </tr>
+            `).join('')}
+          </table>
+        `;
+        
+        // 数据质量分析
+        const emptyTextCount = allAnnotations.filter(a => !a.human_annotated_text).length;
+        const whitespaceOnlyCount = allAnnotations.filter(a => 
+          a.human_annotated_text && a.human_annotated_text.trim() === ''
+        ).length;
+        
+        document.getElementById('quality').innerHTML = `
+          <table>
+            <tr>
+              <th>数据质量问题</th>
+              <th>数量</th>
+              <th>说明</th>
+            </tr>
+            <tr>
+              <td>human_annotated_text = null</td>
+              <td>${emptyTextCount}</td>
+              <td>标注文本字段为空</td>
+            </tr>
+            <tr>
+              <td>human_annotated_text = 空白字符</td>
+              <td>${whitespaceOnlyCount}</td>
+              <td>标注文本只包含空格/换行等</td>
+            </tr>
+            <tr>
+              <td>✅ 有效标注</td>
+              <td class="success"><strong>${validAnnotations.length}</strong></td>
+              <td>有实际标注内容的数据</td>
+            </tr>
+          </table>
+          <p style="margin-top: 15px; color: #666;">
+            💡 <strong>建议：</strong>如果发现大量 status=true 但无标注内容的数据，需要修复这些数据的 status 字段。
+          </p>
+        `;
+        
+        console.log('✅ 检查完成！');
+      } catch (error) {
+        console.error('❌ 检查失败:', error);
+        document.getElementById('stats').innerHTML = `<div class="error">错误: ${error.message}</div>`;
+      }
+    }
+
+    // 页面加载后执行检查
+    checkPendingDetail();
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查 184 vs 92 句子差异</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .stat-card h3 {
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        .stat-card .number {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-card .description {
+            font-size: 14px;
+            opacity: 0.8;
+        }
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .comparison-table th,
+        .comparison-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .comparison-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+        }
+        .comparison-table tr:hover {
+            background-color: #f5f5f5;
+        }
+        .highlight {
+            background-color: #fff3cd !important;
+            font-weight: bold;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #666;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        .detail-section {
+            margin: 30px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        .detail-section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: bold;
+            margin-left: 10px;
+        }
+        .badge-info {
+            background: #17a2b8;
+            color: white;
+        }
+        .badge-warning {
+            background: #ffc107;
+            color: #333;
+        }
+        .badge-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .badge-success {
+            background: #28a745;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 184 vs 92 句子差异分析</h1>
+        <div class="subtitle">对比质检页面与所有已标注任务页面的统计差异</div>
+        
+        <div id="loading" class="loading">
+            ⏳ 正在分析数据...
+        </div>
+        
+        <div id="result" style="display: none;">
+            <!-- 统计卡片 -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <h3>📊 质检页面显示</h3>
+                    <div class="number" id="inspectionCount">-</div>
+                    <div class="description">有标注人的不同句子数</div>
+                </div>
+                
+                <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <h3>✅ 所有已标注任务显示</h3>
+                    <div class="number" id="completedCount">-</div>
+                    <div class="description">status=true 的不同句子数</div>
+                </div>
+                
+                <div class="stat-card" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <h3>❓ 差异</h3>
+                    <div class="number" id="differenceCount">-</div>
+                    <div class="description">有标注人但未完成的句子</div>
+                </div>
+            </div>
+            
+            <!-- 详细统计表 -->
+            <div class="detail-section">
+                <h2>📋 详细统计对比</h2>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>统计项</th>
+                            <th>数量</th>
+                            <th>说明</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsTable">
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- 结论 -->
+            <div id="conclusion"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://ocsdjkyawlrvusgjidvr.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9jc2Rqa3lhd2xydnVzZ2ppZHZyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMxMzU5MDIsImV4cCI6MjA0ODcxMTkwMn0.bXKt8KCWnfaLT9nTFcNJKwk2rOK7hFn21EHaxLuTK7k';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function analyzeData() {
+            try {
+                // 1. 获取语文02.mp4的视频ID
+                const { data: videos, error: videoError } = await supabase
+                    .from('videos')
+                    .select('id, name, total_sentences')
+                    .eq('name', '语文02.mp4')
+                    .single();
+                
+                if (videoError) throw videoError;
+                
+                console.log('📹 视频信息:', videos);
+                
+                // 2. 获取该视频的所有标注数据
+                const { data: annotations, error: annotationError } = await supabase
+                    .from('annotations')
+                    .select('sentence_id, sentence_no, annotator_name, status, inspector, is_qualified')
+                    .eq('video_id', videos.id);
+                
+                if (annotationError) throw annotationError;
+                
+                console.log('📊 标注数据总条数:', annotations.length);
+                
+                // 3. 统计分析
+                const stats = {
+                    总条数: annotations.length,
+                    不同句子总数: new Set(annotations.map(a => a.sentence_id)).size,
+                    
+                    // 有标注人的数据（质检页面统计）
+                    有标注人的条数: annotations.filter(a => a.annotator_name && a.annotator_name.trim() !== '').length,
+                    有标注人的不同句子数: new Set(
+                        annotations
+                            .filter(a => a.annotator_name && a.annotator_name.trim() !== '')
+                            .map(a => a.sentence_id)
+                    ).size,
+                    
+                    // status=true的数据（所有已标注任务统计）
+                    status为true的条数: annotations.filter(a => a.status === true).length,
+                    status为true的不同句子数: new Set(
+                        annotations
+                            .filter(a => a.status === true)
+                            .map(a => a.sentence_id)
+                    ).size,
+                    
+                    // 同时满足两个条件
+                    同时满足的条数: annotations.filter(a => 
+                        a.annotator_name && a.annotator_name.trim() !== '' && a.status === true
+                    ).length,
+                    同时满足的不同句子数: new Set(
+                        annotations
+                            .filter(a => a.annotator_name && a.annotator_name.trim() !== '' && a.status === true)
+                            .map(a => a.sentence_id)
+                    ).size,
+                    
+                    // 有标注人但未完成
+                    有标注人但未完成的条数: annotations.filter(a => 
+                        a.annotator_name && a.annotator_name.trim() !== '' && (a.status === null || a.status === false)
+                    ).length,
+                    有标注人但未完成的不同句子数: new Set(
+                        annotations
+                            .filter(a => a.annotator_name && a.annotator_name.trim() !== '' && (a.status === null || a.status === false))
+                            .map(a => a.sentence_id)
+                    ).size,
+                    
+                    // 视频表中的总句数
+                    视频表总句数: videos.total_sentences
+                };
+                
+                console.log('📊 统计结果:', stats);
+                
+                // 4. 显示结果
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('result').style.display = 'block';
+                
+                // 更新卡片
+                document.getElementById('inspectionCount').textContent = stats.有标注人的不同句子数;
+                document.getElementById('completedCount').textContent = stats.status为true的不同句子数;
+                document.getElementById('differenceCount').textContent = stats.有标注人但未完成的不同句子数;
+                
+                // 更新表格
+                const tableData = [
+                    { 项: '标注数据总条数', 值: stats.总条数, 说明: '数据库中的所有标注记录' },
+                    { 项: '不同句子总数', 值: stats.不同句子总数, 说明: '去重后的句子数量' },
+                    { 项: '视频表总句数', 值: stats.视频表总句数, 说明: 'videos 表中记录的总句数' },
+                    { 项: '', 值: '', 说明: '' },
+                    { 项: '✅ 有标注人的条数', 值: stats.有标注人的条数, 说明: 'annotator_name 不为空', highlight: true },
+                    { 项: '✅ 有标注人的不同句子数', 值: stats.有标注人的不同句子数, 说明: '质检页面显示的数字', highlight: true },
+                    { 项: '', 值: '', 说明: '' },
+                    { 项: '📝 status=true 的条数', 值: stats.status为true的条数, 说明: '已完成的标注记录', highlight: true },
+                    { 项: '📝 status=true 的不同句子数', 值: stats.status为true的不同句子数, 说明: '所有已标注任务显示的数字', highlight: true },
+                    { 项: '', 值: '', 说明: '' },
+                    { 项: '✅ 同时满足的条数', 值: stats.同时满足的条数, 说明: '既有标注人又 status=true' },
+                    { 项: '✅ 同时满足的不同句子数', 值: stats.同时满足的不同句子数, 说明: '应该与 status=true 一致' },
+                    { 项: '', 值: '', 说明: '' },
+                    { 项: '⚠️ 有标注人但未完成的条数', 值: stats.有标注人但未完成的条数, 说明: 'status 为 null 或 false', highlight: true },
+                    { 项: '⚠️ 有标注人但未完成的不同句子数', 值: stats.有标注人但未完成的不同句子数, 说明: '差异原因', highlight: true }
+                ];
+                
+                const tbody = document.getElementById('statsTable');
+                tbody.innerHTML = tableData.map(row => {
+                    if (row.项 === '') {
+                        return '<tr><td colspan="3" style="height: 10px; border: none;"></td></tr>';
+                    }
+                    return `
+                        <tr class="${row.highlight ? 'highlight' : ''}">
+                            <td>${row.项}</td>
+                            <td style="font-weight: bold; font-size: 18px;">${row.值}</td>
+                            <td style="color: #666;">${row.说明}</td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                // 显示结论
+                const conclusionDiv = document.getElementById('conclusion');
+                const difference = stats.有标注人的不同句子数 - stats.status为true的不同句子数;
+                
+                if (difference === 0) {
+                    conclusionDiv.className = 'success';
+                    conclusionDiv.innerHTML = `
+                        <strong>✅ 结论：两个页面显示一致</strong><br>
+                        所有有标注人的句子都已完成标注（status = true）。<br>
+                        质检页面和所有已标注任务页面显示的数字应该一样。
+                    `;
+                } else {
+                    conclusionDiv.className = 'error';
+                    conclusionDiv.innerHTML = `
+                        <strong>⚠️ 结论：发现差异</strong><br>
+                        <br>
+                        <strong>质检页面显示：</strong> ${stats.有标注人的不同句子数} 句（有标注人的不同句子数）<br>
+                        <strong>所有已标注任务显示：</strong> ${stats.status为true的不同句子数} 句（status=true 的不同句子数）<br>
+                        <strong>差异：</strong> ${difference} 句<br>
+                        <br>
+                        <strong>原因：</strong>有 ${stats.有标注人但未完成的不同句子数} 个句子有标注人但 status 不为 true（可能是未完成或被打回的数据）。<br>
+                        <br>
+                        <strong>建议：</strong>
+                        <ul style="margin: 10px 0 0 20px;">
+                            <li>如果质检页面应该只显示已完成的句子，需要添加 <code>status = true</code> 过滤条件</li>
+                            <li>如果质检页面应该显示所有有标注人的句子（包括未完成），则当前逻辑正确</li>
+                        </ul>
+                    `;
+                }
+                
+            } catch (error) {
+                console.error('❌ 分析失败:', error);
+                document.getElementById('loading').innerHTML = `
+                    <div class="error">
+                        <strong>❌ 分析失败</strong><br>
+                        ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // 页面加载时执行
+        analyzeData();
+    </script>
+</body>
+</html>
+
