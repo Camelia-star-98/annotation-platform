@@ -131,12 +131,27 @@ export default function InspectionManagePage() {
         // 优化：直接查询单个视频，而不是查询所有视频后查找
         let videoUrl = '';
         let annotationFileName = '';
-        let videoTotalSentences = 0; // 视频实际总句子数
+        let videoTotalSentences = 0; // 有标注人的句子总数
         try {
           const currentVideo = await getVideo(selectedVideoId);
           videoUrl = currentVideo?.url || '';
           annotationFileName = currentVideo?.annotation_file_name || '';
-          videoTotalSentences = currentVideo?.total_sentences || 0; // 获取视频实际总句子数
+          
+          // 统计有标注人的不同句子数量（去重）
+          const { data: sentenceData, error: sentenceError } = await supabase
+            .from('annotations')
+            .select('sentence_id')
+            .eq('video_id', selectedVideoId)
+            .not('annotator_name', 'is', null)
+            .neq('annotator_name', '');
+          
+          if (sentenceError) {
+            console.error('统计有标注人的句子数失败:', sentenceError);
+          } else if (sentenceData) {
+            // 使用 Set 去重，统计不同的句子 ID 数量
+            const uniqueSentenceIds = new Set(sentenceData.map(item => item.sentence_id));
+            videoTotalSentences = uniqueSentenceIds.size;
+          }
         } catch (error) {
           console.error('获取视频信息失败，将继续使用传入的视频名称:', error);
           // 即使获取视频失败，也继续执行，使用传入的 videoName
@@ -202,7 +217,7 @@ export default function InspectionManagePage() {
           annotationFileName: annotationFileName
         }));
         
-        // 🔧 更新视频总句子数：使用 videos 表的 total_sentences 字段（视频实际总句子数）
+        // 🔧 更新有标注人的句子总数
         if (selectedVideoId && videoTotalSentences > 0) {
           const newTotalAnnotated = new Map(videoTotalAnnotated);
           newTotalAnnotated.set(selectedVideoId, videoTotalSentences);
@@ -625,7 +640,7 @@ export default function InspectionManagePage() {
                 }}
               />
               <strong style={{ fontSize: '14px' }}>
-                📹 {text} <Tag color="blue">视频总句数: {record.totalAnnotated || 0} 句</Tag>
+                📹 {text} <Tag color="blue">已标注句数: {record.totalAnnotated || 0} 句</Tag>
               </strong>
             </Space>
           );
