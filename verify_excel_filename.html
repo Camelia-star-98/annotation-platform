@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>验证Excel文件名保存 - 实时监控</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        .status-active {
+            background: #dcfce7;
+            color: #16a34a;
+        }
+        .status-idle {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+        .content {
+            padding: 30px;
+        }
+        .info-box {
+            background: #f0f7ff;
+            border-left: 4px solid #4facfe;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .info-box h3 {
+            color: #4facfe;
+            margin-bottom: 10px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            font-weight: 600;
+            margin: 5px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        button:disabled {
+            background: #e5e7eb;
+            color: #9ca3af;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        .video-card {
+            background: white;
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0;
+            transition: all 0.3s;
+            animation: slideIn 0.5s ease-out;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .video-card.new {
+            border-color: #4facfe;
+            box-shadow: 0 4px 20px rgba(79, 172, 254, 0.3);
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+        }
+        .video-card h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .video-card .field {
+            display: flex;
+            margin: 10px 0;
+            padding: 10px;
+            background: #f9fafb;
+            border-radius: 8px;
+        }
+        .video-card .label {
+            font-weight: 600;
+            color: #666;
+            min-width: 140px;
+        }
+        .video-card .value {
+            color: #333;
+            flex: 1;
+            word-break: break-all;
+        }
+        .video-card .value.highlight {
+            color: #4facfe;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .new-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.7;
+            }
+        }
+        .success-badge {
+            background: #dcfce7;
+            color: #16a34a;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .warning-badge {
+            background: #fef3c7;
+            color: #f59e0b;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .error-badge {
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .log-area {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 20px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 13px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid transparent;
+        }
+        .log-entry.info { border-color: #4facfe; color: #4facfe; }
+        .log-entry.success { border-color: #16a34a; color: #86efac; }
+        .log-entry.warning { border-color: #f59e0b; color: #fde047; }
+        .log-entry.error { border-color: #dc2626; color: #fca5a5; }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-card .label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Excel文件名保存验证 - 实时监控</h1>
+            <p>监控新上传视频的标注文件名保存情况</p>
+            <div id="statusBadge" class="status-badge status-idle">⏸ 未启动</div>
+        </div>
+
+        <div class="content">
+            <div class="info-box">
+                <h3>📖 使用说明</h3>
+                <ol style="line-height: 2; color: #333;">
+                    <li><strong>点击"开始监控"</strong>：系统会实时监听数据库的新增视频</li>
+                    <li><strong>上传视频</strong>：在主页面上传视频和Excel文件</li>
+                    <li><strong>查看结果</strong>：本页面会实时显示新上传的视频信息，包括标注文件名</li>
+                    <li><strong>验证</strong>：检查"标注文件名"是否是你上传的Excel文件的原始名称</li>
+                </ol>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+                <button id="startBtn" onclick="startMonitoring()">🚀 开始监控</button>
+                <button id="stopBtn" onclick="stopMonitoring()" disabled>⏸ 停止监控</button>
+                <button onclick="loadRecentVideos()">📋 查看最近10条</button>
+                <button onclick="clearDisplay()">🗑️ 清空显示</button>
+            </div>
+
+            <div class="stats" id="stats">
+                <div class="stat-card">
+                    <div class="label">监控时长</div>
+                    <div class="number" id="monitorTime">0秒</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">检测到新视频</div>
+                    <div class="number" id="newVideosCount">0</div>
+                </div>
+                <div class="stat-card">
+                    <div class="label">检查次数</div>
+                    <div class="number" id="checkCount">0</div>
+                </div>
+            </div>
+
+            <div id="videosContainer"></div>
+
+            <div class="log-area" id="logArea"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://tbbzcoqzkfbwvftnfrcl.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiYnpjb3F6a2Zid3ZmdG5mcmNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyMjEwNjcsImV4cCI6MjA0ODc5NzA2N30.zc63sOF07xqq1wpKMXPNBf2T_hJ9SzFSosQPSWAl3gE';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        let monitoringInterval = null;
+        let lastCheckTime = null;
+        let startTime = null;
+        let newVideosCount = 0;
+        let checkCount = 0;
+        let knownVideoIds = new Set();
+
+        function log(message, type = 'info') {
+            const logArea = document.getElementById('logArea');
+            const timestamp = new Date().toLocaleTimeString('zh-CN');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        async function startMonitoring() {
+            if (monitoringInterval) return;
+
+            lastCheckTime = new Date();
+            startTime = new Date();
+            
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('statusBadge').textContent = '🟢 监控中';
+            document.getElementById('statusBadge').className = 'status-badge status-active';
+
+            log('🚀 开始监控新上传的视频...', 'success');
+
+            // 每3秒检查一次
+            monitoringInterval = setInterval(checkNewVideos, 3000);
+            
+            // 更新监控时长
+            setInterval(updateMonitorTime, 1000);
+
+            // 立即执行一次
+            checkNewVideos();
+        }
+
+        function stopMonitoring() {
+            if (!monitoringInterval) return;
+
+            clearInterval(monitoringInterval);
+            monitoringInterval = null;
+
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('statusBadge').textContent = '⏸ 已停止';
+            document.getElementById('statusBadge').className = 'status-badge status-idle';
+
+            log('⏸ 监控已停止', 'warning');
+        }
+
+        function updateMonitorTime() {
+            if (!startTime) return;
+            const elapsed = Math.floor((new Date() - startTime) / 1000);
+            const minutes = Math.floor(elapsed / 60);
+            const seconds = elapsed % 60;
+            document.getElementById('monitorTime').textContent = 
+                minutes > 0 ? `${minutes}分${seconds}秒` : `${seconds}秒`;
+        }
+
+        async function checkNewVideos() {
+            try {
+                checkCount++;
+                document.getElementById('checkCount').textContent = checkCount;
+
+                const { data, error } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .gte('created_at', lastCheckTime.toISOString())
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    log(`❌ 查询失败: ${error.message}`, 'error');
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    const newVideos = data.filter(v => !knownVideoIds.has(v.id));
+                    
+                    if (newVideos.length > 0) {
+                        log(`🎉 发现 ${newVideos.length} 个新上传的视频！`, 'success');
+                        newVideosCount += newVideos.length;
+                        document.getElementById('newVideosCount').textContent = newVideosCount;
+
+                        newVideos.forEach(video => {
+                            knownVideoIds.add(video.id);
+                            displayVideo(video, true);
+                            
+                            // 验证标注文件名
+                            if (video.annotation_file_name) {
+                                if (video.annotation_file_name.includes('_标注数据')) {
+                                    log(`⚠️ 视频 "${video.name}" 的标注文件名包含"_标注数据"`, 'warning');
+                                } else if (video.annotation_file_name.endsWith('.xlsx') || 
+                                          video.annotation_file_name.endsWith('.xls')) {
+                                    log(`✅ 视频 "${video.name}" 的标注文件名正常: ${video.annotation_file_name}`, 'success');
+                                } else {
+                                    log(`ℹ️ 视频 "${video.name}" 的标注文件名: ${video.annotation_file_name}`, 'info');
+                                }
+                            } else {
+                                log(`❌ 视频 "${video.name}" 的标注文件名为空！`, 'error');
+                            }
+                        });
+                    }
+                }
+            } catch (error) {
+                log(`❌ 检查异常: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadRecentVideos() {
+            log('📋 加载最近10条视频...', 'info');
+            
+            try {
+                const { data, error } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .order('created_at', { ascending: false })
+                    .limit(10);
+
+                if (error) {
+                    log(`❌ 查询失败: ${error.message}`, 'error');
+                    return;
+                }
+
+                document.getElementById('videosContainer').innerHTML = '';
+                
+                if (data && data.length > 0) {
+                    log(`✅ 加载了 ${data.length} 个视频`, 'success');
+                    data.forEach(video => displayVideo(video, false));
+                } else {
+                    log('⚠️ 没有找到视频', 'warning');
+                }
+            } catch (error) {
+                log(`❌ 异常: ${error.message}`, 'error');
+            }
+        }
+
+        function displayVideo(video, isNew) {
+            const container = document.getElementById('videosContainer');
+            
+            const card = document.createElement('div');
+            card.className = `video-card ${isNew ? 'new' : ''}`;
+            
+            // 判断标注文件名状态
+            let fileNameBadge = '';
+            if (!video.annotation_file_name) {
+                fileNameBadge = '<span class="error-badge">❌ 未填写</span>';
+            } else if (video.annotation_file_name.includes('_标注数据')) {
+                fileNameBadge = '<span class="warning-badge">⚠️ 包含"_标注数据"</span>';
+            } else {
+                fileNameBadge = '<span class="success-badge">✅ 正常</span>';
+            }
+            
+            card.innerHTML = `
+                <h3>
+                    ${video.name}
+                    ${isNew ? '<span class="new-badge">🆕 新上传</span>' : ''}
+                </h3>
+                <div class="field">
+                    <div class="label">📝 标注文件名：</div>
+                    <div class="value highlight">
+                        ${video.annotation_file_name || '<span style="color:#dc2626;">(空)</span>'}
+                        ${fileNameBadge}
+                    </div>
+                </div>
+                <div class="field">
+                    <div class="label">📹 视频文件名：</div>
+                    <div class="value">${video.name}</div>
+                </div>
+                <div class="field">
+                    <div class="label">📊 总句数：</div>
+                    <div class="value">${video.total_sentences || '未设置'}</div>
+                </div>
+                <div class="field">
+                    <div class="label">👥 待标注数量：</div>
+                    <div class="value">${video.required_annotators || '未设置'}</div>
+                </div>
+                <div class="field">
+                    <div class="label">🕐 上传时间：</div>
+                    <div class="value">${new Date(video.created_at).toLocaleString('zh-CN')}</div>
+                </div>
+                <div class="field">
+                    <div class="label">🆔 视频ID：</div>
+                    <div class="value" style="font-size: 12px; color: #999;">${video.id}</div>
+                </div>
+            `;
+            
+            // 新视频插入到最前面
+            if (isNew) {
+                container.insertBefore(card, container.firstChild);
+            } else {
+                container.appendChild(card);
+            }
+        }
+
+        function clearDisplay() {
+            document.getElementById('videosContainer').innerHTML = '';
+            document.getElementById('logArea').innerHTML = '';
+            log('🗑️ 显示已清空', 'info');
+        }
+
+        // 页面加载时显示使用说明
+        window.onload = () => {
+            log('👋 欢迎！点击"开始监控"按钮开始实时监控', 'info');
+            log('💡 提示：监控期间，在主页面上传视频，本页面会实时显示', 'info');
+        };
+    </script>
+</body>
+</html>
+
+

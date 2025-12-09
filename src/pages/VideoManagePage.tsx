@@ -310,6 +310,10 @@ export default function VideoManagePage() {
     
     // 3. 保存视频记录
     const videoId = `upload_${Date.now()}_${taskIndex}`;
+    const annotationFileName = excelFile.name || '未知标注文件';
+    
+    console.log(`📝 任务 ${taskIndex + 1} Excel文件名:`, annotationFileName);
+    
     await addVideo({
       id: videoId,
       name: videoFile.name,
@@ -318,8 +322,10 @@ export default function VideoManagePage() {
       duration: 0,
       required_annotators: requiredAnnotators,
       total_sentences: excelData.length, // 保存视频总句数
-      annotation_file_name: excelFile.name // 保存标注数据文件名
+      annotation_file_name: annotationFileName // 使用Excel文件的原始文件名
     });
+    
+    console.log(`✅ 任务 ${taskIndex + 1} 标注文件名已保存:`, annotationFileName);
     
     // 4. 保存标注数据
     const annotationsWithVideoName = excelData.map(item => ({
@@ -579,6 +585,11 @@ export default function VideoManagePage() {
         throw new Error('视频URL为空，无法保存视频记录');
       }
       
+      // 获取Excel文件名（无论是使用已有视频还是上传新视频）
+      const annotationFileName = excelFile.name || '未知标注文件';
+      console.log('📝 Excel文件名:', annotationFileName);
+      console.log('📝 excelFile对象:', excelFile);
+      
       await addVideo({
         id: videoId,
         name: videoName,
@@ -587,12 +598,12 @@ export default function VideoManagePage() {
         duration: 0,
         required_annotators: requiredAnnotators, // 保存待标注数量
         total_sentences: excelData.length, // 保存视频总句数
-        annotation_file_name: excelFile.name // 保存标注数据文件名
+        annotation_file_name: annotationFileName // 使用Excel文件的原始文件名
       });
       
       console.log('✅ 视频记录创建成功，URL:', videoUrl);
       console.log('✅ 待标注数量:', requiredAnnotators);
-      console.log('✅ 标注文件名:', excelFile.name);
+      console.log('✅ 标注文件名已保存:', annotationFileName);
 
       // 5. 保存标注数据（添加 videoName）
       setUploadProgress(90);

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查标注文件名来源</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .info-box {
+            background: #f0f7ff;
+            border-left: 4px solid #4facfe;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .info-box h3 {
+            color: #4facfe;
+            margin-bottom: 10px;
+        }
+        .info-box li {
+            margin: 8px 0;
+            color: #333;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            font-weight: 600;
+            margin: 10px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9fafb;
+        }
+        tr:hover {
+            background-color: #f3f4f6;
+        }
+        .highlight {
+            background-color: #fef3c7;
+            font-weight: 600;
+        }
+        .warning-badge {
+            display: inline-block;
+            background: #fee2e2;
+            color: #dc2626;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .success-badge {
+            display: inline-block;
+            background: #dcfce7;
+            color: #16a34a;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 标注文件名来源检查</h1>
+            <p>诊断为什么显示"视频名_标注数据"而不是Excel文件名</p>
+        </div>
+
+        <div class="content">
+            <div class="info-box">
+                <h3>📌 可能的原因：</h3>
+                <ul>
+                    <li><strong>原因1：</strong> Excel文件本身的文件名就是"视频名_标注数据.xlsx"</li>
+                    <li><strong>原因2：</strong> 使用了旧版本的上传功能（没有保存annotation_file_name）</li>
+                    <li><strong>原因3：</strong> 数据是通过其他方式导入的</li>
+                </ul>
+            </div>
+
+            <div class="info-box" style="border-left-color: #f59e0b; background: #fffbeb;">
+                <h3 style="color: #f59e0b;">💡 解决方案：</h3>
+                <ul>
+                    <li><strong>方法1：</strong> 在上传前，将Excel文件重命名为正确的名称（推荐）</li>
+                    <li><strong>方法2：</strong> 上传后使用更新工具批量修改</li>
+                    <li><strong>方法3：</strong> 改进上传界面，增加"自定义标注文件名"输入框</li>
+                </ul>
+            </div>
+
+            <div style="text-align: center; margin: 30px 0;">
+                <button onclick="checkAllVideos()">🔍 检查所有视频的标注文件名</button>
+                <button onclick="checkRecentVideos()">📅 检查最近7天上传的视频</button>
+            </div>
+
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://tbbzcoqzkfbwvftnfrcl.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiYnpjb3F6a2Zid3ZmdG5mcmNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyMjEwNjcsImV4cCI6MjA0ODc5NzA2N30.zc63sOF07xqq1wpKMXPNBf2T_hJ9SzFSosQPSWAl3gE';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function checkAllVideos() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p style="text-align:center; color:#667eea;">正在加载...</p>';
+
+            try {
+                const { data, error } = await supabase
+                    .from('videos')
+                    .select('id, name, annotation_file_name, total_sentences, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(100);
+
+                if (error) {
+                    resultsDiv.innerHTML = `<p style="color:red;">❌ 查询失败: ${error.message}</p>`;
+                    return;
+                }
+
+                displayResults(data, '全部视频（最新100条）');
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color:red;">❌ 异常: ${error.message}</p>`;
+            }
+        }
+
+        async function checkRecentVideos() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<p style="text-align:center; color:#667eea;">正在加载...</p>';
+
+            try {
+                const sevenDaysAgo = new Date();
+                sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+                const { data, error } = await supabase
+                    .from('videos')
+                    .select('id, name, annotation_file_name, total_sentences, created_at')
+                    .gte('created_at', sevenDaysAgo.toISOString())
+                    .order('created_at', { ascending: false });
+
+                if (error) {
+                    resultsDiv.innerHTML = `<p style="color:red;">❌ 查询失败: ${error.message}</p>`;
+                    return;
+                }
+
+                displayResults(data, '最近7天上传的视频');
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color:red;">❌ 异常: ${error.message}</p>`;
+            }
+        }
+
+        function displayResults(data, title) {
+            const resultsDiv = document.getElementById('results');
+            
+            if (!data || data.length === 0) {
+                resultsDiv.innerHTML = '<p style="text-align:center; color:#999;">没有找到数据</p>';
+                return;
+            }
+
+            // 分析数据
+            let autoNamed = 0;  // 自动命名（包含"_标注数据"）
+            let customNamed = 0; // 自定义命名
+            let empty = 0;       // 空白
+
+            data.forEach(video => {
+                if (!video.annotation_file_name || video.annotation_file_name.trim() === '') {
+                    empty++;
+                } else if (video.annotation_file_name.includes('_标注数据')) {
+                    autoNamed++;
+                } else {
+                    customNamed++;
+                }
+            });
+
+            let html = `
+                <h2 style="color: #667eea; margin-top: 30px;">📊 ${title}</h2>
+                
+                <div style="display: flex; gap: 15px; margin: 20px 0;">
+                    <div style="flex: 1; background: #fee2e2; padding: 20px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 32px; font-weight: bold; color: #dc2626;">${autoNamed}</div>
+                        <div style="color: #666; margin-top: 5px;">包含"_标注数据"</div>
+                    </div>
+                    <div style="flex: 1; background: #dcfce7; padding: 20px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 32px; font-weight: bold; color: #16a34a;">${customNamed}</div>
+                        <div style="color: #666; margin-top: 5px;">自定义文件名</div>
+                    </div>
+                    <div style="flex: 1; background: #e5e7eb; padding: 20px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 32px; font-weight: bold; color: #6b7280;">${empty}</div>
+                        <div style="color: #666; margin-top: 5px;">空白（未填写）</div>
+                    </div>
+                </div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>视频文件名</th>
+                            <th>标注文件名</th>
+                            <th>总句数</th>
+                            <th>上传时间</th>
+                            <th>类型</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.forEach(video => {
+                let type, typeBadge;
+                let rowClass = '';
+                
+                if (!video.annotation_file_name || video.annotation_file_name.trim() === '') {
+                    type = '未填写';
+                    typeBadge = '<span class="warning-badge">⚠️ 空白</span>';
+                    rowClass = '';
+                } else if (video.annotation_file_name.includes('_标注数据')) {
+                    type = '自动生成';
+                    typeBadge = '<span class="warning-badge">🤖 自动命名</span>';
+                    rowClass = 'highlight';
+                } else {
+                    type = '自定义';
+                    typeBadge = '<span class="success-badge">✅ 正常</span>';
+                }
+
+                html += `
+                    <tr class="${rowClass}">
+                        <td style="font-weight: 500;">${video.name}</td>
+                        <td style="color: ${video.annotation_file_name?.includes('_标注数据') ? '#dc2626' : '#16a34a'};">
+                            ${video.annotation_file_name || '<span style="color:#999;">(空)</span>'}
+                        </td>
+                        <td>${video.total_sentences || '-'}</td>
+                        <td style="font-size: 13px; color: #666;">
+                            ${new Date(video.created_at).toLocaleString('zh-CN')}
+                        </td>
+                        <td>${typeBadge}</td>
+                    </tr>
+                `;
+            });
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+
+            resultsDiv.innerHTML = html;
+        }
+
+        // 页面加载时自动检查最近的视频
+        window.onload = () => {
+            checkRecentVideos();
+        };
+    </script>
+</body>
+</html>
+
+

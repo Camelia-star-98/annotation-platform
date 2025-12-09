@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>更新视频标注文件名</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .content {
+            padding: 40px;
+        }
+        .info-card {
+            background: #f8fafc;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 25px;
+            margin: 20px 0;
+        }
+        .info-card h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        .field {
+            display: flex;
+            margin: 12px 0;
+            padding: 12px;
+            background: white;
+            border-radius: 8px;
+        }
+        .field .label {
+            font-weight: 600;
+            color: #64748b;
+            min-width: 120px;
+        }
+        .field .value {
+            color: #1e293b;
+            flex: 1;
+            font-weight: 500;
+        }
+        .field .value.old {
+            color: #dc2626;
+            text-decoration: line-through;
+        }
+        .field .value.new {
+            color: #16a34a;
+            font-weight: 600;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            font-weight: 600;
+            margin: 10px 5px;
+        }
+        button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+        button:disabled {
+            background: #e5e7eb;
+            color: #9ca3af;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+        .button-group {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .result-box {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 12px;
+            display: none;
+        }
+        .result-box.success {
+            background: #dcfce7;
+            border: 2px solid #16a34a;
+            color: #166534;
+            display: block;
+        }
+        .result-box.error {
+            background: #fee2e2;
+            border: 2px solid #dc2626;
+            color: #991b1b;
+            display: block;
+        }
+        .result-box h3 {
+            margin-bottom: 10px;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .loading.active {
+            display: block;
+        }
+        .spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .warning-box {
+            background: #fef3c7;
+            border: 2px solid #f59e0b;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            color: #92400e;
+        }
+        .warning-box h3 {
+            color: #f59e0b;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📝 更新视频标注文件名</h1>
+            <p>更新单个视频的标注文件名</p>
+        </div>
+
+        <div class="content">
+            <div class="warning-box">
+                <h3>⚠️ 注意事项</h3>
+                <ul style="line-height: 2; margin-left: 20px;">
+                    <li>请仔细核对更新信息</li>
+                    <li>此操作会立即生效，无法撤销</li>
+                    <li>建议先点击"查询当前信息"确认</li>
+                </ul>
+            </div>
+
+            <div class="info-card">
+                <h3>📹 目标视频信息</h3>
+                <div class="field">
+                    <div class="label">视频名称：</div>
+                    <div class="value">1030-英语-2.mp4</div>
+                </div>
+            </div>
+
+            <div class="info-card">
+                <h3>🔄 更新内容</h3>
+                <div class="field">
+                    <div class="label">原标注文件名：</div>
+                    <div class="value old">1030-英语-2.mp4_标注数据</div>
+                </div>
+                <div class="field">
+                    <div class="label">新标注文件名：</div>
+                    <div class="value new">第二批第二次改写_英语-02</div>
+                </div>
+            </div>
+
+            <div class="button-group">
+                <button onclick="queryCurrentInfo()">🔍 查询当前信息</button>
+                <button onclick="executeUpdate()" id="updateBtn">✅ 执行更新</button>
+                <button onclick="verifyUpdate()" id="verifyBtn" disabled>🔍 验证结果</button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 10px; color: #64748b;">处理中...</p>
+            </div>
+
+            <div id="resultBox" class="result-box"></div>
+
+            <div id="currentInfoBox" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://tbbzcoqzkfbwvftnfrcl.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiYnpjb3F6a2Zid3ZmdG5mcmNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyMjEwNjcsImV4cCI6MjA0ODc5NzA2N30.zc63sOF07xqq1wpKMXPNBf2T_hJ9SzFSosQPSWAl3gE';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const VIDEO_NAME = '1030-英语-2.mp4';
+        const NEW_ANNOTATION_FILE_NAME = '第二批第二次改写_英语-02';
+
+        async function queryCurrentInfo() {
+            showLoading(true);
+            hideResult();
+
+            try {
+                const { data, error } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .eq('name', VIDEO_NAME)
+                    .single();
+
+                if (error) {
+                    showError(`查询失败: ${error.message}`);
+                    return;
+                }
+
+                if (!data) {
+                    showError('未找到该视频');
+                    return;
+                }
+
+                displayCurrentInfo(data);
+            } catch (error) {
+                showError(`查询异常: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function displayCurrentInfo(video) {
+            const box = document.getElementById('currentInfoBox');
+            box.style.display = 'block';
+            box.innerHTML = `
+                <div class="info-card">
+                    <h3>📊 当前数据库信息</h3>
+                    <div class="field">
+                        <div class="label">视频ID：</div>
+                        <div class="value" style="font-size: 12px; color: #64748b;">${video.id}</div>
+                    </div>
+                    <div class="field">
+                        <div class="label">视频名称：</div>
+                        <div class="value">${video.name}</div>
+                    </div>
+                    <div class="field">
+                        <div class="label">当前标注文件名：</div>
+                        <div class="value" style="color: #dc2626; font-weight: 600;">
+                            ${video.annotation_file_name || '(空)'}
+                        </div>
+                    </div>
+                    <div class="field">
+                        <div class="label">总句数：</div>
+                        <div class="value">${video.total_sentences || '未设置'}</div>
+                    </div>
+                    <div class="field">
+                        <div class="label">创建时间：</div>
+                        <div class="value">${new Date(video.created_at).toLocaleString('zh-CN')}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function executeUpdate() {
+            if (!confirm(`确定要将标注文件名更新为 "${NEW_ANNOTATION_FILE_NAME}" 吗？`)) {
+                return;
+            }
+
+            showLoading(true);
+            hideResult();
+            document.getElementById('updateBtn').disabled = true;
+
+            try {
+                const { data, error } = await supabase
+                    .from('videos')
+                    .update({ 
+                        annotation_file_name: NEW_ANNOTATION_FILE_NAME,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('name', VIDEO_NAME)
+                    .select();
+
+                if (error) {
+                    showError(`更新失败: ${error.message}`);
+                    document.getElementById('updateBtn').disabled = false;
+                    return;
+                }
+
+                if (!data || data.length === 0) {
+                    showError('未找到要更新的视频');
+                    document.getElementById('updateBtn').disabled = false;
+                    return;
+                }
+
+                showSuccess(`✅ 更新成功！<br><br>视频: ${VIDEO_NAME}<br>新标注文件名: ${NEW_ANNOTATION_FILE_NAME}`);
+                document.getElementById('verifyBtn').disabled = false;
+            } catch (error) {
+                showError(`更新异常: ${error.message}`);
+                document.getElementById('updateBtn').disabled = false;
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        async function verifyUpdate() {
+            showLoading(true);
+            hideResult();
+
+            try {
+                const { data, error } = await supabase
+                    .from('videos')
+                    .select('name, annotation_file_name, total_sentences, updated_at')
+                    .eq('name', VIDEO_NAME)
+                    .single();
+
+                if (error) {
+                    showError(`验证失败: ${error.message}`);
+                    return;
+                }
+
+                if (data.annotation_file_name === NEW_ANNOTATION_FILE_NAME) {
+                    showSuccess(`
+                        ✅ 验证成功！标注文件名已正确更新<br><br>
+                        <strong>当前标注文件名：</strong>${data.annotation_file_name}<br>
+                        <strong>更新时间：</strong>${new Date(data.updated_at).toLocaleString('zh-CN')}
+                    `);
+                } else {
+                    showError(`
+                        ❌ 验证失败<br><br>
+                        期望: ${NEW_ANNOTATION_FILE_NAME}<br>
+                        实际: ${data.annotation_file_name || '(空)'}
+                    `);
+                }
+            } catch (error) {
+                showError(`验证异常: ${error.message}`);
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').className = show ? 'loading active' : 'loading';
+        }
+
+        function showSuccess(message) {
+            const box = document.getElementById('resultBox');
+            box.className = 'result-box success';
+            box.innerHTML = `<h3>✅ 成功</h3><p>${message}</p>`;
+        }
+
+        function showError(message) {
+            const box = document.getElementById('resultBox');
+            box.className = 'result-box error';
+            box.innerHTML = `<h3>❌ 错误</h3><p>${message}</p>`;
+        }
+
+        function hideResult() {
+            document.getElementById('resultBox').style.display = 'none';
+        }
+
+        // 页面加载时提示
+        window.onload = () => {
+            console.log('页面已加载，可以开始操作');
+        };
+    </script>
+</body>
+</html>
+
+

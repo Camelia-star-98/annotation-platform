@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>更新三个视频的标注文件名</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1000px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        .video-item {
+            background: #f9f9f9;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        .video-name {
+            font-weight: bold;
+            color: #333;
+            font-size: 16px;
+        }
+        .excel-name {
+            color: #4CAF50;
+            margin-top: 5px;
+            font-size: 14px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        button:disabled {
+            background: #cccccc;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+            font-weight: bold;
+        }
+        .info {
+            color: #2196F3;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
+        }
+        tr:nth-child(even) {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 批量更新视频标注文件名</h1>
+        
+        <h3>待更新的视频：</h3>
+        <div class="video-item">
+            <div class="video-name">📹 1027-语文-1.mp4</div>
+            <div class="excel-name">📊 Excel: 第二批第二次改写_语文-01</div>
+        </div>
+        <div class="video-item">
+            <div class="video-name">📹 1030-语文-2.mp4</div>
+            <div class="excel-name">📊 Excel: 第二批第二次改写_语文-02</div>
+        </div>
+        <div class="video-item">
+            <div class="video-name">📹 1030-数学-2.mp4</div>
+            <div class="excel-name">📊 Excel: 第二批第二次改写_数学-02</div>
+        </div>
+
+        <button id="updateBtn" onclick="updateVideos()">🚀 执行更新</button>
+        <button id="checkBtn" onclick="checkResults()" style="background: #2196F3; margin-left: 10px;">🔍 查看结果</button>
+
+        <div id="log" class="log"></div>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // Supabase 配置
+        const SUPABASE_URL = 'https://tbbzcoqzkfbwvftnfrcl.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRiYnpjb3F6a2Zid3ZmdG5mcmNsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMyMjEwNjcsImV4cCI6MjA0ODc5NzA2N30.zc63sOF07xqq1wpKMXPNBf2T_hJ9SzFSosQPSWAl3gE';
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        const videos = [
+            { name: '1027-语文-1.mp4', excelName: '第二批第二次改写_语文-01' },
+            { name: '1030-语文-2.mp4', excelName: '第二批第二次改写_语文-02' },
+            { name: '1030-数学-2.mp4', excelName: '第二批第二次改写_数学-02' }
+        ];
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        async function updateVideos() {
+            const btn = document.getElementById('updateBtn');
+            btn.disabled = true;
+            document.getElementById('log').innerHTML = '';
+            document.getElementById('results').innerHTML = '';
+
+            log('🚀 开始批量更新...', 'info');
+
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const video of videos) {
+                try {
+                    log(`\n📝 正在更新: ${video.name}`, 'info');
+                    log(`   新的 Excel 文件名: ${video.excelName}`, 'info');
+
+                    const { data, error } = await supabase
+                        .from('videos')
+                        .update({ annotation_file_name: video.excelName })
+                        .eq('name', video.name)
+                        .select();
+
+                    if (error) {
+                        log(`   ❌ 更新失败: ${error.message}`, 'error');
+                        failCount++;
+                    } else if (data && data.length > 0) {
+                        log(`   ✅ 更新成功！`, 'success');
+                        successCount++;
+                    } else {
+                        log(`   ⚠️ 未找到匹配的视频记录`, 'error');
+                        failCount++;
+                    }
+
+                    // 等待一小段时间
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                } catch (error) {
+                    log(`   ❌ 异常错误: ${error.message}`, 'error');
+                    failCount++;
+                }
+            }
+
+            log(`\n\n📊 更新完成！`, 'info');
+            log(`   ✅ 成功: ${successCount} 个`, 'success');
+            log(`   ❌ 失败: ${failCount} 个`, failCount > 0 ? 'error' : 'info');
+
+            btn.disabled = false;
+
+            // 自动查看结果
+            if (successCount > 0) {
+                setTimeout(checkResults, 1000);
+            }
+        }
+
+        async function checkResults() {
+            log('\n\n🔍 正在查询更新结果...', 'info');
+
+            try {
+                const videoNames = videos.map(v => v.name);
+                const { data, error } = await supabase
+                    .from('videos')
+                    .select('id, name, annotation_file_name, created_at')
+                    .in('name', videoNames)
+                    .order('name');
+
+                if (error) {
+                    log(`❌ 查询失败: ${error.message}`, 'error');
+                    return;
+                }
+
+                if (data && data.length > 0) {
+                    log(`✅ 找到 ${data.length} 条记录`, 'success');
+                    
+                    let tableHTML = `
+                        <h3 style="margin-top: 30px;">📋 更新结果</h3>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>视频文件名</th>
+                                    <th>标注表格文件名</th>
+                                    <th>上传时间</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    data.forEach(video => {
+                        const expectedExcel = videos.find(v => v.name === video.name)?.excelName;
+                        const isCorrect = video.annotation_file_name === expectedExcel;
+                        const statusIcon = isCorrect ? '✅' : '⚠️';
+                        const statusText = isCorrect ? '正确' : '需检查';
+
+                        tableHTML += `
+                            <tr>
+                                <td>${video.name}</td>
+                                <td style="color: ${isCorrect ? '#4CAF50' : '#f44336'}; font-weight: bold;">
+                                    ${video.annotation_file_name || '(空)'}
+                                </td>
+                                <td>${new Date(video.created_at).toLocaleString('zh-CN')}</td>
+                                <td>${statusIcon} ${statusText}</td>
+                            </tr>
+                        `;
+                    });
+
+                    tableHTML += `
+                            </tbody>
+                        </table>
+                    `;
+
+                    document.getElementById('results').innerHTML = tableHTML;
+                } else {
+                    log('⚠️ 未找到任何记录', 'error');
+                }
+
+            } catch (error) {
+                log(`❌ 查询异常: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时先查看当前状态
+        window.onload = () => {
+            log('📱 页面已加载，可以执行更新操作', 'info');
+            log('💡 提示：点击"执行更新"按钮开始批量更新', 'info');
+            // 先查看当前状态
+            setTimeout(checkResults, 500);
+        };
+    </script>
+</body>
+</html>
+
+
