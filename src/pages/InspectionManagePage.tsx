@@ -137,16 +137,17 @@ export default function InspectionManagePage() {
           videoUrl = currentVideo?.url || '';
           annotationFileName = currentVideo?.annotation_file_name || '';
           
-          // 统计有标注人的不同句子数量（去重）
+          // 统计已完成标注的不同句子数量（去重）- 只统计 status = true 的数据
           const { data: sentenceData, error: sentenceError } = await supabase
             .from('annotations')
             .select('sentence_id')
             .eq('video_id', selectedVideoId)
+            .eq('status', true)
             .not('annotator_name', 'is', null)
             .neq('annotator_name', '');
           
           if (sentenceError) {
-            console.error('统计有标注人的句子数失败:', sentenceError);
+            console.error('统计已完成标注的句子数失败:', sentenceError);
           } else if (sentenceData) {
             // 使用 Set 去重，统计不同的句子 ID 数量
             const uniqueSentenceIds = new Set(sentenceData.map(item => item.sentence_id));
@@ -255,11 +256,12 @@ export default function InspectionManagePage() {
           const offset = currentPageNum * localPageSize;
           
           // 性能优化：只查询必要的字段，不查询大文本字段，并支持分页
-          // ✅ 只质检已标注的句子（有人工标注内容的）
+          // ✅ 只质检已完成的标注（status = true）
           const { data: annotationsData, error: annotationsError, count } = await supabase
             .from('annotations')
             .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, human_annotated_text, major_category, minor_category, annotator, inspector, review_status, created_at', { count: 'exact' })
-            // ✅ 只查询已标注的数据（有人工标注内容的）
+            // ✅ 只查询已完成的标注数据（status = true）
+            .eq('status', true)
             .not('human_annotated_text', 'is', null)
             .neq('human_annotated_text', '')
             .order('created_at', { ascending: false })
@@ -341,6 +343,24 @@ export default function InspectionManagePage() {
         setAllAnnotations(annotationsWithVideoName);
         setPage(1);
         
+        // 🔧 统计每个视频的已完成标注句数（status = true）
+        const videoStatsMap = new Map<string, number>();
+        for (const videoId of uniqueVideoIds) {
+          const { data: sentenceData, error: sentenceError } = await supabase
+            .from('annotations')
+            .select('sentence_id')
+            .eq('video_id', videoId)
+            .eq('status', true)
+            .not('annotator_name', 'is', null)
+            .neq('annotator_name', '');
+          
+          if (!sentenceError && sentenceData) {
+            const uniqueSentenceIds = new Set(sentenceData.map(item => item.sentence_id));
+            videoStatsMap.set(videoId, uniqueSentenceIds.size);
+          }
+        }
+        setVideoTotalAnnotated(videoStatsMap);
+        
         message.success(`加载了 ${annotationsWithVideoName.length} 条数据（共 ${totalCount} 条）`);
       }
     } catch (error) {
@@ -367,8 +387,9 @@ export default function InspectionManagePage() {
       while (hasMore) {
         let query = supabase
           .from('annotations')
-          .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
-          // ✅ 只查询已标注的数据（有人工标注内容的）
+          .select('id, video_id, sentence_no, annotator, annotator_name, status, human_annotated_text, inspector, is_qualified, review_status, updated_at, created_at')
+          // ✅ 只查询已完成的标注数据（status = true）
+          .eq('status', true)
           .not('human_annotated_text', 'is', null)
           .neq('human_annotated_text', '');
         
