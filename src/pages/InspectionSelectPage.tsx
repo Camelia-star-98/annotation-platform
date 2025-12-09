@@ -84,21 +84,20 @@ export default function InspectionSelectPage() {
         return;
       }
       
-      // 2. 一次性查询所有相关视频的标注数据（移除所有过滤条件）
-      console.time('⏱️ 查询所有标注数据');
+      // 2. 🚀 使用 RPC 函数一次性查询所有标注数据（自动过滤空标注人）
+      console.time('⏱️ 查询所有标注数据 (RPC)');
       const videoIds = allVideos.map(v => v.id);
       console.log('🔍 准备查询标注数据，视频ID列表:', videoIds);
       console.log('🔍 视频数量:', videoIds.length);
       
       const { data: allAnnotations, error: annotationsError } = await supabase
-        .from('annotations')
-        .select('id, video_id, sentence_no, annotator, human_annotated_text, inspector, is_qualified, review_status')
-        .in('video_id', videoIds)
-        .not('annotator', 'is', null)
-        .neq('annotator', '');
-      console.timeEnd('⏱️ 查询所有标注数据');
+        .rpc('get_all_annotations');
       
-      console.log('🔍 查询到的标注数据总数:', allAnnotations?.length || 0);
+      // 过滤出当前视频列表相关的标注数据
+      const filteredAnnotations = allAnnotations?.filter(ann => videoIds.includes(ann.video_id)) || [];
+      console.timeEnd('⏱️ 查询所有标注数据 (RPC)');
+      
+      console.log('🔍 查询到的标注数据总数:', filteredAnnotations.length);
       
       if (annotationsError) {
         throw annotationsError;
@@ -107,7 +106,7 @@ export default function InspectionSelectPage() {
       // 3. 在内存中按视频分组并统计
       console.time('⏱️ 内存中分组统计');
       const videoMap = new Map<string, any[]>();
-      (allAnnotations || []).forEach(ann => {
+      filteredAnnotations.forEach(ann => {
         if (!videoMap.has(ann.video_id)) {
           videoMap.set(ann.video_id, []);
         }
@@ -133,11 +132,6 @@ export default function InspectionSelectPage() {
         const deduplicatedMap = new Map<string, any>();
         
         annotations.forEach(ann => {
-          // 🔧 过滤掉 annotator 为空的记录
-          if (!ann.annotator || ann.annotator.trim() === '') {
-            return;
-          }
-          
           const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
           const existing = deduplicatedMap.get(key);
           
