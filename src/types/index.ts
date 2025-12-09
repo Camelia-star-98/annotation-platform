@@ -16,6 +16,7 @@ export interface AnnotationItem {
   status: boolean; // 标注状态/复检状态
   videoUrl: string;
   videoName: string;
+  annotationFileName?: string; // 标注数据文件名
   subject: string; // 科目
   isQualified?: boolean; // 质检用：是否通过
   annotator?: string; // 标注人

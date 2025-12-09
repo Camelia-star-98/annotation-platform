@@ -130,9 +130,11 @@ export default function InspectionManagePage() {
       if (selectedVideoId) {
         // 优化：直接查询单个视频，而不是查询所有视频后查找
         let videoUrl = '';
+        let annotationFileName = '';
         try {
           const currentVideo = await getVideo(selectedVideoId);
           videoUrl = currentVideo?.url || '';
+          annotationFileName = currentVideo?.annotation_file_name || '';
         } catch (error) {
           console.error('获取视频信息失败，将继续使用传入的视频名称:', error);
           // 即使获取视频失败，也继续执行，使用传入的 videoName
@@ -194,7 +196,8 @@ export default function InspectionManagePage() {
         const annotationsWithVideoName = sampledAnnotations.map(item => ({
           ...item,
           videoName: videoName || '未知视频',
-          videoUrl: videoUrl
+          videoUrl: videoUrl,
+          annotationFileName: annotationFileName
         }));
         
         // 🔧 更新已标注总数：使用实际查询到的总数（total）
@@ -272,24 +275,25 @@ export default function InspectionManagePage() {
         
         const annotationsData = allAnnotationsData;
         
-        // 优化：只查询相关视频的基本信息（id, name, url），减少数据传输
+        // 优化：只查询相关视频的基本信息（id, name, url, annotation_file_name），减少数据传输
         // 提取所有唯一的 video_id
         const uniqueVideoIds = [...new Set((annotationsData || []).map((item: any) => item.video_id))];
         
         // 只查询相关的视频，而不是所有视频
         const { data: videosData } = await supabase
           .from('videos')
-          .select('id, name, url')
+          .select('id, name, url, annotation_file_name')
           .in('id', uniqueVideoIds); // 只查询相关的视频
         
         // 创建视频 ID 到视频信息的映射
-        const videoMap = new Map((videosData || []).map((v: any) => [v.id, { name: v.name, url: v.url }]));
+        const videoMap = new Map((videosData || []).map((v: any) => [v.id, { name: v.name, url: v.url, annotation_file_name: v.annotation_file_name }]));
         
         // 转换数据格式并添加视频信息（只包含必要字段）
         const annotationsWithVideoName = (annotationsData || []).map((item: any) => {
           const videoInfo = videoMap.get(item.video_id);
           const videoName = videoInfo?.name || item.video_id || '未知视频';
           const videoUrl = videoInfo?.url || '';
+          const annotationFileName = videoInfo?.annotation_file_name || '';
           return {
               id: item.id || '',
               videoId: item.video_id || '',
@@ -311,6 +315,7 @@ export default function InspectionManagePage() {
             reviewStatus: item.review_status ?? undefined,
             videoName,
             videoUrl,
+            annotationFileName,
             subject: ''
           };
         });
@@ -627,12 +632,18 @@ export default function InspectionManagePage() {
       }
     },
     {
-      title: '标注文件名称',
-      dataIndex: 'videoName',
-      key: 'videoNameDetail',
+      title: '标注文件名',
+      dataIndex: 'annotationFileName',
+      key: 'annotationFileName',
       width: 200,
       ellipsis: { showTitle: false },
-      render: (text: string, record: any) => record.isGroup ? null : (text || '-')
+      render: (text: string, record: any) => {
+        if (record.isGroup) return null;
+        if (!text || text.trim() === '') {
+          return <span style={{ color: '#999' }}>未上传标注文件</span>;
+        }
+        return text;
+      }
     },
     {
       title: '时间范围',
