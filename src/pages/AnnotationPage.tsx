@@ -359,9 +359,16 @@ export default function AnnotationPage() {
     }
     
     const completedCount = annotations.filter(item => item.status).length;
+    const totalCount = annotations.length;
     
     if (completedCount === 0) {
       message.warning('请至少完成一条标注');
+      return;
+    }
+    
+    // 🆕 检查是否全部完成
+    if (completedCount < totalCount) {
+      message.warning(`请完成所有句子的标注！当前已完成 ${completedCount}/${totalCount} 条`);
       return;
     }
 
