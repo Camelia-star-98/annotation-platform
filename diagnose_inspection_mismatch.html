@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>诊断质检状态不一致问题</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1400px;
+            margin: 20px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #1890ff;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: #f0f7ff;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #1890ff;
+        }
+        .stat-label {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1890ff;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        th {
+            background-color: #1890ff;
+            color: white;
+            font-weight: bold;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .error {
+            background-color: #fff2f0;
+            border-left: 4px solid #ff4d4f;
+        }
+        .warning {
+            background-color: #fffbe6;
+            border-left: 4px solid #faad14;
+        }
+        .success {
+            background-color: #f6ffed;
+            border-left: 4px solid #52c41a;
+        }
+        .mismatch {
+            background-color: #fff1f0;
+            color: #cf1322;
+            font-weight: bold;
+        }
+        .match {
+            background-color: #f6ffed;
+            color: #389e0d;
+        }
+        button {
+            background-color: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #40a9ff;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .label {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-right: 5px;
+        }
+        .label-pending { background: #fff7e6; color: #d46b08; }
+        .label-passed { background: #f6ffed; color: #389e0d; }
+        .label-failed { background: #fff1f0; color: #cf1322; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 诊断：质检状态数据不一致问题</h1>
+        <p>比较标注任务列表和质检管理页面的数据差异</p>
+        <button onclick="runDiagnosis()">🚀 开始诊断</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://nrobrirfetvtnqkpdxvh.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5yb2JyaXJmZXR2dG5xa3BkeHZoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ5NDYxNDAsImV4cCI6MjA1MDUyMjE0MH0.q9VsMATkN1nzDqxYCtETLjrRCbY7hSGp-bDd_aD3zZA';
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function runDiagnosis() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="container"><h2>⏳ 正在诊断...</h2></div>';
+
+            try {
+                // 1. 查询所有标注数据（使用 RPC 函数）
+                console.log('🔍 查询所有标注数据...');
+                const { data: allAnnotations, error: annotationsError } = await supabase
+                    .rpc('get_all_annotations');
+
+                if (annotationsError) {
+                    throw annotationsError;
+                }
+
+                console.log('✅ 查询到标注数据:', allAnnotations.length, '条');
+
+                // 2. 查询所有视频
+                const { data: allVideos, error: videosError } = await supabase
+                    .from('videos')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (videosError) {
+                    throw videosError;
+                }
+
+                console.log('✅ 查询到视频:', allVideos.length, '个');
+
+                // 3. 模拟标注任务列表的逻辑
+                const taskListData = simulateTaskListLogic(allAnnotations, allVideos);
+
+                // 4. 模拟质检管理页面的逻辑
+                const inspectionPageData = simulateInspectionPageLogic(allAnnotations, allVideos);
+
+                // 5. 对比数据
+                displayComparison(taskListData, inspectionPageData);
+
+            } catch (error) {
+                console.error('❌ 诊断失败:', error);
+                resultsDiv.innerHTML = `
+                    <div class="container error">
+                        <h2>❌ 诊断失败</h2>
+                        <pre>${error.message}\n${error.stack || ''}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        function simulateTaskListLogic(allAnnotations, allVideos) {
+            console.log('📊 模拟标注任务列表逻辑...');
+
+            // 过滤 status = true 的标注
+            const validAnnotations = allAnnotations.filter(a => a.status === true);
+            console.log('  - 有效标注（status=true）:', validAnnotations.length);
+
+            const videoMap = new Map();
+
+            validAnnotations.forEach(item => {
+                // 过滤空标注人
+                if (!item.annotator || item.annotator.trim() === '') {
+                    return;
+                }
+
+                const key = `${item.video_id}__${item.annotator}`;
+
+                if (!videoMap.has(key)) {
+                    videoMap.set(key, {
+                        videoId: item.video_id,
+                        annotator: item.annotator,
+                        sentenceSet: new Set(),
+                        passedCount: 0,
+                        rejectedCount: 0,
+                        pendingCount: 0
+                    });
+                }
+
+                const stats = videoMap.get(key);
+                stats.sentenceSet.add(item.sentence_no);
+
+                // 质检状态统计
+                if (!item.inspector || item.inspector === '') {
+                    stats.pendingCount++;
+                } else if (item.is_qualified === true) {
+                    stats.passedCount++;
+                } else if (item.is_qualified === false) {
+                    stats.rejectedCount++;
+                } else {
+                    stats.pendingCount++;
+                }
+            });
+
+            const results = [];
+            const videoInfoMap = new Map(allVideos.map(v => [v.id, v]));
+
+            videoMap.forEach((stats, key) => {
+                const video = videoInfoMap.get(stats.videoId);
+                if (video) {
+                    results.push({
+                        videoId: stats.videoId,
+                        videoName: video.name,
+                        annotator: stats.annotator,
+                        totalAnnotations: stats.sentenceSet.size,
+                        passedCount: stats.passedCount,
+                        rejectedCount: stats.rejectedCount,
+                        pendingCount: stats.pendingCount
+                    });
+                }
+            });
+
+            console.log('  - 标注任务列表中的视频-标注人组合:', results.length);
+            return results;
+        }
+
+        function simulateInspectionPageLogic(allAnnotations, allVideos) {
+            console.log('📊 模拟质检管理页面逻辑...');
+
+            const videoIds = allVideos.map(v => v.id);
+            const filteredAnnotations = allAnnotations.filter(ann => videoIds.includes(ann.video_id));
+
+            console.log('  - 过滤后的标注数据:', filteredAnnotations.length);
+
+            const videoMap = new Map();
+
+            filteredAnnotations.forEach(ann => {
+                if (!videoMap.has(ann.video_id)) {
+                    videoMap.set(ann.video_id, []);
+                }
+                videoMap.get(ann.video_id).push(ann);
+            });
+
+            console.log('  - 有标注数据的视频数量:', videoMap.size);
+
+            const results = [];
+            const videoInfoMap = new Map(allVideos.map(v => [v.id, v]));
+
+            videoMap.forEach((annotations, videoId) => {
+                if (annotations.length === 0) {
+                    return;
+                }
+
+                // 去重逻辑
+                const deduplicatedMap = new Map();
+
+                annotations.forEach(ann => {
+                    const key = `${ann.video_id}_${ann.sentence_no}_${ann.annotator}`;
+                    const existing = deduplicatedMap.get(key);
+
+                    if (!existing) {
+                        deduplicatedMap.set(key, ann);
+                    } else {
+                        const existingHasInspection = existing.inspector && existing.inspector.trim() !== '' && 
+                                                      existing.is_qualified !== null && existing.is_qualified !== undefined;
+                        const currentHasInspection = ann.inspector && ann.inspector.trim() !== '' && 
+                                                    ann.is_qualified !== null && ann.is_qualified !== undefined;
+
+                        if (currentHasInspection && !existingHasInspection) {
+                            deduplicatedMap.set(key, ann);
+                        }
+                    }
+                });
+
+                const deduplicatedAnnotations = Array.from(deduplicatedMap.values());
+
+                const pendingCount = deduplicatedAnnotations.filter(item => 
+                    (!item.inspector || item.inspector.trim() === '')
+                ).length;
+
+                const passedCount = deduplicatedAnnotations.filter(item => 
+                    item.is_qualified === true && item.inspector && item.inspector.trim() !== ''
+                ).length;
+
+                const failedCount = deduplicatedAnnotations.filter(item => 
+                    item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
+                ).length;
+
+                const annotatorsSet = new Set();
+                deduplicatedAnnotations.forEach(item => {
+                    if (item.annotator && item.annotator.trim() !== '' && item.annotator !== 'unknown') {
+                        annotatorsSet.add(item.annotator.trim());
+                    }
+                });
+
+                const video = videoInfoMap.get(videoId);
+                if (video) {
+                    results.push({
+                        videoId: videoId,
+                        videoName: video.name,
+                        annotators: Array.from(annotatorsSet),
+                        totalAnnotations: deduplicatedAnnotations.length,
+                        passedCount: passedCount,
+                        rejectedCount: failedCount,
+                        pendingCount: pendingCount
+                    });
+                }
+            });
+
+            console.log('  - 质检管理页面中的视频数量:', results.length);
+            return results;
+        }
+
+        function displayComparison(taskListData, inspectionPageData) {
+            console.log('🔍 对比数据...');
+
+            // 按视频分组标注任务列表数据
+            const taskListByVideo = new Map();
+            taskListData.forEach(task => {
+                if (!taskListByVideo.has(task.videoId)) {
+                    taskListByVideo.set(task.videoId, []);
+                }
+                taskListByVideo.get(task.videoId).push(task);
+            });
+
+            // 创建质检页面数据映射
+            const inspectionByVideo = new Map(inspectionPageData.map(item => [item.videoId, item]));
+
+            let html = '<div class="container success"><h2>✅ 诊断完成</h2></div>';
+
+            // 统计
+            html += '<div class="container">';
+            html += '<h2>📊 数据统计</h2>';
+            html += '<div class="stats">';
+            html += `
+                <div class="stat-card">
+                    <div class="stat-label">标注任务列表 - 任务数</div>
+                    <div class="stat-value">${taskListData.length}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">标注任务列表 - 视频数</div>
+                    <div class="stat-value">${taskListByVideo.size}</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">质检管理页面 - 视频数</div>
+                    <div class="stat-value">${inspectionPageData.length}</div>
+                </div>
+            `;
+            html += '</div></div>';
+
+            // 对比表格
+            html += '<div class="container">';
+            html += '<h2>🔍 详细对比（按视频聚合）</h2>';
+            html += '<table><thead><tr>';
+            html += '<th>视频名称</th>';
+            html += '<th>标注人</th>';
+            html += '<th>任务列表-总数</th>';
+            html += '<th>任务列表-待质检</th>';
+            html += '<th>任务列表-通过</th>';
+            html += '<th>任务列表-不通过</th>';
+            html += '<th>质检页面-总数</th>';
+            html += '<th>质检页面-待质检</th>';
+            html += '<th>质检页面-通过</th>';
+            html += '<th>质检页面-不通过</th>';
+            html += '<th>状态</th>';
+            html += '</tr></thead><tbody>';
+
+            // 遍历所有视频
+            const allVideoIds = new Set([...taskListByVideo.keys(), ...inspectionByVideo.keys()]);
+
+            allVideoIds.forEach(videoId => {
+                const taskListItems = taskListByVideo.get(videoId) || [];
+                const inspectionItem = inspectionByVideo.get(videoId);
+
+                if (taskListItems.length > 0 && !inspectionItem) {
+                    // 只在任务列表中有，质检页面没有
+                    taskListItems.forEach(task => {
+                        html += '<tr class="error">';
+                        html += `<td>${task.videoName}</td>`;
+                        html += `<td>${task.annotator}</td>`;
+                        html += `<td>${task.totalAnnotations}</td>`;
+                        html += `<td>${task.pendingCount}</td>`;
+                        html += `<td>${task.passedCount}</td>`;
+                        html += `<td>${task.rejectedCount}</td>`;
+                        html += '<td>-</td><td>-</td><td>-</td><td>-</td>';
+                        html += '<td class="mismatch">❌ 质检页面缺失</td>';
+                        html += '</tr>';
+                    });
+                } else if (!taskListItems.length && inspectionItem) {
+                    // 只在质检页面有，任务列表没有
+                    html += '<tr class="warning">';
+                    html += `<td>${inspectionItem.videoName}</td>`;
+                    html += `<td>${inspectionItem.annotators.join(', ')}</td>`;
+                    html += '<td>-</td><td>-</td><td>-</td><td>-</td>';
+                    html += `<td>${inspectionItem.totalAnnotations}</td>`;
+                    html += `<td>${inspectionItem.pendingCount}</td>`;
+                    html += `<td>${inspectionItem.passedCount}</td>`;
+                    html += `<td>${inspectionItem.rejectedCount}</td>`;
+                    html += '<td class="mismatch">⚠️ 任务列表缺失</td>';
+                    html += '</tr>';
+                } else if (taskListItems.length > 0 && inspectionItem) {
+                    // 两边都有，对比数据
+                    const taskListTotal = taskListItems.reduce((sum, t) => sum + t.totalAnnotations, 0);
+                    const taskListPending = taskListItems.reduce((sum, t) => sum + t.pendingCount, 0);
+                    const taskListPassed = taskListItems.reduce((sum, t) => sum + t.passedCount, 0);
+                    const taskListRejected = taskListItems.reduce((sum, t) => sum + t.rejectedCount, 0);
+
+                    const match = taskListTotal === inspectionItem.totalAnnotations &&
+                                  taskListPending === inspectionItem.pendingCount &&
+                                  taskListPassed === inspectionItem.passedCount &&
+                                  taskListRejected === inspectionItem.rejectedCount;
+
+                    html += `<tr class="${match ? '' : 'warning'}">`;
+                    html += `<td>${inspectionItem.videoName}</td>`;
+                    html += `<td>${taskListItems.map(t => t.annotator).join(', ')}</td>`;
+                    html += `<td>${taskListTotal}</td>`;
+                    html += `<td>${taskListPending}</td>`;
+                    html += `<td>${taskListPassed}</td>`;
+                    html += `<td>${taskListRejected}</td>`;
+                    html += `<td>${inspectionItem.totalAnnotations}</td>`;
+                    html += `<td>${inspectionItem.pendingCount}</td>`;
+                    html += `<td>${inspectionItem.passedCount}</td>`;
+                    html += `<td>${inspectionItem.rejectedCount}</td>`;
+                    html += `<td class="${match ? 'match' : 'mismatch'}">${match ? '✅ 一致' : '❌ 不一致'}</td>`;
+                    html += '</tr>';
+                }
+            });
+
+            html += '</tbody></table></div>';
+
+            // 显示原始数据
+            html += '<div class="container">';
+            html += '<h2>📋 原始数据（标注任务列表）</h2>';
+            html += '<pre>' + JSON.stringify(taskListData, null, 2) + '</pre>';
+            html += '</div>';
+
+            html += '<div class="container">';
+            html += '<h2>📋 原始数据（质检管理页面）</h2>';
+            html += '<pre>' + JSON.stringify(inspectionPageData, null, 2) + '</pre>';
+            html += '</div>';
+
+            document.getElementById('results').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
+

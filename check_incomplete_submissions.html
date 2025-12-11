@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>检查不完整提交的数据</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            max-width: 1400px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1890ff;
+            border-bottom: 3px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #52c41a;
+            margin-top: 30px;
+            border-left: 4px solid #52c41a;
+            padding-left: 10px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card.warning {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-card.success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e8e8e8;
+        }
+        th {
+            background: #fafafa;
+            font-weight: 600;
+            color: #262626;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 24px;
+            background: #f0f0f0;
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+        }
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #ff6b6b 0%, #ffd93d 50%, #6bcf7f 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            transition: width 0.3s ease;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-danger {
+            background: #ff4d4f;
+            color: white;
+        }
+        .badge-warning {
+            background: #faad14;
+            color: white;
+        }
+        .badge-success {
+            background: #52c41a;
+            color: white;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+        .details {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #40a9ff;
+        }
+        .video-details {
+            background: #e6f7ff;
+            border-left: 4px solid #1890ff;
+            padding: 15px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 检查不完整提交的数据</h1>
+        
+        <div class="details">
+            <strong>问题说明：</strong><br>
+            发现部分标注任务只完成了 <span class="highlight">46% (50/109)</span> 就出现在"所有已标注任务"中。<br>
+            理论上应该 <span class="highlight">100%完成</span> 才能提交，但代码存在bug，只检查"至少完成一条"。<br><br>
+            <strong>✅ 已修复：</strong> 现在提交时会强制检查是否全部完成！
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-label">总视频数</div>
+                <div class="stat-number" id="totalVideos">-</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-label">不完整提交</div>
+                <div class="stat-number" id="incompleteCount">-</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">完整提交</div>
+                <div class="stat-number" id="completeCount">-</div>
+            </div>
+        </div>
+
+        <button onclick="checkData()">🔄 重新检查</button>
+
+        <h2>📊 不完整的标注任务</h2>
+        <div id="incompleteResults"></div>
+
+        <h2>✅ 完整的标注任务（参考）</h2>
+        <div id="completeResults"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+        
+        const supabase_client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function checkData() {
+            console.log('🔍 开始检查不完整提交的数据...');
+            
+            document.getElementById('incompleteResults').innerHTML = '<div class="loading">加载中...</div>';
+            document.getElementById('completeResults').innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                // 1. 获取所有视频信息
+                const { data: videos, error: videoError } = await supabase_client
+                    .from('videos')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+
+                if (videoError) {
+                    console.error('❌ 获取视频失败:', videoError);
+                    return;
+                }
+
+                console.log(`✅ 获取到 ${videos.length} 个视频`);
+
+                // 2. 获取所有标注数据
+                const { data: annotations, error: annotError } = await supabase_client
+                    .rpc('get_all_annotations');
+
+                if (annotError) {
+                    console.error('❌ 获取标注数据失败:', annotError);
+                    return;
+                }
+
+                console.log(`✅ 获取到 ${annotations.length} 条标注数据`);
+
+                // 3. 筛选出 status = true 的标注
+                const validAnnotations = annotations.filter(a => a.status === true);
+                console.log(`✅ 有效标注数据（status=true）: ${validAnnotations.length}`);
+
+                // 4. 按视频和标注员分组统计
+                const videoMap = new Map();
+                videos.forEach(v => videoMap.set(v.id, v));
+
+                const statsMap = new Map();
+                
+                validAnnotations.forEach(item => {
+                    if (!item.annotator || item.annotator.trim() === '') return;
+                    
+                    const key = `${item.video_id}__${item.annotator}`;
+                    
+                    if (!statsMap.has(key)) {
+                        statsMap.set(key, {
+                            videoId: item.video_id,
+                            annotator: item.annotator,
+                            sentenceSet: new Set(),
+                            totalCount: 0
+                        });
+                    }
+                    
+                    const stats = statsMap.get(key);
+                    stats.sentenceSet.add(item.sentence_no);
+                    stats.totalCount++;
+                });
+
+                console.log(`📊 统计结果: ${statsMap.size} 个任务`);
+
+                // 5. 分类：完整 vs 不完整
+                const incompleteTasks = [];
+                const completeTasks = [];
+
+                statsMap.forEach(stats => {
+                    const video = videoMap.get(stats.videoId);
+                    if (!video || !video.total_sentences) return;
+
+                    const totalSentences = video.total_sentences;
+                    const annotatedSentences = stats.sentenceSet.size;
+                    const percentage = Math.round((annotatedSentences / totalSentences) * 100);
+
+                    const task = {
+                        videoName: video.name,
+                        annotator: stats.annotator,
+                        totalSentences,
+                        annotatedSentences,
+                        percentage,
+                        isComplete: annotatedSentences === totalSentences
+                    };
+
+                    if (task.isComplete) {
+                        completeTasks.push(task);
+                    } else {
+                        incompleteTasks.push(task);
+                    }
+                });
+
+                // 6. 更新统计卡片
+                document.getElementById('totalVideos').textContent = statsMap.size;
+                document.getElementById('incompleteCount').textContent = incompleteTasks.length;
+                document.getElementById('completeCount').textContent = completeTasks.length;
+
+                // 7. 显示不完整任务
+                if (incompleteTasks.length === 0) {
+                    document.getElementById('incompleteResults').innerHTML = 
+                        '<div class="video-details">🎉 太好了！没有发现不完整的提交数据！</div>';
+                } else {
+                    let html = `
+                        <div class="video-details">
+                            ⚠️ 发现 <strong>${incompleteTasks.length}</strong> 个不完整的提交！<br>
+                            这些数据是在修复bug之前提交的，现在新的提交会强制检查完成度。
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>视频名称</th>
+                                    <th>标注员</th>
+                                    <th>进度</th>
+                                    <th>完成度</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    incompleteTasks.forEach(task => {
+                        const badgeClass = task.percentage >= 70 ? 'warning' : 'danger';
+                        html += `
+                            <tr>
+                                <td>${task.videoName}</td>
+                                <td>${task.annotator}</td>
+                                <td>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: ${task.percentage}%">
+                                            ${task.percentage}%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>${task.annotatedSentences}/${task.totalSentences} 句</td>
+                                <td><span class="badge badge-${badgeClass}">❌ 未完成</span></td>
+                            </tr>
+                        `;
+                    });
+
+                    html += '</tbody></table>';
+                    document.getElementById('incompleteResults').innerHTML = html;
+                }
+
+                // 8. 显示完整任务（只显示前10个）
+                if (completeTasks.length === 0) {
+                    document.getElementById('completeResults').innerHTML = 
+                        '<div class="video-details">暂无完整提交的任务</div>';
+                } else {
+                    let html = `
+                        <div class="video-details">
+                            ✅ 共有 <strong>${completeTasks.length}</strong> 个完整提交的任务（以下显示前10个）
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>视频名称</th>
+                                    <th>标注员</th>
+                                    <th>进度</th>
+                                    <th>完成度</th>
+                                    <th>状态</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                    `;
+
+                    completeTasks.slice(0, 10).forEach(task => {
+                        html += `
+                            <tr>
+                                <td>${task.videoName}</td>
+                                <td>${task.annotator}</td>
+                                <td>
+                                    <div class="progress-bar">
+                                        <div class="progress-fill" style="width: 100%; background: #52c41a;">
+                                            100%
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>${task.annotatedSentences}/${task.totalSentences} 句</td>
+                                <td><span class="badge badge-success">✅ 已完成</span></td>
+                            </tr>
+                        `;
+                    });
+
+                    html += '</tbody></table>';
+                    document.getElementById('completeResults').innerHTML = html;
+                }
+
+                console.log('✅ 数据检查完成！');
+
+            } catch (error) {
+                console.error('❌ 检查失败:', error);
+                document.getElementById('incompleteResults').innerHTML = 
+                    `<div class="video-details" style="background: #fff2f0; border-left-color: #ff4d4f;">❌ 检查失败: ${error.message}</div>`;
+            }
+        }
+
+        // 页面加载时自动检查
+        window.onload = checkData;
+    </script>
+</body>
+</html>
+
