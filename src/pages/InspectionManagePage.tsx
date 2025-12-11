@@ -56,7 +56,7 @@ export default function InspectionManagePage() {
   const [loading, setLoading] = useState(false);
   const [sampledCount, setSampledCount] = useState(0); // 抽样数量
   const [page, setPage] = useState(1); // 当前页码
-  const [pageSize] = useState(50); // 每页数量（初始加载50条）
+  const [pageSize] = useState(100); // 每页数量（初始加载100条）
   const [hasMore, setHasMore] = useState(true); // 是否还有更多数据
   const [totalCount, setTotalCount] = useState(0); // 总数据量
   const [isLoadingMore, setIsLoadingMore] = useState(false); // 是否正在加载更多
@@ -183,7 +183,7 @@ export default function InspectionManagePage() {
         let sampledAnnotations = pendingAnnotations;
         if (samplePercentage < 100 && !isLoadMore && pendingAnnotations.length > 0) {
           const calculatedSize = Math.ceil(total * samplePercentage / 100);
-          const sampleSize = Math.max(1, Math.min(calculatedSize, 200)); // 限制最大抽样数量
+          const sampleSize = Math.max(1, Math.min(calculatedSize, 500)); // 限制最大抽样数量为500条
           
           // 使用更高效的随机抽样（Fisher-Yates 洗牌算法）
           if (pendingAnnotations.length <= sampleSize) {

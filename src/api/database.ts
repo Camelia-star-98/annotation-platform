@@ -422,6 +422,9 @@ export async function getPendingInspectionAnnotations(
       // ✅ 只查询已标注的数据（有人工标注内容的）
       .not('human_annotated_text', 'is', null)
       .neq('human_annotated_text', '')
+      // ✅ 只查询有标注人的数据（排除未标注的数据）
+      .not('annotator', 'is', null)
+      .neq('annotator', '')
       .order('sentence_no', { ascending: true });
 
     // 应用分页
