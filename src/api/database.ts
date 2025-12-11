@@ -417,6 +417,8 @@ export async function getPendingInspectionAnnotations(
       .from('annotations')
       .select('id, video_id, sentence_no, time_range, start_time, end_time, original_text, ai_rewritten_text, human_annotated_text, major_category, minor_category, remark, status, annotator, is_qualified, inspector, reviewer, review_status', { count: 'exact' })
       .eq('video_id', videoId)
+      // ✅ 只查询已完成标注的数据（status = true）
+      .eq('status', true)
       // ✅ 只查询已标注的数据（有人工标注内容的）
       .not('human_annotated_text', 'is', null)
       .neq('human_annotated_text', '')

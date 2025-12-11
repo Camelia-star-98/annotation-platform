@@ -142,6 +142,8 @@ export default function ReviewSelectPage() {
       const { data: videoIds, error: videoError } = await supabase
         .from('annotations')
         .select('video_id, created_at')
+        // ✅ 只查询已完成的标注数据（status = true）
+        .eq('status', true)
         .not('annotator', 'is', null)
         .neq('annotator', '')
         .neq('annotator', 'unknown')
@@ -176,7 +178,7 @@ export default function ReviewSelectPage() {
         // 注意：需要查询 inspector 字段来判断是否已质检，还需要 sentence_no 用于去重
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('id, video_id, sentence_no, annotator, human_annotated_text, status, review_status, reviewer, inspector, updated_at, is_qualified')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, status, review_status, reviewer, inspector, updated_at, is_qualified, created_at')
           .eq('video_id', videoId)
           .not('annotator', 'is', null)
           .neq('annotator', '')
@@ -464,7 +466,7 @@ export default function ReviewSelectPage() {
         // 🔧 重要：必须包含 sentence_no 字段，用于去重逻辑
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified')
+          .select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified, created_at')
           .eq('video_id', video.id)
           .not('annotator', 'is', null)
           .neq('annotator', '')

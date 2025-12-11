@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>测试：质检抽样只包含已完成标注</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #1890ff;
+            border-bottom: 3px solid #1890ff;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #52c41a;
+            margin-top: 30px;
+            border-left: 4px solid #52c41a;
+            padding-left: 10px;
+        }
+        .test-card {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #1890ff;
+        }
+        .test-card.pass {
+            border-left-color: #52c41a;
+            background: #f6ffed;
+        }
+        .test-card.fail {
+            border-left-color: #ff4d4f;
+            background: #fff2f0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            background: white;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border: 1px solid #e8e8e8;
+        }
+        th {
+            background: #fafafa;
+            font-weight: 600;
+            color: #262626;
+        }
+        tr:hover {
+            background: #fafafa;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-success {
+            background: #52c41a;
+            color: white;
+        }
+        .badge-danger {
+            background: #ff4d4f;
+            color: white;
+        }
+        .badge-warning {
+            background: #faad14;
+            color: white;
+        }
+        button {
+            background: #1890ff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 5px;
+        }
+        button:hover {
+            background: #40a9ff;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card.success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .stat-card.danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .stat-number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 测试：质检抽样只包含已完成标注</h1>
+        
+        <div class="test-card">
+            <strong>测试目的：</strong><br>
+            验证质检抽样功能是否正确地只从 <code>status = true</code> 的已完成标注中抽取数据，
+            不包含未完成的标注（<code>status = false</code> 或 <code>null</code>）。
+        </div>
+
+        <button onclick="runTest()">🔬 运行测试</button>
+        <button onclick="location.reload()">🔄 重新开始</button>
+
+        <div class="stats" id="stats" style="display:none;">
+            <div class="stat-card">
+                <div class="stat-label">总标注数</div>
+                <div class="stat-number" id="totalCount">-</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-label">已完成（status=true）</div>
+                <div class="stat-number" id="completedCount">-</div>
+            </div>
+            <div class="stat-card danger">
+                <div class="stat-label">未完成（status=false/null）</div>
+                <div class="stat-number" id="incompleteCount">-</div>
+            </div>
+        </div>
+
+        <h2>📊 测试结果</h2>
+        <div id="results"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipg.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMwODYzODAsImV4cCI6MjA3ODY2MjM4MH0.AW8O6XG3Zj75B1eqfpCNNLACfdKYhcQhYYWzVPuTPAw';
+        
+        const supabase_client = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        async function runTest() {
+            console.log('🧪 开始测试...');
+            
+            document.getElementById('results').innerHTML = '<div class="loading">测试中...</div>';
+            document.getElementById('stats').style.display = 'none';
+
+            try {
+                // 1. 获取所有视频
+                const { data: videos, error: videoError } = await supabase_client
+                    .from('videos')
+                    .select('id, name')
+                    .limit(5); // 测试前5个视频
+
+                if (videoError) {
+                    throw new Error('获取视频失败: ' + videoError.message);
+                }
+
+                if (!videos || videos.length === 0) {
+                    document.getElementById('results').innerHTML = 
+                        '<div class="test-card fail">❌ 没有找到视频数据</div>';
+                    return;
+                }
+
+                console.log(`✅ 找到 ${videos.length} 个视频`);
+
+                let allTestResults = [];
+                let totalAnnotations = 0;
+                let totalCompleted = 0;
+                let totalIncomplete = 0;
+
+                // 2. 对每个视频进行测试
+                for (const video of videos) {
+                    console.log(`\n🎬 测试视频: ${video.name} (${video.id})`);
+                    
+                    // 2.1 查询该视频的所有标注（不加 status 过滤）
+                    const { data: allAnnotations, error: allError } = await supabase_client
+                        .from('annotations')
+                        .select('id, video_id, sentence_no, status, annotator, human_annotated_text')
+                        .eq('video_id', video.id)
+                        .not('human_annotated_text', 'is', null)
+                        .neq('human_annotated_text', '');
+
+                    if (allError) {
+                        console.error('查询所有标注失败:', allError);
+                        continue;
+                    }
+
+                    // 2.2 查询该视频的质检数据（加上 status = true 过滤，模拟修复后的逻辑）
+                    const { data: pendingInspections, error: pendingError } = await supabase_client
+                        .from('annotations')
+                        .select('id, video_id, sentence_no, status, annotator, human_annotated_text')
+                        .eq('video_id', video.id)
+                        .eq('status', true) // ✅ 修复后的逻辑
+                        .not('human_annotated_text', 'is', null)
+                        .neq('human_annotated_text', '');
+
+                    if (pendingError) {
+                        console.error('查询待质检数据失败:', pendingError);
+                        continue;
+                    }
+
+                    // 2.3 统计数据
+                    const completed = allAnnotations.filter(a => a.status === true).length;
+                    const incomplete = allAnnotations.filter(a => a.status !== true).length;
+                    const inspectionCount = pendingInspections.length;
+
+                    totalAnnotations += allAnnotations.length;
+                    totalCompleted += completed;
+                    totalIncomplete += incomplete;
+
+                    // 2.4 验证：待质检数据是否都是已完成的
+                    const hasIncompleteInInspection = pendingInspections.some(a => a.status !== true);
+                    const testPassed = !hasIncompleteInInspection && inspectionCount === completed;
+
+                    allTestResults.push({
+                        videoName: video.name,
+                        total: allAnnotations.length,
+                        completed,
+                        incomplete,
+                        inspectionCount,
+                        testPassed,
+                        hasIncompleteInInspection
+                    });
+
+                    console.log(`  总标注: ${allAnnotations.length}`);
+                    console.log(`  已完成: ${completed}`);
+                    console.log(`  未完成: ${incomplete}`);
+                    console.log(`  质检池: ${inspectionCount}`);
+                    console.log(`  测试结果: ${testPassed ? '✅ 通过' : '❌ 失败'}`);
+                }
+
+                // 3. 更新统计卡片
+                document.getElementById('stats').style.display = 'grid';
+                document.getElementById('totalCount').textContent = totalAnnotations;
+                document.getElementById('completedCount').textContent = totalCompleted;
+                document.getElementById('incompleteCount').textContent = totalIncomplete;
+
+                // 4. 显示测试结果
+                const passedCount = allTestResults.filter(r => r.testPassed).length;
+                const failedCount = allTestResults.length - passedCount;
+
+                let html = `
+                    <div class="test-card ${failedCount === 0 ? 'pass' : 'fail'}">
+                        <h3>${failedCount === 0 ? '✅ 所有测试通过！' : '❌ 部分测试失败'}</h3>
+                        <p>通过: <strong>${passedCount}</strong> | 失败: <strong>${failedCount}</strong></p>
+                    </div>
+
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>视频名称</th>
+                                <th>总标注数</th>
+                                <th>已完成</th>
+                                <th>未完成</th>
+                                <th>质检池数量</th>
+                                <th>测试结果</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                `;
+
+                allTestResults.forEach(result => {
+                    const statusBadge = result.testPassed 
+                        ? '<span class="badge badge-success">✅ 通过</span>'
+                        : '<span class="badge badge-danger">❌ 失败</span>';
+                    
+                    html += `
+                        <tr>
+                            <td>${result.videoName}</td>
+                            <td>${result.total}</td>
+                            <td>${result.completed}</td>
+                            <td>${result.incomplete}</td>
+                            <td>${result.inspectionCount}</td>
+                            <td>${statusBadge}</td>
+                        </tr>
+                    `;
+                });
+
+                html += `
+                        </tbody>
+                    </table>
+
+                    <div class="test-card">
+                        <h4>📝 测试说明</h4>
+                        <ul>
+                            <li><strong>总标注数：</strong> 该视频所有有标注内容的数据</li>
+                            <li><strong>已完成：</strong> status = true 的数据</li>
+                            <li><strong>未完成：</strong> status = false 或 null 的数据</li>
+                            <li><strong>质检池数量：</strong> 使用修复后的逻辑查询到的待质检数据量</li>
+                            <li><strong>✅ 通过条件：</strong> 质检池数量 = 已完成数量，且质检池中没有未完成的数据</li>
+                        </ul>
+                    </div>
+                `;
+
+                document.getElementById('results').innerHTML = html;
+
+                console.log('\n✅ 测试完成！');
+
+            } catch (error) {
+                console.error('❌ 测试失败:', error);
+                document.getElementById('results').innerHTML = 
+                    `<div class="test-card fail">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+
+        // 自动运行测试
+        // window.onload = runTest;
+    </script>
+</body>
+</html>
+
