@@ -278,6 +278,13 @@ export default function HomePage() {
           video.id?.toLowerCase().includes(searchLower)
         );
         
+        // 按完成时间降序排序（最新的在最前面）- 在分页之前排序
+        filteredVideos.sort((a, b) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return timeB - timeA;
+        });
+        
         // 更新总数
         setTotalCount(filteredVideos.length);
         
@@ -292,33 +299,34 @@ export default function HomePage() {
           completedAnnotators: annotatorCountMap?.get(video.id) || 0
         }));
         
-        // 按完成时间降序排序（最新的在最前面）
-        videosWithCount.sort((a, b) => {
-          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-          return timeB - timeA;
-        });
-        
         setCompletedVideos(videosWithCount);
         console.log(`✅ 加载了 ${videosWithCount.length} 个视频（搜索后）`);
       } else {
-        // 无搜索条件，直接分页查询
-        const startIndex = (page - 1) * size;
-        const endIndex = startIndex + size - 1;
-        const pageIds = idsArray.slice(startIndex, startIndex + size);
-        
-        const { data: pageVideos, error } = await supabase
+        // 无搜索条件，先获取所有视频数据进行排序，再分页
+        const { data: allVideos, error: allError } = await supabase
           .from('videos')
           .select('*')
-          .in('id', pageIds);
+          .in('id', idsArray);
         
-        if (error) {
-          console.error('加载视频失败:', error);
+        if (allError) {
+          console.error('加载视频失败:', allError);
           message.error('加载视频失败');
           setLoading(false);
           isLoadingRef.current = false;
           return;
         }
+        
+        // 按完成时间降序排序（最新的在最前面）- 在分页之前排序
+        const sortedVideos = (allVideos || []).sort((a, b) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return timeB - timeA;
+        });
+        
+        // 分页
+        const startIndex = (page - 1) * size;
+        const endIndex = startIndex + size;
+        const pageVideos = sortedVideos.slice(startIndex, endIndex);
         
         // 从annotations表查询每个视频的标注人数
         const videoIdsInPage = pageVideos?.map(v => v.id) || [];
@@ -344,13 +352,6 @@ export default function HomePage() {
           ...video,
           completedAnnotators: annotatorCount.get(video.id)?.size || 0
         }));
-        
-        // 按完成时间降序排序（最新的在最前面）
-        videosWithCount.sort((a, b) => {
-          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-          return timeB - timeA;
-        });
         
         setCompletedVideos(videosWithCount);
         setTotalCount(idsToUse.size);
