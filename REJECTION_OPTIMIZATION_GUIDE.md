@@ -3,9 +3,10 @@
 ## 📋 优化目标
 
 优化标注打回机制，实现：
-1. ✅ **所有人可见**：任何标注人都能看到所有被打回的数据
-2. ✅ **历史追踪**：重新提交时生成新记录，保留完整的修改历史
-3. ✅ **独立记录**：打回数据单独存储在 `rejected_annotations` 表
+1. ✅ **所有人可见**：所有标注人都能看到被打回的数据，便于相互学习
+2. ✅ **按视频展示**：按照视频任务分组展示，而不是按照句子条数展示
+3. ✅ **历史追踪**：重新提交时生成新记录，保留完整的修改历史
+4. ✅ **独立记录**：打回数据单独存储在 `rejected_annotations` 表
 
 ---
 
@@ -35,7 +36,7 @@
 质检打回 → 1. 更新 annotations 表 (is_qualified=false)
            2. 写入 rejected_annotations 表（新记录）
                     ↓
-          所有标注人都能在"被打回标注"看到所有数据
+          所有标注人都能在"被打回重标"看到（按视频分组展示）
                     ↓
           重新提交 → 1. 生成新的 annotation 记录（新ID）
                     2. 更新 rejected_annotations (is_resubmitted=true)
@@ -44,7 +45,8 @@
 ```
 
 **改进清单**：
-- ✅ 所有标注人可见所有被打回数据（便于相互学习）
+- ✅ 所有标注人都能看到被打回数据（便于相互学习）
+- ✅ 按视频任务展示，一目了然知道哪个视频有问题
 - ✅ 每次重新提交生成新记录，完整保留历史
 - ✅ 可统计打回率、重复打回次数等质检指标
 - ✅ 可查看同一条数据的所有版本（未来可扩展）
@@ -69,7 +71,7 @@
 
 **权限设置**：
 ```sql
--- 所有人都可以查看被打回数据（SELECT）
+-- 所有人都可以查看被打回数据（SELECT without filter）
 -- 质检人可以插入被打回数据（INSERT）
 -- 系统可以更新重新提交状态（UPDATE）
 ```
@@ -121,16 +123,43 @@ if (item.isQualified === false) {
 **新逻辑**：
 ```typescript
 // 🆕 查询所有人的被打回数据（从 rejected_annotations 表）
-const { data } = await supabase
+const { data: rejectedData } = await supabase
   .from('rejected_annotations')
   .select('*')
   .eq('is_resubmitted', false) // 只显示未重新提交的
   .order('rejected_at', { ascending: false });
+
+// 🆕 按视频分组统计被打回的数据
+const videoRejectedMap = new Map();
+rejectedData.forEach(item => {
+  const videoId = item.video_id;
+  if (!videoRejectedMap.has(videoId)) {
+    videoRejectedMap.set(videoId, {
+      videoId: item.video_id,
+      videoName: item.video_name,
+      subject: item.subject,
+      annotators: new Set(),
+      inspectors: new Set(),
+      annotationIds: [],
+      lastRejectedTime: item.rejected_at,
+      count: 0
+    });
+  }
+  const videoData = videoRejectedMap.get(videoId);
+  videoData.count++;
+  videoData.annotators.add(item.annotator);
+  videoData.inspectors.add(item.inspector);
+  videoData.annotationIds.push(item.annotation_id);
+});
 ```
 
-**效果**：所有标注人都能看到所有被打回的数据，便于相互学习。
+**效果**：
+- ✅ 所有人都能看到被打回的数据（便于相互学习）
+- ✅ 按照视频分组展示，而不是按照句子条数展示
+- ✅ 显示每个视频有多少条句子被打回
+- ✅ 显示涉及的标注人和质检人列表
 
-**回退逻辑**：如果 `rejected_annotations` 表不存在，自动回退到旧逻辑（只查询当前标注人）。
+**回退逻辑**：如果 `rejected_annotations` 表不存在，自动回退到旧逻辑（查询所有人的数据，也按视频分组）。
 
 ---
 
@@ -251,13 +280,13 @@ const findAllVersions = async (currentId, versions, visited) => {
 └──────────────────────┬──────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────┐
-│          4. 所有标注人可见（AnnotationTaskListPage）         │
+│          4. 标注人查看（AnnotationTaskListPage）             │
 │                "被打回标注" 列表                              │
 │                                                               │
-│  📋 显示所有未重新提交的打回数据：                           │
-│     - 张三的数据（自己）                                      │
-│     - 王五的数据（其他人）                                    │
-│     - 赵六的数据（其他人）                                    │
+│  📋 只显示当前标注人自己未重新提交的打回数据：               │
+│     - 张三登录 → 只能看到自己的被打回数据                    │
+│     - 王五登录 → 只能看到自己的被打回数据                    │
+│     - 赵六登录 → 只能看到自己的被打回数据                    │
 └──────────────────────┬──────────────────────────────────────┘
                        ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -445,8 +474,8 @@ const findAllVersions = async (currentId, versions, visited) => {
    - 确保 ID 唯一性
 
 2. **权限控制**
-   - `rejected_annotations` 表所有人可读
-   - 但建议添加"只能修改自己的数据"的权限控制
+   - `rejected_annotations` 表所有人都可以读取（相互学习）
+   - 建议添加数据库层面的行级安全策略（RLS）确保数据安全
 
 3. **性能优化**
    - `rejected_annotations` 表已添加索引
@@ -498,12 +527,13 @@ WHERE annotation_id = '问题记录的ID';
 
 ## 📝 变更日志
 
-### v2.0.0 (2025-12-01)
+### v2.0.0 (2025-12-11)
 
 **新增功能**：
 - ✅ 创建 `rejected_annotations` 表
 - ✅ 质检打回时自动记录到 `rejected_annotations`
-- ✅ 所有人可查看所有被打回数据
+- ✅ 所有人都能查看被打回数据（便于相互学习）
+- ✅ 按视频分组展示被打回数据，而不是按句子条数展示
 - ✅ 重新提交时生成新记录，保留历史
 - ✅ 历史版本查看功能（时间线展示）
 
@@ -512,13 +542,14 @@ WHERE annotation_id = '问题记录的ID';
 - ✅ 自动迁移现有被打回数据
 - ✅ 添加索引优化查询性能
 - ✅ 递归查询支持多次打回的完整历史
+- ✅ 按视频分组展示，显示每个视频的被打回句子数、标注人、质检人
 
 **新增组件**：
 - ✅ `AnnotationHistoryModal`：历史版本查看模态框
 
 **测试**：
 - ✅ 质检打回功能测试
-- ✅ 被打回列表展示测试
+- ✅ 被打回列表展示测试（按视频分组）
 - ✅ 重新提交功能测试
 - ✅ 数据迁移测试
 - ✅ 历史版本查看测试

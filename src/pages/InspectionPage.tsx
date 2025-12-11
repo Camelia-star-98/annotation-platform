@@ -156,7 +156,7 @@ export default function InspectionPage() {
           updateData.rejectionCount = currentCount + 1;
           console.log(`📝 数据 ${item.id} 被打回，rejection_count: ${currentCount} -> ${updateData.rejectionCount}`);
           
-          // 🆕 将被打回的数据记录到 rejected_annotations 表（所有人可见）
+          // 🆕 将被打回的数据记录到 rejected_annotations 表（所有人可见，便于相互学习）
           try {
             const { error: insertError } = await supabase
               .from('rejected_annotations')

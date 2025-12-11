@@ -43,18 +43,15 @@ interface AnnotationTask {
 }
 
 interface RejectedAnnotation {
-  id: string;
+  id: string; // 视频ID
   videoId: string;
   videoName: string;
   subject: string;
-  originalText: string;
-  annotatedText: string;
-  majorCategory: string;
-  minorCategory: string;
-  inspector: string; // 质检人（谁打回的）
-  annotator: string; // 标注人（自己）
-  rejectedTime: string;
-  rejectionCount?: number; // 被打回次数
+  rejectedCount: number; // 被打回的句子数
+  annotators: string[]; // 标注人列表
+  inspectors: string[]; // 质检人列表
+  lastRejectedTime: string; // 最后打回时间
+  annotationIds: string[]; // 被打回的annotation ID列表（用于跳转）
 }
 
 interface CompletedTask {
@@ -257,9 +254,9 @@ export default function AnnotationTaskListPage() {
     try {
       const { supabase } = await import('../api/supabase');
       
-      console.log('🔍 查询所有人被打回的数据（从 rejected_annotations 表）');
+      console.log('🔍 查询所有标注人被打回的数据（从 rejected_annotations 表）');
       
-      // 🆕 从 rejected_annotations 表查询所有未重新提交的被打回数据（所有标注人）
+      // 🆕 从 rejected_annotations 表查询所有未重新提交的被打回数据（所有人可见）
       const { data: rejectedData, error } = await supabase
         .from('rejected_annotations')
         .select('*')
@@ -268,13 +265,12 @@ export default function AnnotationTaskListPage() {
       
       if (error) {
         console.error('❌ 查询 rejected_annotations 表失败:', error);
-        // 如果表不存在，回退到旧逻辑（只查询当前标注人）
+        // 如果表不存在，回退到旧逻辑（查询所有标注人）
         console.log('⚠️ rejected_annotations 表可能不存在，使用旧逻辑查询 annotations 表');
         
         let { data: allAnnotations, error: annotationsError } = await supabase
           .from('annotations')
           .select('id, video_id, original_text, human_annotated_text, major_category, minor_category, inspector, annotator, is_qualified, updated_at, created_at, rejection_count')
-          .eq('annotator', annotatorName)
           .not('inspector', 'is', null)
           .neq('inspector', '')
           .eq('is_qualified', false);
@@ -288,51 +284,127 @@ export default function AnnotationTaskListPage() {
         const allVideos = await getVideos();
         const videoMap = new Map(allVideos.map(v => [v.id, v]));
         
-        const rejected = (allAnnotations || [])
-          .map(item => {
-            const video = videoMap.get(item.video_id);
-            return {
-              id: item.id,
+        // 🆕 按视频分组统计被打回的数据
+        const videoRejectedMap = new Map<string, {
+          videoId: string;
+          videoName: string;
+          subject: string;
+          annotators: Set<string>;
+          inspectors: Set<string>;
+          annotationIds: string[];
+          lastRejectedTime: string;
+          count: number;
+        }>();
+        
+        (allAnnotations || []).forEach(item => {
+          const videoId = item.video_id;
+          const video = videoMap.get(videoId);
+          
+          if (!videoRejectedMap.has(videoId)) {
+            videoRejectedMap.set(videoId, {
               videoId: item.video_id,
               videoName: video?.name || '未知视频',
               subject: video?.subject || '未知',
-              originalText: item.original_text || '',
-              annotatedText: item.human_annotated_text || '',
-              majorCategory: item.major_category || '',
-              minorCategory: item.minor_category || '',
-              inspector: item.inspector || '未知',
-              annotator: item.annotator || '',
-              rejectedTime: item.updated_at || item.created_at || '',
-              rejectionCount: item.rejection_count || 0
-            };
-          })
-          .sort((a, b) => b.rejectedTime.localeCompare(a.rejectedTime));
+              annotators: new Set<string>(),
+              inspectors: new Set<string>(),
+              annotationIds: [],
+              lastRejectedTime: item.updated_at || item.created_at || '',
+              count: 0
+            });
+          }
+          
+          const videoData = videoRejectedMap.get(videoId)!;
+          videoData.count++;
+          if (item.annotator) videoData.annotators.add(item.annotator);
+          if (item.inspector) videoData.inspectors.add(item.inspector);
+          videoData.annotationIds.push(item.id);
+          
+          // 更新最后打回时间（取最新的）
+          const currentTime = item.updated_at || item.created_at || '';
+          if (currentTime && currentTime > videoData.lastRejectedTime) {
+            videoData.lastRejectedTime = currentTime;
+          }
+        });
+        
+        // 转换为数组格式并按最后打回时间排序
+        const rejected: RejectedAnnotation[] = Array.from(videoRejectedMap.values())
+          .map(item => ({
+            id: item.videoId,
+            videoId: item.videoId,
+            videoName: item.videoName,
+            subject: item.subject,
+            rejectedCount: item.count,
+            annotators: Array.from(item.annotators),
+            inspectors: Array.from(item.inspectors),
+            lastRejectedTime: item.lastRejectedTime,
+            annotationIds: item.annotationIds
+          }))
+          .sort((a, b) => b.lastRejectedTime.localeCompare(a.lastRejectedTime));
         
         setRejectedItems(rejected);
-        console.log(`✅ [旧逻辑] 加载了 ${rejected.length} 条被打回的数据`);
+        console.log(`✅ [旧逻辑] 加载了 ${rejected.length} 个视频的被打回数据，共 ${(allAnnotations || []).length} 条句子（所有标注人）`);
         return;
       }
       
       console.log('📊 从 rejected_annotations 表查询到的数据数量:', rejectedData?.length || 0);
       
-      // 转换数据格式
-      const rejected: RejectedAnnotation[] = (rejectedData || []).map(item => ({
-        id: item.annotation_id, // 使用原始 annotation_id 以便跳转到标注页面
-        videoId: item.video_id,
-        videoName: item.video_name,
-        subject: item.subject,
-        originalText: item.original_text || '',
-        annotatedText: item.human_annotated_text || '',
-        majorCategory: item.major_category || '',
-        minorCategory: item.minor_category || '',
-        inspector: item.inspector || '未知',
-        annotator: item.annotator || '',
-        rejectedTime: item.rejected_at || '',
-        rejectionCount: item.rejection_count || 1
-      }));
+      // 🆕 按视频分组统计被打回的数据
+      const videoRejectedMap = new Map<string, {
+        videoId: string;
+        videoName: string;
+        subject: string;
+        annotators: Set<string>;
+        inspectors: Set<string>;
+        annotationIds: string[];
+        lastRejectedTime: string;
+        count: number;
+      }>();
+      
+      (rejectedData || []).forEach(item => {
+        const videoId = item.video_id;
+        
+        if (!videoRejectedMap.has(videoId)) {
+          videoRejectedMap.set(videoId, {
+            videoId: item.video_id,
+            videoName: item.video_name,
+            subject: item.subject,
+            annotators: new Set<string>(),
+            inspectors: new Set<string>(),
+            annotationIds: [],
+            lastRejectedTime: item.rejected_at || '',
+            count: 0
+          });
+        }
+        
+        const videoData = videoRejectedMap.get(videoId)!;
+        videoData.count++;
+        if (item.annotator) videoData.annotators.add(item.annotator);
+        if (item.inspector) videoData.inspectors.add(item.inspector);
+        videoData.annotationIds.push(item.annotation_id);
+        
+        // 更新最后打回时间（取最新的）
+        if (item.rejected_at && item.rejected_at > videoData.lastRejectedTime) {
+          videoData.lastRejectedTime = item.rejected_at;
+        }
+      });
+      
+      // 转换为数组格式并按最后打回时间排序
+      const rejected: RejectedAnnotation[] = Array.from(videoRejectedMap.values())
+        .map(item => ({
+          id: item.videoId, // 使用视频ID作为唯一标识
+          videoId: item.videoId,
+          videoName: item.videoName,
+          subject: item.subject,
+          rejectedCount: item.count,
+          annotators: Array.from(item.annotators),
+          inspectors: Array.from(item.inspectors),
+          lastRejectedTime: item.lastRejectedTime,
+          annotationIds: item.annotationIds
+        }))
+        .sort((a, b) => b.lastRejectedTime.localeCompare(a.lastRejectedTime));
       
       setRejectedItems(rejected);
-      console.log(`✅ 加载了 ${rejected.length} 条被打回的数据（所有标注人，未重新提交）`);
+      console.log(`✅ 加载了 ${rejected.length} 个视频的被打回数据，共 ${rejectedData?.length || 0} 条句子（所有标注人，未重新提交）`);
     } catch (error) {
       console.error('加载被打回数据失败:', error);
       message.error('加载被打回数据失败');
@@ -507,16 +579,43 @@ export default function AnnotationTaskListPage() {
   };
 
   const handleReannotate = (item: RejectedAnnotation) => {
-    // 跳转到标注页面，并传递视频ID、标注员姓名，以及标记这是重新标注
-    navigate('/annotation', {
-      state: {
+    // 🆕 按视频展示时，需要选择具体标注人查看被打回的详情
+    if (item.annotators.length === 1) {
+      // 如果只有一个标注人，直接跳转
+      navigate('/annotation', {
+        state: {
+          videoId: item.videoId,
+          videoName: item.videoName,
+          annotatorName: item.annotators[0],
+          isReannotation: true, // 标记这是重新标注
+          viewOnly: false // 可以编辑
+        }
+      });
+    } else {
+      // 如果有多个标注人，显示选择弹窗
+      setCurrentTask({
+        id: item.videoId,
         videoId: item.videoId,
         videoName: item.videoName,
-        annotatorName: annotatorName,
-        isReannotation: true, // 标记这是重新标注
-        focusItemId: item.id // 可以聚焦到具体的标注项
-      }
-    });
+        subject: item.subject,
+        totalSentences: 0,
+        annotationFileName: '',
+        annotator: '',
+        completedAnnotators: 0,
+        requiredAnnotators: 0,
+        uploadTime: '',
+        annotatedSentences: 0,
+        progressPercentage: 0,
+        isCompleted: false,
+        annotationCount: 0,
+        passedCount: 0,
+        rejectedCount: item.rejectedCount,
+        pendingCount: 0,
+        completedTime: item.lastRejectedTime
+      });
+      setAvailableAnnotators(item.annotators);
+      setAnnotatorSelectModalVisible(true);
+    }
   };
 
   const columns = [
@@ -618,14 +717,7 @@ export default function AnnotationTaskListPage() {
       title: '视频名称',
       dataIndex: 'videoName',
       key: 'videoName',
-      width: 200,
-      render: (text: string, record: RejectedAnnotation) => {
-        const rejectionCount = record.rejectionCount || 0;
-        if (rejectionCount > 0) {
-          return `${text}（被打回第${rejectionCount}次）`;
-        }
-        return text;
-      }
+      width: 300
     },
     {
       title: '科目',
@@ -635,77 +727,58 @@ export default function AnnotationTaskListPage() {
       render: (text: string) => <Tag color="blue">{text}</Tag>
     },
     {
-      title: '原文',
-      dataIndex: 'originalText',
-      key: 'originalText',
-      width: 200,
-      ellipsis: true
-    },
-    {
-      title: '标注内容',
-      dataIndex: 'annotatedText',
-      key: 'annotatedText',
-      width: 200,
-      ellipsis: true
-    },
-    {
-      title: '问题大类',
-      dataIndex: 'majorCategory',
-      key: 'majorCategory',
+      title: '被打回句子数',
+      dataIndex: 'rejectedCount',
+      key: 'rejectedCount',
       width: 120,
-      render: (text: string) => {
-        if (!text) return '-';
-        return text.split(',').map((cat, idx) => (
-          <Tag key={idx} color="orange">{cat}</Tag>
-        ));
-      }
+      align: 'center' as const,
+      render: (count: number) => (
+        <Tag color="red" style={{ fontSize: '14px', fontWeight: 'bold' }}>
+          {count} 条
+        </Tag>
+      )
     },
     {
-      title: '问题小类',
-      dataIndex: 'minorCategory',
-      key: 'minorCategory',
-      width: 120,
-      render: (text: string) => {
-        if (!text) return '-';
-        return text.split(',').map((cat, idx) => (
-          <Tag key={idx} color="gold">{cat}</Tag>
-        ));
-      }
+      title: '标注人',
+      dataIndex: 'annotators',
+      key: 'annotators',
+      width: 200,
+      render: (annotators: string[]) => (
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          {annotators.map((annotator, idx) => (
+            <Tag key={idx} color="purple" icon={<UserOutlined />}>
+              {annotator}
+            </Tag>
+          ))}
+        </div>
+      )
     },
     {
       title: '质检人',
-      dataIndex: 'inspector',
-      key: 'inspector',
-      width: 100,
-      render: (text: string) => (
-        <Tag icon={<UserOutlined />} color="red">
-          {text}
-        </Tag>
+      dataIndex: 'inspectors',
+      key: 'inspectors',
+      width: 200,
+      render: (inspectors: string[]) => (
+        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+          {inspectors.map((inspector, idx) => (
+            <Tag key={idx} color="red" icon={<UserOutlined />}>
+              {inspector}
+            </Tag>
+          ))}
+        </div>
       )
     },
     {
-      title: '质检状态',
-      dataIndex: 'isQualified',
-      key: 'isQualified',
-      width: 100,
-      align: 'center' as const,
-      render: (isQualified: boolean) => (
-        <Tag color="red" icon={<CloseOutlined />}>
-          未通过
-        </Tag>
-      )
-    },
-    {
-      title: '打回时间',
-      dataIndex: 'rejectedTime',
-      key: 'rejectedTime',
-      width: 150,
+      title: '最后打回时间',
+      dataIndex: 'lastRejectedTime',
+      key: 'lastRejectedTime',
+      width: 180,
       render: (text: string) => new Date(text).toLocaleString('zh-CN')
     },
     {
       title: '操作',
       key: 'action',
-      width: 200,
+      width: 150,
       fixed: 'right' as const,
       render: (_: any, record: RejectedAnnotation) => (
         <Space>
@@ -715,16 +788,7 @@ export default function AnnotationTaskListPage() {
             icon={<WarningOutlined />}
             onClick={() => handleReannotate(record)}
           >
-            重新标注
-          </Button>
-          <Button
-            icon={<HistoryOutlined />}
-            onClick={() => {
-              setCurrentAnnotationId(record.id);
-              setHistoryModalVisible(true);
-            }}
-          >
-            历史
+            查看详情
           </Button>
         </Space>
       )
@@ -1039,9 +1103,9 @@ export default function AnnotationTaskListPage() {
                     pagination={{
                       pageSize: 20,
                       showSizeChanger: true,
-                      showTotal: (total) => `共 ${total} 条待重标数据`
+                      showTotal: (total) => `共 ${total} 个视频有被打回的数据`
                     }}
-                    scroll={{ x: 1400 }}
+                    scroll={{ x: 1200 }}
                   />
                 )
               }
