@@ -480,10 +480,10 @@ export default function ReviewSelectPage() {
       // 2. 对每个已完成的视频，统计标注人的复检情况
       const videoStatsPromises = completedVideos.map(async (video) => {
         // 查询该视频的所有标注数据（按标注人分组）
-        // 🔧 重要：必须包含 sentence_no 字段，用于去重逻辑
+        // 🔧 重要：必须包含 sentence_no 和 status 字段，用于去重逻辑和完成状态判断
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified, created_at')
+          .select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified, created_at, status')
           .eq('video_id', video.id)
           .not('annotator', 'is', null)
           .neq('annotator', '')
