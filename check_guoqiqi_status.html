@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 快速检查 - 郭其其被打回状态</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 30px;
+            font-size: 28px;
+            text-align: center;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            display: block;
+            margin: 20px auto;
+            transition: transform 0.2s;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+        }
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.pending {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+        .status.done {
+            background: #55efc4;
+            color: #00b894;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .summary-card .number {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .summary-card .label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .alert.success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .alert.warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .alert.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 快速检查 - 郭其其被打回状态</h1>
+        
+        <button class="btn" id="checkBtn" onclick="checkStatus()">
+            🚀 检查当前状态
+        </button>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://yybbjsltzxqfvquxauny.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YmJqc2x0enhxZnZxdXhhdW55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2ODU5NzYsImV4cCI6MjA0ODI2MTk3Nn0.7h9OsNCqjlC9s-dJx9ZYuUFvvUjN13SksgcdFkaBwgY';
+        
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function checkStatus() {
+            const output = document.getElementById('output');
+            const btn = document.getElementById('checkBtn');
+            
+            output.innerHTML = '<div class="alert warning">⏳ 正在查询数据...</div>';
+            btn.disabled = true;
+
+            try {
+                // 1. 查询 rejected_annotations 表中郭其其的所有记录
+                const { data: rejectedData, error: rejectedError } = await supabaseClient
+                    .from('rejected_annotations')
+                    .select('*')
+                    .eq('annotator', '郭其其')
+                    .order('rejected_at', { ascending: false });
+
+                if (rejectedError) throw rejectedError;
+
+                // 2. 统计数据
+                const totalRecords = rejectedData.length;
+                const pendingRecords = rejectedData.filter(r => r.is_resubmitted === false).length;
+                const completedRecords = rejectedData.filter(r => r.is_resubmitted === true).length;
+
+                // 3. 按视频分组
+                const videoMap = new Map();
+                rejectedData.forEach(record => {
+                    if (!videoMap.has(record.video_name)) {
+                        videoMap.set(record.video_name, {
+                            videoName: record.video_name,
+                            total: 0,
+                            pending: 0,
+                            completed: 0,
+                            records: []
+                        });
+                    }
+                    const video = videoMap.get(record.video_name);
+                    video.total++;
+                    if (record.is_resubmitted === false) {
+                        video.pending++;
+                    } else {
+                        video.completed++;
+                    }
+                    video.records.push(record);
+                });
+
+                // 4. 显示结果
+                let html = '';
+
+                // 总体统计
+                html += '<div class="summary">';
+                html += `
+                    <div class="summary-card">
+                        <div class="label">总打回记录</div>
+                        <div class="number">${totalRecords}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">🔴 待重新提交</div>
+                        <div class="number">${pendingRecords}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">✅ 已完成</div>
+                        <div class="number">${completedRecords}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">视频数量</div>
+                        <div class="number">${videoMap.size}</div>
+                    </div>
+                `;
+                html += '</div>';
+
+                // 状态提示
+                if (pendingRecords === 0) {
+                    html += '<div class="alert success">✅ <strong>太好了！</strong> 郭其其没有待处理的被打回记录。如果前端还显示，请刷新页面（Ctrl+F5 或 Cmd+Shift+R）清除缓存。</div>';
+                } else {
+                    html += `<div class="alert warning">⚠️ <strong>发现问题！</strong> 还有 ${pendingRecords} 条待处理的被打回记录。</div>`;
+                }
+
+                // 按视频展示
+                html += '<h2 style="margin-top: 30px; color: #667eea;">📋 按视频分组统计</h2>';
+                html += '<div class="table-container"><table>';
+                html += '<thead><tr><th>视频名称</th><th>总记录数</th><th>🔴 待处理</th><th>✅ 已完成</th><th>状态</th></tr></thead>';
+                html += '<tbody>';
+                
+                Array.from(videoMap.values())
+                    .sort((a, b) => b.pending - a.pending)
+                    .forEach(video => {
+                        const statusClass = video.pending > 0 ? 'pending' : 'done';
+                        const statusText = video.pending > 0 ? '🔴 有待处理' : '✅ 全部完成';
+                        html += `
+                            <tr>
+                                <td><strong>${video.videoName}</strong></td>
+                                <td>${video.total}</td>
+                                <td>${video.pending}</td>
+                                <td>${video.completed}</td>
+                                <td><span class="status ${statusClass}">${statusText}</span></td>
+                            </tr>
+                        `;
+                    });
+                
+                html += '</tbody></table></div>';
+
+                // 详细记录（只显示待处理的）
+                if (pendingRecords > 0) {
+                    html += '<h2 style="margin-top: 30px; color: #d63031;">🔴 待处理的详细记录</h2>';
+                    html += '<div class="table-container"><table>';
+                    html += '<thead><tr><th>视频名称</th><th>句子号</th><th>打回次数</th><th>打回时间</th><th>质检人</th></tr></thead>';
+                    html += '<tbody>';
+                    
+                    rejectedData
+                        .filter(r => r.is_resubmitted === false)
+                        .forEach(record => {
+                            html += `
+                                <tr>
+                                    <td>${record.video_name}</td>
+                                    <td>${record.sentence_no}</td>
+                                    <td>${record.rejection_count}</td>
+                                    <td>${new Date(record.rejected_at).toLocaleString('zh-CN')}</td>
+                                    <td>${record.inspector}</td>
+                                </tr>
+                            `;
+                        });
+                    
+                    html += '</tbody></table></div>';
+                }
+
+                output.innerHTML = html;
+
+            } catch (error) {
+                console.error('查询失败:', error);
+                output.innerHTML = `<div class="alert error">❌ <strong>查询失败:</strong> ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            checkStatus();
+        });
+    </script>
+</body>
+</html>
+
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 快速检查 - 郭其其被打回状态</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 30px;
+            font-size: 28px;
+            text-align: center;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+            display: block;
+            margin: 20px auto;
+            transition: transform 0.2s;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .table-container {
+            overflow-x: auto;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            text-align: left;
+            font-weight: bold;
+        }
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status.pending {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+        .status.done {
+            background: #55efc4;
+            color: #00b894;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .summary-card .number {
+            font-size: 36px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .summary-card .label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        .alert.success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .alert.warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .alert.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 快速检查 - 郭其其被打回状态</h1>
+        
+        <button class="btn" id="checkBtn" onclick="checkStatus()">
+            🚀 检查当前状态
+        </button>
+
+        <div id="output"></div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://yybbjsltzxqfvquxauny.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YmJqc2x0enhxZnZxdXhhdW55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2ODU5NzYsImV4cCI6MjA0ODI2MTk3Nn0.7h9OsNCqjlC9s-dJx9ZYuUFvvUjN13SksgcdFkaBwgY';
+        
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        async function checkStatus() {
+            const output = document.getElementById('output');
+            const btn = document.getElementById('checkBtn');
+            
+            output.innerHTML = '<div class="alert warning">⏳ 正在查询数据...</div>';
+            btn.disabled = true;
+
+            try {
+                // 1. 查询 rejected_annotations 表中郭其其的所有记录
+                const { data: rejectedData, error: rejectedError } = await supabaseClient
+                    .from('rejected_annotations')
+                    .select('*')
+                    .eq('annotator', '郭其其')
+                    .order('rejected_at', { ascending: false });
+
+                if (rejectedError) throw rejectedError;
+
+                // 2. 统计数据
+                const totalRecords = rejectedData.length;
+                const pendingRecords = rejectedData.filter(r => r.is_resubmitted === false).length;
+                const completedRecords = rejectedData.filter(r => r.is_resubmitted === true).length;
+
+                // 3. 按视频分组
+                const videoMap = new Map();
+                rejectedData.forEach(record => {
+                    if (!videoMap.has(record.video_name)) {
+                        videoMap.set(record.video_name, {
+                            videoName: record.video_name,
+                            total: 0,
+                            pending: 0,
+                            completed: 0,
+                            records: []
+                        });
+                    }
+                    const video = videoMap.get(record.video_name);
+                    video.total++;
+                    if (record.is_resubmitted === false) {
+                        video.pending++;
+                    } else {
+                        video.completed++;
+                    }
+                    video.records.push(record);
+                });
+
+                // 4. 显示结果
+                let html = '';
+
+                // 总体统计
+                html += '<div class="summary">';
+                html += `
+                    <div class="summary-card">
+                        <div class="label">总打回记录</div>
+                        <div class="number">${totalRecords}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">🔴 待重新提交</div>
+                        <div class="number">${pendingRecords}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">✅ 已完成</div>
+                        <div class="number">${completedRecords}</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="label">视频数量</div>
+                        <div class="number">${videoMap.size}</div>
+                    </div>
+                `;
+                html += '</div>';
+
+                // 状态提示
+                if (pendingRecords === 0) {
+                    html += '<div class="alert success">✅ <strong>太好了！</strong> 郭其其没有待处理的被打回记录。如果前端还显示，请刷新页面（Ctrl+F5 或 Cmd+Shift+R）清除缓存。</div>';
+                } else {
+                    html += `<div class="alert warning">⚠️ <strong>发现问题！</strong> 还有 ${pendingRecords} 条待处理的被打回记录。</div>`;
+                }
+
+                // 按视频展示
+                html += '<h2 style="margin-top: 30px; color: #667eea;">📋 按视频分组统计</h2>';
+                html += '<div class="table-container"><table>';
+                html += '<thead><tr><th>视频名称</th><th>总记录数</th><th>🔴 待处理</th><th>✅ 已完成</th><th>状态</th></tr></thead>';
+                html += '<tbody>';
+                
+                Array.from(videoMap.values())
+                    .sort((a, b) => b.pending - a.pending)
+                    .forEach(video => {
+                        const statusClass = video.pending > 0 ? 'pending' : 'done';
+                        const statusText = video.pending > 0 ? '🔴 有待处理' : '✅ 全部完成';
+                        html += `
+                            <tr>
+                                <td><strong>${video.videoName}</strong></td>
+                                <td>${video.total}</td>
+                                <td>${video.pending}</td>
+                                <td>${video.completed}</td>
+                                <td><span class="status ${statusClass}">${statusText}</span></td>
+                            </tr>
+                        `;
+                    });
+                
+                html += '</tbody></table></div>';
+
+                // 详细记录（只显示待处理的）
+                if (pendingRecords > 0) {
+                    html += '<h2 style="margin-top: 30px; color: #d63031;">🔴 待处理的详细记录</h2>';
+                    html += '<div class="table-container"><table>';
+                    html += '<thead><tr><th>视频名称</th><th>句子号</th><th>打回次数</th><th>打回时间</th><th>质检人</th></tr></thead>';
+                    html += '<tbody>';
+                    
+                    rejectedData
+                        .filter(r => r.is_resubmitted === false)
+                        .forEach(record => {
+                            html += `
+                                <tr>
+                                    <td>${record.video_name}</td>
+                                    <td>${record.sentence_no}</td>
+                                    <td>${record.rejection_count}</td>
+                                    <td>${new Date(record.rejected_at).toLocaleString('zh-CN')}</td>
+                                    <td>${record.inspector}</td>
+                                </tr>
+                            `;
+                        });
+                    
+                    html += '</tbody></table></div>';
+                }
+
+                output.innerHTML = html;
+
+            } catch (error) {
+                console.error('查询失败:', error);
+                output.innerHTML = `<div class="alert error">❌ <strong>查询失败:</strong> ${error.message}</div>`;
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // 页面加载时自动检查
+        window.addEventListener('load', () => {
+            checkStatus();
+        });
+    </script>
+</body>
+</html>
+

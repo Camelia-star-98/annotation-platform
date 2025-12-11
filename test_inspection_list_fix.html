@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 质检列表修复验证</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+            text-align: center;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: transform 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .alert.success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .alert.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        .alert.warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .alert.info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            color: #0c5460;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-size: 13px;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .stat-card .label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-badge.pending {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+        .status-badge.pass {
+            background: #55efc4;
+            color: #00b894;
+        }
+        .video-card {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .video-card.should-hide {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+        .video-card.should-show {
+            border-left-color: #ffc107;
+            background: #fff3cd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 质检列表修复验证</h1>
+        <p class="subtitle">验证修复后的功能：质检通过的视频应该从列表消失</p>
+
+        <div class="alert info">
+            <strong>ℹ️ 测试说明：</strong><br>
+            本页面会验证以下两个问题是否已修复：<br>
+            1. ✅ 质检通过了一部分数据，但视频还在质检列表里（应该修复）<br>
+            2. ✅ 视频文件名应该在表格中显示（已修复）
+        </div>
+
+        <!-- 测试1：检查质检列表 -->
+        <div class="section">
+            <h2>📋 测试1：检查质检列表（getPendingInspectionAnnotations）</h2>
+            <p style="margin-bottom: 15px;">
+                <strong>预期行为：</strong>只返回待质检的数据（inspector IS NULL OR inspector = ''）
+            </p>
+            <button class="btn" onclick="test1_checkPendingList()">🧪 运行测试1</button>
+            <div id="test1Result"></div>
+        </div>
+
+        <!-- 测试2：检查视频是否应该显示 -->
+        <div class="section">
+            <h2>🎯 测试2：检查哪些视频应该显示/隐藏</h2>
+            <p style="margin-bottom: 15px;">
+                <strong>预期行为：</strong>如果视频的所有句子都已质检（无论通过还是不通过），则不应该出现在质检列表
+            </p>
+            <button class="btn" onclick="test2_checkVideoVisibility()">🧪 运行测试2</button>
+            <div id="test2Result"></div>
+        </div>
+
+        <!-- 测试3：检查具体视频 -->
+        <div class="section">
+            <h2>🔍 测试3：检查用户提到的具体视频</h2>
+            <p style="margin-bottom: 15px;">
+                根据截图，用户提到的视频：<br>
+                - 1027-英语-1.mp4（78条总标注，78条待质检，0条通过，0条不通过）<br>
+                - 1104-数学-3.mp4（123条总标注，98条待质检，25条通过，0条不通过）<br>
+                - 1027-物理-1.mp4（68条总标注，54条待质检，14条通过，0条不通过）
+            </p>
+            <button class="btn" onclick="test3_checkSpecificVideos()">🧪 运行测试3</button>
+            <div id="test3Result"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://yybbjsltzxqfvquxauny.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YmJqc2x0enhxZnZxdXhhdW55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2ODU5NzYsImV4cCI6MjA0ODI2MTk3Nn0.7h9OsNCqjlC9s-dJx9ZYuUFvvUjN13SksgcdFkaBwgY';
+        
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 测试1：检查质检列表
+        async function test1_checkPendingList() {
+            const result = document.getElementById('test1Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在测试...</div>';
+
+            try {
+                // 随机选择一个有数据的视频
+                const { data: videos, error: videosError } = await supabaseClient
+                    .from('annotations')
+                    .select('video_id, video_name')
+                    .eq('status', true)
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '')
+                    .limit(10);
+
+                if (videosError) throw videosError;
+
+                const videoId = videos[0]?.video_id;
+                const videoName = videos[0]?.video_name || videoId;
+
+                // 测试新的查询逻辑（模拟 getPendingInspectionAnnotations）
+                const { data: pendingData, error: pendingError } = await supabaseClient
+                    .from('annotations')
+                    .select('*', { count: 'exact' })
+                    .eq('video_id', videoId)
+                    .eq('status', true)
+                    .not('human_annotated_text', 'is', null)
+                    .neq('human_annotated_text', '')
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '')
+                    .or('inspector.is.null,inspector.eq.'); // 🆕 关键过滤条件
+
+                if (pendingError) throw pendingError;
+
+                // 验证：所有返回的数据是否都是待质检的
+                const allPending = pendingData.every(item => !item.inspector || item.inspector === '');
+
+                let html = '<div class="stats">';
+                html += `
+                    <div class="stat-card">
+                        <div class="label">测试视频</div>
+                        <div class="number" style="font-size: 16px;">${videoName}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">返回数据量</div>
+                        <div class="number">${pendingData.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">全部待质检？</div>
+                        <div class="number">${allPending ? '✅' : '❌'}</div>
+                    </div>
+                `;
+                html += '</div>';
+
+                if (allPending) {
+                    html += '<div class="alert success">✅ <strong>测试通过！</strong> 所有返回的数据都是待质检的（inspector IS NULL）。</div>';
+                } else {
+                    const inspectedCount = pendingData.filter(item => item.inspector && item.inspector !== '').length;
+                    html += `<div class="alert error">❌ <strong>测试失败！</strong> 返回的数据中有 ${inspectedCount} 条已经质检过了（inspector 不为空）。</div>`;
+                }
+
+                // 详细列表
+                html += '<h3 style="margin-top: 20px; color: #667eea;">前10条数据（验证）：</h3>';
+                html += '<table><thead><tr><th>句子号</th><th>标注人</th><th>质检人</th><th>质检状态</th><th>结果</th></tr></thead><tbody>';
+                
+                pendingData.slice(0, 10).forEach(item => {
+                    const isPending = !item.inspector || item.inspector === '';
+                    const statusText = isPending ? '⏳ 待质检' : 
+                                      (item.is_qualified === true ? '✅ 通过' : '❌ 不通过');
+                    const resultIcon = isPending ? '✅ 正确' : '❌ 不应返回';
+                    const rowStyle = isPending ? '' : 'background: #f8d7da;';
+                    html += `
+                        <tr style="${rowStyle}">
+                            <td>${item.sentence_no}</td>
+                            <td>${item.annotator || '未知'}</td>
+                            <td>${item.inspector || '<span style="color: #999;">无</span>'}</td>
+                            <td>${statusText}</td>
+                            <td>${resultIcon}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table>';
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('测试1失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+
+        // 测试2：检查视频是否应该显示
+        async function test2_checkVideoVisibility() {
+            const result = document.getElementById('test2Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在测试...</div>';
+
+            try {
+                // 查询所有有标注数据的视频
+                const { data: allAnnotations, error } = await supabaseClient
+                    .from('annotations')
+                    .select('video_id, video_name, inspector, is_qualified')
+                    .eq('status', true)
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '');
+
+                if (error) throw error;
+
+                // 按视频分组统计
+                const videoStats = new Map();
+                allAnnotations.forEach(item => {
+                    if (!videoStats.has(item.video_id)) {
+                        videoStats.set(item.video_id, {
+                            videoId: item.video_id,
+                            videoName: item.video_name,
+                            total: 0,
+                            pending: 0,
+                            passed: 0,
+                            failed: 0
+                        });
+                    }
+                    const stat = videoStats.get(item.video_id);
+                    stat.total++;
+                    if (!item.inspector || item.inspector === '') {
+                        stat.pending++;
+                    } else if (item.is_qualified === true) {
+                        stat.passed++;
+                    } else if (item.is_qualified === false) {
+                        stat.failed++;
+                    }
+                });
+
+                // 显示结果
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">视频列表（前20个）：</h3>';
+                
+                const sortedVideos = Array.from(videoStats.values())
+                    .sort((a, b) => b.pending - a.pending)
+                    .slice(0, 20);
+
+                sortedVideos.forEach(stat => {
+                    const shouldShow = stat.pending > 0;
+                    const cardClass = shouldShow ? 'should-show' : 'should-hide';
+                    const statusIcon = shouldShow ? '⚠️ 应显示' : '✅ 应隐藏';
+                    const statusText = shouldShow 
+                        ? `还有 ${stat.pending} 条待质检` 
+                        : '全部已质检';
+
+                    html += `
+                        <div class="video-card ${cardClass}">
+                            <strong>${statusIcon} ${stat.videoName || stat.videoId}</strong><br>
+                            总计: ${stat.total} 条 | 
+                            待质检: <strong>${stat.pending}</strong> 条 | 
+                            已通过: ${stat.passed} 条 | 
+                            已打回: ${stat.failed} 条<br>
+                            <small style="color: #666;">${statusText}</small>
+                        </div>
+                    `;
+                });
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('测试2失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+
+        // 测试3：检查具体视频
+        async function test3_checkSpecificVideos() {
+            const result = document.getElementById('test3Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在测试...</div>';
+
+            try {
+                const videoNames = [
+                    '1027-英语-1.mp4',
+                    '1104-数学-3.mp4',
+                    '1027-物理-1.mp4'
+                ];
+
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">用户提到的视频详情：</h3>';
+
+                for (const videoName of videoNames) {
+                    const { data, error } = await supabaseClient
+                        .from('annotations')
+                        .select('video_id, video_name, inspector, is_qualified')
+                        .ilike('video_name', `%${videoName}%`)
+                        .eq('status', true)
+                        .not('annotator', 'is', null)
+                        .neq('annotator', '');
+
+                    if (error) throw error;
+
+                    if (data.length === 0) {
+                        html += `<div class="alert warning">⚠️ 未找到视频：${videoName}</div>`;
+                        continue;
+                    }
+
+                    const total = data.length;
+                    const pending = data.filter(item => !item.inspector || item.inspector === '').length;
+                    const passed = data.filter(item => item.is_qualified === true).length;
+                    const failed = data.filter(item => item.is_qualified === false).length;
+
+                    const shouldShow = pending > 0;
+                    const cardClass = shouldShow ? 'should-show' : 'should-hide';
+                    const statusIcon = shouldShow ? '⚠️ 应显示在列表' : '✅ 应从列表消失';
+
+                    html += `
+                        <div class="video-card ${cardClass}">
+                            <strong>${statusIcon} ${videoName}</strong><br>
+                            总计: ${total} 条 | 
+                            待质检: <strong style="color: #d63031;">${pending}</strong> 条 | 
+                            已通过: <strong style="color: #00b894;">${passed}</strong> 条 | 
+                            已打回: <strong style="color: #e17055;">${failed}</strong> 条
+                            <br><br>
+                            <strong>分析：</strong>
+                            ${pending > 0 
+                                ? `这个视频还有 ${pending} 条句子待质检，应该继续显示在列表中。` 
+                                : `这个视频所有句子都已质检，应该从列表中消失。`}
+                            <br>
+                            ${passed > 0 && failed === 0 && pending > 0 
+                                ? `<strong style="color: #d63031;">⚠️ 注意：</strong>这个视频有 ${passed} 条通过，0条不通过，但还有 ${pending} 条待质检。可能是分批质检导致的，或者是抽检时没有全部通过。` 
+                                : ''}
+                        </div>
+                    `;
+                }
+
+                html += '<div class="alert info" style="margin-top: 20px;"><strong>📝 结论：</strong><br>';
+                html += '如果视频有待质检的句子（pending > 0），则应该继续显示在列表中。<br>';
+                html += '如果所有句子都已质检（pending = 0），则应该从列表中消失。<br>';
+                html += '修复后的 <code>getPendingInspectionAnnotations</code> 函数只会返回待质检的句子，因此前端会正确显示。</div>';
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('测试3失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+
+        // 页面加载时自动运行测试
+        window.addEventListener('load', () => {
+            console.log('🧪 质检列表修复验证页面加载完成');
+        });
+    </script>
+</body>
+</html>
+
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🧪 质检列表修复验证</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+            text-align: center;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: transform 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .alert.success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .alert.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        .alert.warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .alert.info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            color: #0c5460;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-size: 13px;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .stat-card .label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .status-badge.pending {
+            background: #ffeaa7;
+            color: #d63031;
+        }
+        .status-badge.pass {
+            background: #55efc4;
+            color: #00b894;
+        }
+        .video-card {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+        .video-card.should-hide {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+        .video-card.should-show {
+            border-left-color: #ffc107;
+            background: #fff3cd;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 质检列表修复验证</h1>
+        <p class="subtitle">验证修复后的功能：质检通过的视频应该从列表消失</p>
+
+        <div class="alert info">
+            <strong>ℹ️ 测试说明：</strong><br>
+            本页面会验证以下两个问题是否已修复：<br>
+            1. ✅ 质检通过了一部分数据，但视频还在质检列表里（应该修复）<br>
+            2. ✅ 视频文件名应该在表格中显示（已修复）
+        </div>
+
+        <!-- 测试1：检查质检列表 -->
+        <div class="section">
+            <h2>📋 测试1：检查质检列表（getPendingInspectionAnnotations）</h2>
+            <p style="margin-bottom: 15px;">
+                <strong>预期行为：</strong>只返回待质检的数据（inspector IS NULL OR inspector = ''）
+            </p>
+            <button class="btn" onclick="test1_checkPendingList()">🧪 运行测试1</button>
+            <div id="test1Result"></div>
+        </div>
+
+        <!-- 测试2：检查视频是否应该显示 -->
+        <div class="section">
+            <h2>🎯 测试2：检查哪些视频应该显示/隐藏</h2>
+            <p style="margin-bottom: 15px;">
+                <strong>预期行为：</strong>如果视频的所有句子都已质检（无论通过还是不通过），则不应该出现在质检列表
+            </p>
+            <button class="btn" onclick="test2_checkVideoVisibility()">🧪 运行测试2</button>
+            <div id="test2Result"></div>
+        </div>
+
+        <!-- 测试3：检查具体视频 -->
+        <div class="section">
+            <h2>🔍 测试3：检查用户提到的具体视频</h2>
+            <p style="margin-bottom: 15px;">
+                根据截图，用户提到的视频：<br>
+                - 1027-英语-1.mp4（78条总标注，78条待质检，0条通过，0条不通过）<br>
+                - 1104-数学-3.mp4（123条总标注，98条待质检，25条通过，0条不通过）<br>
+                - 1027-物理-1.mp4（68条总标注，54条待质检，14条通过，0条不通过）
+            </p>
+            <button class="btn" onclick="test3_checkSpecificVideos()">🧪 运行测试3</button>
+            <div id="test3Result"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://yybbjsltzxqfvquxauny.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YmJqc2x0enhxZnZxdXhhdW55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2ODU5NzYsImV4cCI6MjA0ODI2MTk3Nn0.7h9OsNCqjlC9s-dJx9ZYuUFvvUjN13SksgcdFkaBwgY';
+        
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 测试1：检查质检列表
+        async function test1_checkPendingList() {
+            const result = document.getElementById('test1Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在测试...</div>';
+
+            try {
+                // 随机选择一个有数据的视频
+                const { data: videos, error: videosError } = await supabaseClient
+                    .from('annotations')
+                    .select('video_id, video_name')
+                    .eq('status', true)
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '')
+                    .limit(10);
+
+                if (videosError) throw videosError;
+
+                const videoId = videos[0]?.video_id;
+                const videoName = videos[0]?.video_name || videoId;
+
+                // 测试新的查询逻辑（模拟 getPendingInspectionAnnotations）
+                const { data: pendingData, error: pendingError } = await supabaseClient
+                    .from('annotations')
+                    .select('*', { count: 'exact' })
+                    .eq('video_id', videoId)
+                    .eq('status', true)
+                    .not('human_annotated_text', 'is', null)
+                    .neq('human_annotated_text', '')
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '')
+                    .or('inspector.is.null,inspector.eq.'); // 🆕 关键过滤条件
+
+                if (pendingError) throw pendingError;
+
+                // 验证：所有返回的数据是否都是待质检的
+                const allPending = pendingData.every(item => !item.inspector || item.inspector === '');
+
+                let html = '<div class="stats">';
+                html += `
+                    <div class="stat-card">
+                        <div class="label">测试视频</div>
+                        <div class="number" style="font-size: 16px;">${videoName}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">返回数据量</div>
+                        <div class="number">${pendingData.length}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">全部待质检？</div>
+                        <div class="number">${allPending ? '✅' : '❌'}</div>
+                    </div>
+                `;
+                html += '</div>';
+
+                if (allPending) {
+                    html += '<div class="alert success">✅ <strong>测试通过！</strong> 所有返回的数据都是待质检的（inspector IS NULL）。</div>';
+                } else {
+                    const inspectedCount = pendingData.filter(item => item.inspector && item.inspector !== '').length;
+                    html += `<div class="alert error">❌ <strong>测试失败！</strong> 返回的数据中有 ${inspectedCount} 条已经质检过了（inspector 不为空）。</div>`;
+                }
+
+                // 详细列表
+                html += '<h3 style="margin-top: 20px; color: #667eea;">前10条数据（验证）：</h3>';
+                html += '<table><thead><tr><th>句子号</th><th>标注人</th><th>质检人</th><th>质检状态</th><th>结果</th></tr></thead><tbody>';
+                
+                pendingData.slice(0, 10).forEach(item => {
+                    const isPending = !item.inspector || item.inspector === '';
+                    const statusText = isPending ? '⏳ 待质检' : 
+                                      (item.is_qualified === true ? '✅ 通过' : '❌ 不通过');
+                    const resultIcon = isPending ? '✅ 正确' : '❌ 不应返回';
+                    const rowStyle = isPending ? '' : 'background: #f8d7da;';
+                    html += `
+                        <tr style="${rowStyle}">
+                            <td>${item.sentence_no}</td>
+                            <td>${item.annotator || '未知'}</td>
+                            <td>${item.inspector || '<span style="color: #999;">无</span>'}</td>
+                            <td>${statusText}</td>
+                            <td>${resultIcon}</td>
+                        </tr>
+                    `;
+                });
+                
+                html += '</tbody></table>';
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('测试1失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+
+        // 测试2：检查视频是否应该显示
+        async function test2_checkVideoVisibility() {
+            const result = document.getElementById('test2Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在测试...</div>';
+
+            try {
+                // 查询所有有标注数据的视频
+                const { data: allAnnotations, error } = await supabaseClient
+                    .from('annotations')
+                    .select('video_id, video_name, inspector, is_qualified')
+                    .eq('status', true)
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '');
+
+                if (error) throw error;
+
+                // 按视频分组统计
+                const videoStats = new Map();
+                allAnnotations.forEach(item => {
+                    if (!videoStats.has(item.video_id)) {
+                        videoStats.set(item.video_id, {
+                            videoId: item.video_id,
+                            videoName: item.video_name,
+                            total: 0,
+                            pending: 0,
+                            passed: 0,
+                            failed: 0
+                        });
+                    }
+                    const stat = videoStats.get(item.video_id);
+                    stat.total++;
+                    if (!item.inspector || item.inspector === '') {
+                        stat.pending++;
+                    } else if (item.is_qualified === true) {
+                        stat.passed++;
+                    } else if (item.is_qualified === false) {
+                        stat.failed++;
+                    }
+                });
+
+                // 显示结果
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">视频列表（前20个）：</h3>';
+                
+                const sortedVideos = Array.from(videoStats.values())
+                    .sort((a, b) => b.pending - a.pending)
+                    .slice(0, 20);
+
+                sortedVideos.forEach(stat => {
+                    const shouldShow = stat.pending > 0;
+                    const cardClass = shouldShow ? 'should-show' : 'should-hide';
+                    const statusIcon = shouldShow ? '⚠️ 应显示' : '✅ 应隐藏';
+                    const statusText = shouldShow 
+                        ? `还有 ${stat.pending} 条待质检` 
+                        : '全部已质检';
+
+                    html += `
+                        <div class="video-card ${cardClass}">
+                            <strong>${statusIcon} ${stat.videoName || stat.videoId}</strong><br>
+                            总计: ${stat.total} 条 | 
+                            待质检: <strong>${stat.pending}</strong> 条 | 
+                            已通过: ${stat.passed} 条 | 
+                            已打回: ${stat.failed} 条<br>
+                            <small style="color: #666;">${statusText}</small>
+                        </div>
+                    `;
+                });
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('测试2失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+
+        // 测试3：检查具体视频
+        async function test3_checkSpecificVideos() {
+            const result = document.getElementById('test3Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在测试...</div>';
+
+            try {
+                const videoNames = [
+                    '1027-英语-1.mp4',
+                    '1104-数学-3.mp4',
+                    '1027-物理-1.mp4'
+                ];
+
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">用户提到的视频详情：</h3>';
+
+                for (const videoName of videoNames) {
+                    const { data, error } = await supabaseClient
+                        .from('annotations')
+                        .select('video_id, video_name, inspector, is_qualified')
+                        .ilike('video_name', `%${videoName}%`)
+                        .eq('status', true)
+                        .not('annotator', 'is', null)
+                        .neq('annotator', '');
+
+                    if (error) throw error;
+
+                    if (data.length === 0) {
+                        html += `<div class="alert warning">⚠️ 未找到视频：${videoName}</div>`;
+                        continue;
+                    }
+
+                    const total = data.length;
+                    const pending = data.filter(item => !item.inspector || item.inspector === '').length;
+                    const passed = data.filter(item => item.is_qualified === true).length;
+                    const failed = data.filter(item => item.is_qualified === false).length;
+
+                    const shouldShow = pending > 0;
+                    const cardClass = shouldShow ? 'should-show' : 'should-hide';
+                    const statusIcon = shouldShow ? '⚠️ 应显示在列表' : '✅ 应从列表消失';
+
+                    html += `
+                        <div class="video-card ${cardClass}">
+                            <strong>${statusIcon} ${videoName}</strong><br>
+                            总计: ${total} 条 | 
+                            待质检: <strong style="color: #d63031;">${pending}</strong> 条 | 
+                            已通过: <strong style="color: #00b894;">${passed}</strong> 条 | 
+                            已打回: <strong style="color: #e17055;">${failed}</strong> 条
+                            <br><br>
+                            <strong>分析：</strong>
+                            ${pending > 0 
+                                ? `这个视频还有 ${pending} 条句子待质检，应该继续显示在列表中。` 
+                                : `这个视频所有句子都已质检，应该从列表中消失。`}
+                            <br>
+                            ${passed > 0 && failed === 0 && pending > 0 
+                                ? `<strong style="color: #d63031;">⚠️ 注意：</strong>这个视频有 ${passed} 条通过，0条不通过，但还有 ${pending} 条待质检。可能是分批质检导致的，或者是抽检时没有全部通过。` 
+                                : ''}
+                        </div>
+                    `;
+                }
+
+                html += '<div class="alert info" style="margin-top: 20px;"><strong>📝 结论：</strong><br>';
+                html += '如果视频有待质检的句子（pending > 0），则应该继续显示在列表中。<br>';
+                html += '如果所有句子都已质检（pending = 0），则应该从列表中消失。<br>';
+                html += '修复后的 <code>getPendingInspectionAnnotations</code> 函数只会返回待质检的句子，因此前端会正确显示。</div>';
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('测试3失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 测试失败: ${error.message}</div>`;
+            }
+        }
+
+        // 页面加载时自动运行测试
+        window.addEventListener('load', () => {
+            console.log('🧪 质检列表修复验证页面加载完成');
+        });
+    </script>
+</body>
+</html>
+

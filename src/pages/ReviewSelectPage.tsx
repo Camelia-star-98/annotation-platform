@@ -37,6 +37,8 @@ interface AnnotatorData {
   reviewers: string[]; // 复检人列表
   inspectors: string[]; // 质检人列表
   lastReviewTime?: string; // 最后复检时间
+  annotationFileName?: string; // 标注文件名
+  submittedAt?: string; // 提交时间（最早的created_at）
 }
 
 interface VideoWithAnnotators {
@@ -45,6 +47,7 @@ interface VideoWithAnnotators {
   subject: string;
   annotators: AnnotatorData[];
   reviewCompletedAt?: string; // 复检完成时间
+  annotationFileName?: string; // 标注文件名（从videos表获取）
 }
 
 export default function ReviewSelectPage() {
@@ -270,12 +273,20 @@ export default function ReviewSelectPage() {
               unannotatedCount: 0,
               reviewers: [],
               inspectors: [],
-              lastReviewTime: undefined
+              lastReviewTime: undefined,
+              submittedAt: undefined // 初始化提交时间
             });
           }
           
           const annotatorData = annotatorMap.get(annotator)!;
           annotatorData.totalAnnotations++;
+          
+          // 🆕 记录最早的提交时间（created_at）
+          if (ann.created_at) {
+            if (!annotatorData.submittedAt || ann.created_at < annotatorData.submittedAt) {
+              annotatorData.submittedAt = ann.created_at;
+            }
+          }
           
           // 🔧 抽检逻辑：只要该标注人有任意一条数据被质检通过，则所有有标注的数据都可以进入复检
           const annotatorHasQualified = annotatorQualifiedMap.get(annotator) === true;
@@ -340,17 +351,9 @@ export default function ReviewSelectPage() {
           a.pendingCount > 0 && (a.pendingCount + a.reviewedCount) > 0
         );
         
-        // 显示所有有标注数据的标注人（包括已复检和待复检的）
-        // 如果有待复检数据的标注人，则显示这些标注人；否则显示所有有质检通过数据的标注人
-        const annotatorsToShow = pendingAnnotators.length > 0 
-          ? pendingAnnotators 
-          : Array.from(annotatorMap.values()).filter(a => {
-              // 显示有质检通过数据的标注人
-              return a.inspectors.length > 0 && (a.pendingCount + a.reviewedCount) > 0;
-            });
-        
-        // 只要有质检通过数据的视频就显示
-        return annotatorsToShow.length > 0 ? { videoId, annotators: annotatorsToShow } : null;
+        // 🔧 修复：只显示真正有待复检数据的视频
+        // 如果没有待复检数据，不显示该视频（即使有质检通过数据）
+        return pendingAnnotators.length > 0 ? { videoId, annotators: pendingAnnotators } : null;
       });
       
       const videoStatsResults = await Promise.all(videoStatsPromises);
@@ -371,9 +374,15 @@ export default function ReviewSelectPage() {
         console.log('⚠️ 没有找到任何有待复检数据的视频');
       }
       
-      // 3. 获取所有视频详细信息
-      const { getVideos } = await import('../api/database');
-      const allVideos = await getVideos();
+      // 3. 获取所有视频详细信息（包括标注文件名）
+      const { data: allVideos, error: videosError } = await supabase
+        .from('videos')
+        .select('id, name, subject, created_at, annotation_file_name')
+        .in('id', videosWithPending.map(v => v.videoId));
+      
+      if (videosError) {
+        console.error('⚠️ 获取视频信息失败:', videosError);
+      }
       
       if (!allVideos || allVideos.length === 0) {
         console.warn('⚠️ 未找到任何视频信息');
@@ -403,16 +412,24 @@ export default function ReviewSelectPage() {
             videoId: item.videoId,
             videoName: video?.name || item.videoId,
             subject: video?.subject || '未知',
-            annotators: item.annotators
+            annotators: item.annotators,
+            annotationFileName: video?.annotation_file_name // 🆕 添加标注文件名
           };
         })
         .sort((a, b) => {
-          // 按视频创建时间降序排序（最新的在最上面）
-          const videoA = videoMap.get(a.videoId);
-          const videoB = videoMap.get(b.videoId);
-          const timeA = videoA?.created_at || '';
-          const timeB = videoB?.created_at || '';
-          return timeB.localeCompare(timeA);
+          // 🆕 按标注人的最早提交时间降序排序（最新的在最上面）
+          // 取每个视频中所有标注人的最早提交时间
+          const getEarliestSubmitTime = (video: VideoWithAnnotators) => {
+            const times = video.annotators
+              .map(ann => ann.submittedAt)
+              .filter(t => t !== undefined) as string[];
+            return times.length > 0 ? Math.min(...times.map(t => new Date(t).getTime())) : 0;
+          };
+          
+          const timeA = getEarliestSubmitTime(a);
+          const timeB = getEarliestSubmitTime(b);
+          
+          return timeB - timeA; // 降序排序，最新的在最上面
         });
       
       setAllPendingVideos(result);
@@ -435,10 +452,10 @@ export default function ReviewSelectPage() {
       
       console.log('📊 加载所有已复检视频（is_completed = true 的视频）...');
       
-      // 1. 查询所有标记为已完成的视频
+      // 1. 查询所有标记为已完成的视频（包括标注文件名）
       const { data: completedVideos, error: videoError } = await supabase
         .from('videos')
-        .select('id, name, subject, review_completed_at')
+        .select('id, name, subject, review_completed_at, annotation_file_name')
         .eq('is_completed', true)
         .order('review_completed_at', { ascending: false });
       
@@ -542,12 +559,20 @@ export default function ReviewSelectPage() {
               unannotatedCount: 0,
               reviewers: [],
               inspectors: [],
-              lastReviewTime: undefined
+              lastReviewTime: undefined,
+              submittedAt: undefined // 初始化提交时间
             });
           }
 
           const annotatorData = annotatorMap.get(annotator)!;
           annotatorData.totalAnnotations++;
+        
+          // 🆕 记录最早的提交时间（created_at）
+          if (ann.created_at) {
+            if (!annotatorData.submittedAt || ann.created_at < annotatorData.submittedAt) {
+              annotatorData.submittedAt = ann.created_at;
+            }
+          }
         
           // 🔧 抽检逻辑：只要该标注人有任意一条数据被质检通过，则所有有标注的数据都可以进入复检
           const annotatorHasQualified = annotatorQualifiedMap.get(annotator) === true;
@@ -588,17 +613,32 @@ export default function ReviewSelectPage() {
           videoName: video.name,
           subject: video.subject || '未知',
           annotators: allAnnotators,
-          reviewCompletedAt: video.review_completed_at
+          reviewCompletedAt: video.review_completed_at,
+          annotationFileName: video.annotation_file_name // 🆕 添加标注文件名
         };
       });
       
       const videoStatsResults = await Promise.all(videoStatsPromises);
-      const result = videoStatsResults.filter(v => v !== null) as VideoWithAnnotators[];
+      const result = (videoStatsResults.filter(v => v !== null) as VideoWithAnnotators[])
+        .sort((a, b) => {
+          // 🆕 按标注人的最早提交时间降序排序（最新的在最上面）
+          const getEarliestSubmitTime = (video: VideoWithAnnotators) => {
+            const times = video.annotators
+              .map(ann => ann.submittedAt)
+              .filter(t => t !== undefined) as string[];
+            return times.length > 0 ? Math.min(...times.map(t => new Date(t).getTime())) : 0;
+          };
+          
+          const timeA = getEarliestSubmitTime(a);
+          const timeB = getEarliestSubmitTime(b);
+          
+          return timeB - timeA; // 降序排序，最新的在最上面
+        });
       
-      console.log('  - 前5个视频的复检完成时间:', 
+      console.log('  - 前5个视频的提交时间:', 
         result.slice(0, 5).map(v => ({
           videoName: v.videoName,
-          time: v.reviewCompletedAt ? new Date(v.reviewCompletedAt).toLocaleString('zh-CN') : '未知'
+          earliestSubmitTime: Math.min(...v.annotators.map(a => a.submittedAt ? new Date(a.submittedAt).getTime() : Infinity))
         }))
       );
       
@@ -724,7 +764,7 @@ export default function ReviewSelectPage() {
         
       <Collapse accordion>
         {displayVideos.map((video) => (
-          <Panel
+            <Panel
             header={
                 <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                   <Checkbox
@@ -735,6 +775,11 @@ export default function ReviewSelectPage() {
               <Space size="large">
                 <Text strong style={{ minWidth: 250 }}>{video.videoName}</Text>
                 <Tag color="blue">{video.subject}</Tag>
+                {video.annotationFileName && (
+                  <Tag color="cyan" icon={<VideoCameraOutlined />}>
+                    {video.annotationFileName}
+                  </Tag>
+                )}
                 <Tag color="purple">{video.annotators.length} 位标注员</Tag>
                 <Tag color="green">
                   {video.annotators.reduce((sum, a) => sum + a.reviewedCount, 0)} 已复检
@@ -764,6 +809,33 @@ export default function ReviewSelectPage() {
                       <UserOutlined />
                       <Text strong>{text}</Text>
                     </Space>
+                  )
+                },
+                {
+                  title: '标注文件名',
+                  dataIndex: 'annotationFileName',
+                  key: 'annotationFileName',
+                  width: 200,
+                  render: () => (
+                    video.annotationFileName ? (
+                      <Text>{video.annotationFileName}</Text>
+                    ) : (
+                      <Text type="secondary">-</Text>
+                    )
+                  )
+                },
+                {
+                  title: '提交时间',
+                  dataIndex: 'submittedAt',
+                  key: 'submittedAt',
+                  width: 180,
+                  align: 'center' as const,
+                  render: (time: string | undefined) => (
+                    time ? (
+                      <Text>{new Date(time).toLocaleString('zh-CN')}</Text>
+                    ) : (
+                      <Text type="secondary">-</Text>
+                    )
                   )
                 },
                 {

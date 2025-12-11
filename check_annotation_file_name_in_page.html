@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>检查质检页面的标注文件名数据</title>
+  <style>
+    body {
+      font-family: 'Microsoft YaHei', Arial, sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 { color: #1890ff; }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #1890ff;
+      color: white;
+    }
+    .status-ok { color: green; font-weight: bold; }
+    .status-error { color: red; font-weight: bold; }
+    button {
+      padding: 10px 20px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #40a9ff;
+    }
+    pre {
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查质检页面的标注文件名数据</h1>
+  
+  <div class="section">
+    <button onclick="checkData()">开始检查</button>
+    <button onclick="location.reload()">刷新页面</button>
+  </div>
+  
+  <div id="result"></div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = 'https://iwpvbhlzxxdyzmzsgxfi.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3cHZiaGx6eHhkeXptenNneGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMzODc2MDcsImV4cCI6MjA0ODk2MzYwN30.U0XT0hWt7hKDQN8H8i_RN36o6RDtgKLf5ScdFLu2cBU';
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    window.checkData = async function() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<p>⏳ 正在检查数据...</p>';
+
+      try {
+        // 1. 检查数据库中视频的 annotation_file_name 字段
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('id, name, annotation_file_name')
+          .limit(10)
+          .order('created_at', { ascending: false });
+
+        if (videoError) {
+          resultDiv.innerHTML = `<p class="status-error">❌ 查询视频失败: ${videoError.message}</p>`;
+          return;
+        }
+
+        // 2. 检查标注数据
+        const { data: annotations, error: annotError } = await supabase
+          .from('annotations')
+          .select('id, video_id, sentence_no, human_annotated_text, annotator, inspector')
+          .eq('status', true)
+          .not('human_annotated_text', 'is', null)
+          .neq('human_annotated_text', '')
+          .limit(20)
+          .order('created_at', { ascending: false });
+
+        if (annotError) {
+          resultDiv.innerHTML += `<p class="status-error">❌ 查询标注失败: ${annotError.message}</p>`;
+          return;
+        }
+
+        // 3. 创建视频ID到标注文件名的映射
+        const videoMap = new Map();
+        videos.forEach(v => {
+          videoMap.set(v.id, {
+            name: v.name,
+            annotation_file_name: v.annotation_file_name
+          });
+        });
+
+        // 4. 显示结果
+        let html = '<div class="section">';
+        html += '<h2>📊 视频数据（最近10个）</h2>';
+        html += '<table><thead><tr><th>视频ID</th><th>视频名称</th><th>标注文件名</th><th>状态</th></tr></thead><tbody>';
+        
+        videos.forEach(v => {
+          const status = v.annotation_file_name ? 
+            '<span class="status-ok">✅ 有数据</span>' : 
+            '<span class="status-error">❌ 无数据</span>';
+          html += `<tr>
+            <td>${v.id}</td>
+            <td>${v.name || '未知'}</td>
+            <td>${v.annotation_file_name || '空'}</td>
+            <td>${status}</td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table>';
+
+        // 5. 显示标注数据及其对应的标注文件名
+        html += '<h2>📝 标注数据（最近20条）</h2>';
+        html += '<table><thead><tr><th>标注ID</th><th>视频ID</th><th>句子号</th><th>标注人</th><th>质检人</th><th>标注文件名（从视频获取）</th><th>状态</th></tr></thead><tbody>';
+        
+        annotations.forEach(a => {
+          const videoInfo = videoMap.get(a.video_id);
+          const fileName = videoInfo?.annotation_file_name || '未找到';
+          const status = videoInfo?.annotation_file_name ? 
+            '<span class="status-ok">✅</span>' : 
+            '<span class="status-error">❌</span>';
+          
+          html += `<tr>
+            <td>${a.id.substring(0, 15)}...</td>
+            <td>${a.video_id.substring(0, 15)}...</td>
+            <td>${a.sentence_no}</td>
+            <td>${a.annotator || '空'}</td>
+            <td>${a.inspector || '未质检'}</td>
+            <td>${fileName}</td>
+            <td>${status}</td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table>';
+
+        // 6. 统计信息
+        const totalVideos = videos.length;
+        const videosWithFileName = videos.filter(v => v.annotation_file_name).length;
+        const annotationsWithFileName = annotations.filter(a => {
+          const videoInfo = videoMap.get(a.video_id);
+          return videoInfo?.annotation_file_name;
+        }).length;
+
+        html += '<h2>📈 统计信息</h2>';
+        html += `<p><strong>视频总数（前10个）：</strong>${totalVideos}</p>`;
+        html += `<p><strong>有标注文件名的视频：</strong><span class="status-ok">${videosWithFileName}</span> / ${totalVideos}</p>`;
+        html += `<p><strong>标注总数（前20条）：</strong>${annotations.length}</p>`;
+        html += `<p><strong>能关联到标注文件名的标注：</strong><span class="status-ok">${annotationsWithFileName}</span> / ${annotations.length}</p>`;
+
+        // 7. 调试信息
+        html += '<h2>🔧 调试信息</h2>';
+        html += '<p><strong>视频数据示例：</strong></p>';
+        html += `<pre>${JSON.stringify(videos[0], null, 2)}</pre>`;
+        html += '<p><strong>标注数据示例（加上标注文件名）：</strong></p>';
+        const sampleAnnotation = annotations[0];
+        const sampleVideoInfo = videoMap.get(sampleAnnotation.video_id);
+        const enrichedSample = {
+          ...sampleAnnotation,
+          videoName: sampleVideoInfo?.name,
+          annotationFileName: sampleVideoInfo?.annotation_file_name
+        };
+        html += `<pre>${JSON.stringify(enrichedSample, null, 2)}</pre>`;
+
+        html += '</div>';
+        
+        resultDiv.innerHTML = html;
+
+        // 8. 结论
+        if (videosWithFileName === totalVideos && annotationsWithFileName === annotations.length) {
+          resultDiv.innerHTML += `
+            <div class="section" style="background: #f6ffed; border: 2px solid #52c41a;">
+              <h2 style="color: #52c41a;">✅ 数据完整性检查通过！</h2>
+              <p>所有视频都有标注文件名，所有标注都能关联到标注文件名。</p>
+              <p><strong>问题可能在前端渲染逻辑</strong>，请检查 InspectionManagePage.tsx 的数据流。</p>
+            </div>
+          `;
+        } else {
+          resultDiv.innerHTML += `
+            <div class="section" style="background: #fff1f0; border: 2px solid #ff4d4f;">
+              <h2 style="color: #ff4d4f;">⚠️ 发现数据问题！</h2>
+              <p>部分视频缺少标注文件名，需要在数据库中补充。</p>
+            </div>
+          `;
+        }
+
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="status-error">❌ 发生错误: ${error.message}</p>`;
+        console.error('检查失败:', error);
+      }
+    };
+  </script>
+</body>
+</html>
+
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>检查质检页面的标注文件名数据</title>
+  <style>
+    body {
+      font-family: 'Microsoft YaHei', Arial, sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 { color: #1890ff; }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #1890ff;
+      color: white;
+    }
+    .status-ok { color: green; font-weight: bold; }
+    .status-error { color: red; font-weight: bold; }
+    button {
+      padding: 10px 20px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #40a9ff;
+    }
+    pre {
+      background: #f0f0f0;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查质检页面的标注文件名数据</h1>
+  
+  <div class="section">
+    <button onclick="checkData()">开始检查</button>
+    <button onclick="location.reload()">刷新页面</button>
+  </div>
+  
+  <div id="result"></div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+    const SUPABASE_URL = 'https://iwpvbhlzxxdyzmzsgxfi.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Iml3cHZiaGx6eHhkeXptenNneGZpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMzODc2MDcsImV4cCI6MjA0ODk2MzYwN30.U0XT0hWt7hKDQN8H8i_RN36o6RDtgKLf5ScdFLu2cBU';
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    window.checkData = async function() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<p>⏳ 正在检查数据...</p>';
+
+      try {
+        // 1. 检查数据库中视频的 annotation_file_name 字段
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('id, name, annotation_file_name')
+          .limit(10)
+          .order('created_at', { ascending: false });
+
+        if (videoError) {
+          resultDiv.innerHTML = `<p class="status-error">❌ 查询视频失败: ${videoError.message}</p>`;
+          return;
+        }
+
+        // 2. 检查标注数据
+        const { data: annotations, error: annotError } = await supabase
+          .from('annotations')
+          .select('id, video_id, sentence_no, human_annotated_text, annotator, inspector')
+          .eq('status', true)
+          .not('human_annotated_text', 'is', null)
+          .neq('human_annotated_text', '')
+          .limit(20)
+          .order('created_at', { ascending: false });
+
+        if (annotError) {
+          resultDiv.innerHTML += `<p class="status-error">❌ 查询标注失败: ${annotError.message}</p>`;
+          return;
+        }
+
+        // 3. 创建视频ID到标注文件名的映射
+        const videoMap = new Map();
+        videos.forEach(v => {
+          videoMap.set(v.id, {
+            name: v.name,
+            annotation_file_name: v.annotation_file_name
+          });
+        });
+
+        // 4. 显示结果
+        let html = '<div class="section">';
+        html += '<h2>📊 视频数据（最近10个）</h2>';
+        html += '<table><thead><tr><th>视频ID</th><th>视频名称</th><th>标注文件名</th><th>状态</th></tr></thead><tbody>';
+        
+        videos.forEach(v => {
+          const status = v.annotation_file_name ? 
+            '<span class="status-ok">✅ 有数据</span>' : 
+            '<span class="status-error">❌ 无数据</span>';
+          html += `<tr>
+            <td>${v.id}</td>
+            <td>${v.name || '未知'}</td>
+            <td>${v.annotation_file_name || '空'}</td>
+            <td>${status}</td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table>';
+
+        // 5. 显示标注数据及其对应的标注文件名
+        html += '<h2>📝 标注数据（最近20条）</h2>';
+        html += '<table><thead><tr><th>标注ID</th><th>视频ID</th><th>句子号</th><th>标注人</th><th>质检人</th><th>标注文件名（从视频获取）</th><th>状态</th></tr></thead><tbody>';
+        
+        annotations.forEach(a => {
+          const videoInfo = videoMap.get(a.video_id);
+          const fileName = videoInfo?.annotation_file_name || '未找到';
+          const status = videoInfo?.annotation_file_name ? 
+            '<span class="status-ok">✅</span>' : 
+            '<span class="status-error">❌</span>';
+          
+          html += `<tr>
+            <td>${a.id.substring(0, 15)}...</td>
+            <td>${a.video_id.substring(0, 15)}...</td>
+            <td>${a.sentence_no}</td>
+            <td>${a.annotator || '空'}</td>
+            <td>${a.inspector || '未质检'}</td>
+            <td>${fileName}</td>
+            <td>${status}</td>
+          </tr>`;
+        });
+        
+        html += '</tbody></table>';
+
+        // 6. 统计信息
+        const totalVideos = videos.length;
+        const videosWithFileName = videos.filter(v => v.annotation_file_name).length;
+        const annotationsWithFileName = annotations.filter(a => {
+          const videoInfo = videoMap.get(a.video_id);
+          return videoInfo?.annotation_file_name;
+        }).length;
+
+        html += '<h2>📈 统计信息</h2>';
+        html += `<p><strong>视频总数（前10个）：</strong>${totalVideos}</p>`;
+        html += `<p><strong>有标注文件名的视频：</strong><span class="status-ok">${videosWithFileName}</span> / ${totalVideos}</p>`;
+        html += `<p><strong>标注总数（前20条）：</strong>${annotations.length}</p>`;
+        html += `<p><strong>能关联到标注文件名的标注：</strong><span class="status-ok">${annotationsWithFileName}</span> / ${annotations.length}</p>`;
+
+        // 7. 调试信息
+        html += '<h2>🔧 调试信息</h2>';
+        html += '<p><strong>视频数据示例：</strong></p>';
+        html += `<pre>${JSON.stringify(videos[0], null, 2)}</pre>`;
+        html += '<p><strong>标注数据示例（加上标注文件名）：</strong></p>';
+        const sampleAnnotation = annotations[0];
+        const sampleVideoInfo = videoMap.get(sampleAnnotation.video_id);
+        const enrichedSample = {
+          ...sampleAnnotation,
+          videoName: sampleVideoInfo?.name,
+          annotationFileName: sampleVideoInfo?.annotation_file_name
+        };
+        html += `<pre>${JSON.stringify(enrichedSample, null, 2)}</pre>`;
+
+        html += '</div>';
+        
+        resultDiv.innerHTML = html;
+
+        // 8. 结论
+        if (videosWithFileName === totalVideos && annotationsWithFileName === annotations.length) {
+          resultDiv.innerHTML += `
+            <div class="section" style="background: #f6ffed; border: 2px solid #52c41a;">
+              <h2 style="color: #52c41a;">✅ 数据完整性检查通过！</h2>
+              <p>所有视频都有标注文件名，所有标注都能关联到标注文件名。</p>
+              <p><strong>问题可能在前端渲染逻辑</strong>，请检查 InspectionManagePage.tsx 的数据流。</p>
+            </div>
+          `;
+        } else {
+          resultDiv.innerHTML += `
+            <div class="section" style="background: #fff1f0; border: 2px solid #ff4d4f;">
+              <h2 style="color: #ff4d4f;">⚠️ 发现数据问题！</h2>
+              <p>部分视频缺少标注文件名，需要在数据库中补充。</p>
+            </div>
+          `;
+        }
+
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="status-error">❌ 发生错误: ${error.message}</p>`;
+        console.error('检查失败:', error);
+      }
+    };
+  </script>
+</body>
+</html>
+

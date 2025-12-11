@@ -1,0 +1,1063 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 调试标注文件名显示问题</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+            text-align: center;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: transform 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .alert.success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .alert.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        .alert.warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .alert.info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            color: #0c5460;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-size: 13px;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .stat-card .label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        code {
+            background: #f1f3f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            color: #e83e8c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 调试标注文件名显示问题</h1>
+        <p class="subtitle">检查数据库中的 annotation_file_name 字段</p>
+
+        <div class="alert info">
+            <strong>ℹ️ 问题描述：</strong><br>
+            用户反馈："标注文件名没展示出来"<br>
+            可能的原因：<br>
+            1. 数据库中 <code>annotation_file_name</code> 字段不存在<br>
+            2. 数据库中的数据没有 <code>annotation_file_name</code> 值<br>
+            3. 前端查询时没有包含这个字段<br>
+            4. 前端渲染逻辑有问题
+        </div>
+
+        <!-- 检查1：数据库字段是否存在 -->
+        <div class="section">
+            <h2>🗄️ 检查1：数据库字段是否存在</h2>
+            <p style="margin-bottom: 15px;">检查 <code>videos</code> 表中是否有 <code>annotation_file_name</code> 字段</p>
+            <button class="btn" onclick="check1_fieldExists()">🔍 检查字段</button>
+            <div id="check1Result"></div>
+        </div>
+
+        <!-- 检查2：数据统计 -->
+        <div class="section">
+            <h2>📊 检查2：数据统计</h2>
+            <p style="margin-bottom: 15px;">统计有多少视频有 <code>annotation_file_name</code> 值</p>
+            <button class="btn" onclick="check2_dataStats()">📊 查看统计</button>
+            <div id="check2Result"></div>
+        </div>
+
+        <!-- 检查3：用户提到的视频 -->
+        <div class="section">
+            <h2>🎯 检查3：用户提到的视频</h2>
+            <p style="margin-bottom: 15px;">查看用户截图中的几个视频是否有标注文件名</p>
+            <button class="btn" onclick="check3_specificVideos()">🔍 检查具体视频</button>
+            <div id="check3Result"></div>
+        </div>
+
+        <!-- 检查4：模拟前端查询 -->
+        <div class="section">
+            <h2>💻 检查4：模拟前端查询</h2>
+            <p style="margin-bottom: 15px;">模拟质检管理页面的数据查询，看看是否能获取到 <code>annotation_file_name</code></p>
+            <button class="btn" onclick="check4_simulateFrontend()">💻 模拟查询</button>
+            <div id="check4Result"></div>
+        </div>
+
+        <!-- 检查5：查看最近上传的视频 -->
+        <div class="section">
+            <h2>🆕 检查5：查看最近上传的视频</h2>
+            <p style="margin-bottom: 15px;">查看最近上传的视频（应该有标注文件名）</p>
+            <button class="btn" onclick="check5_recentVideos()">🔍 查看最近上传</button>
+            <div id="check5Result"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://yybbjsltzxqfvquxauny.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YmJqc2x0enhxZnZxdXhhdW55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2ODU5NzYsImV4cCI6MjA0ODI2MTk3Nn0.7h9OsNCqjlC9s-dJx9ZYuUFvvUjN13SksgcdFkaBwgY';
+        
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 检查1：数据库字段是否存在
+        async function check1_fieldExists() {
+            const result = document.getElementById('check1Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在检查...</div>';
+
+            try {
+                // 尝试查询 annotation_file_name 字段
+                const { data, error } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, annotation_file_name')
+                    .limit(1);
+
+                if (error) {
+                    // 如果字段不存在，会报错
+                    if (error.message.includes('column') && error.message.includes('does not exist')) {
+                        result.innerHTML = `
+                            <div class="alert error">
+                                <strong>❌ 字段不存在！</strong><br>
+                                <code>videos</code> 表中没有 <code>annotation_file_name</code> 字段。<br>
+                                <br>
+                                <strong>解决方案：</strong><br>
+                                在 Supabase SQL Editor 中执行以下SQL：<br>
+                                <pre style="background: #f1f3f5; padding: 10px; border-radius: 5px; margin-top: 10px;">
+ALTER TABLE videos 
+ADD COLUMN IF NOT EXISTS annotation_file_name TEXT;
+
+COMMENT ON COLUMN videos.annotation_file_name IS '标注数据文件名（上传的Excel文件名）';
+                                </pre>
+                            </div>
+                        `;
+                    } else {
+                        result.innerHTML = `<div class="alert error">❌ 查询失败: ${error.message}</div>`;
+                    }
+                } else {
+                    result.innerHTML = `
+                        <div class="alert success">
+                            <strong>✅ 字段存在！</strong><br>
+                            <code>videos</code> 表中有 <code>annotation_file_name</code> 字段。<br>
+                            示例数据：<br>
+                            <pre style="background: #f1f3f5; padding: 10px; border-radius: 5px; margin-top: 10px;">
+${JSON.stringify(data[0], null, 2)}
+                            </pre>
+                        </div>
+                    `;
+                }
+
+            } catch (error) {
+                console.error('检查1失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 检查失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查2：数据统计
+        async function check2_dataStats() {
+            const result = document.getElementById('check2Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在统计...</div>';
+
+            try {
+                // 查询所有视频
+                const { data: allVideos, error: allError } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, annotation_file_name');
+
+                if (allError) throw allError;
+
+                const total = allVideos.length;
+                const hasFileName = allVideos.filter(v => v.annotation_file_name && v.annotation_file_name.trim() !== '').length;
+                const noFileName = total - hasFileName;
+                const percentage = total > 0 ? ((hasFileName / total) * 100).toFixed(1) : 0;
+
+                let html = '<div class="stats">';
+                html += `
+                    <div class="stat-card">
+                        <div class="label">总视频数</div>
+                        <div class="number">${total}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">有文件名</div>
+                        <div class="number">${hasFileName}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">无文件名</div>
+                        <div class="number">${noFileName}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">覆盖率</div>
+                        <div class="number" style="font-size: 24px;">${percentage}%</div>
+                    </div>
+                `;
+                html += '</div>';
+
+                if (hasFileName === 0) {
+                    html += `
+                        <div class="alert error">
+                            <strong>❌ 没有任何视频有标注文件名！</strong><br>
+                            这可能是因为：<br>
+                            1. 所有视频都是在添加 <code>annotation_file_name</code> 字段之前上传的<br>
+                            2. 上传代码没有正确保存文件名<br>
+                            <br>
+                            <strong>建议：</strong>重新上传一个视频测试，或手动更新数据库中的文件名。
+                        </div>
+                    `;
+                } else if (hasFileName < total) {
+                    html += `
+                        <div class="alert warning">
+                            <strong>⚠️ 部分视频有标注文件名</strong><br>
+                            有 ${noFileName} 个视频没有标注文件名，可能是老数据。
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="alert success">
+                            <strong>✅ 所有视频都有标注文件名！</strong>
+                        </div>
+                    `;
+                }
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查2失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 统计失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查3：用户提到的视频
+        async function check3_specificVideos() {
+            const result = document.getElementById('check3Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在查询...</div>';
+
+            try {
+                const videoNames = [
+                    '1027-英语-1.mp4',
+                    '1104-数学-3.mp4',
+                    '1027-物理-1.mp4'
+                ];
+
+                let html = '<table><thead><tr><th>视频名称</th><th>标注文件名</th><th>状态</th></tr></thead><tbody>';
+
+                for (const videoName of videoNames) {
+                    const { data, error } = await supabaseClient
+                        .from('videos')
+                        .select('id, name, annotation_file_name')
+                        .ilike('name', `%${videoName}%`);
+
+                    if (error) throw error;
+
+                    if (data.length === 0) {
+                        html += `
+                            <tr style="background: #fff3cd;">
+                                <td>${videoName}</td>
+                                <td colspan="2">❌ 未找到该视频</td>
+                            </tr>
+                        `;
+                    } else {
+                        data.forEach(video => {
+                            const hasFileName = video.annotation_file_name && video.annotation_file_name.trim() !== '';
+                            const statusIcon = hasFileName ? '✅' : '❌';
+                            const statusText = hasFileName ? '有文件名' : '无文件名';
+                            const rowStyle = hasFileName ? '' : 'background: #f8d7da;';
+                            html += `
+                                <tr style="${rowStyle}">
+                                    <td>${video.name}</td>
+                                    <td>${video.annotation_file_name || '<span style="color: #999;">空</span>'}</td>
+                                    <td>${statusIcon} ${statusText}</td>
+                                </tr>
+                            `;
+                        });
+                    }
+                }
+
+                html += '</tbody></table>';
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查3失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 查询失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查4：模拟前端查询
+        async function check4_simulateFrontend() {
+            const result = document.getElementById('check4Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在模拟...</div>';
+
+            try {
+                // 随机选择一个有标注数据的视频
+                const { data: annotations, error: annotationsError } = await supabaseClient
+                    .from('annotations')
+                    .select('video_id')
+                    .eq('status', true)
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '')
+                    .limit(1);
+
+                if (annotationsError) throw annotationsError;
+
+                if (!annotations || annotations.length === 0) {
+                    result.innerHTML = '<div class="alert warning">⚠️ 没有找到任何标注数据</div>';
+                    return;
+                }
+
+                const videoId = annotations[0].video_id;
+
+                // 模拟前端查询（InspectionManagePage.tsx 第304行的逻辑）
+                const { data: videosData, error: videosError } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, url, annotation_file_name')
+                    .in('id', [videoId]);
+
+                if (videosError) throw videosError;
+
+                const videoInfo = videosData[0];
+                const annotationFileName = videoInfo?.annotation_file_name || '';
+
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">模拟查询结果：</h3>';
+                html += '<pre style="background: #f1f3f5; padding: 15px; border-radius: 5px;">';
+                html += JSON.stringify({
+                    videoId: videoInfo.id,
+                    videoName: videoInfo.name,
+                    videoUrl: videoInfo.url,
+                    annotationFileName: annotationFileName,
+                    hasFileName: annotationFileName && annotationFileName.trim() !== ''
+                }, null, 2);
+                html += '</pre>';
+
+                if (!annotationFileName || annotationFileName.trim() === '') {
+                    html += `
+                        <div class="alert error">
+                            <strong>❌ 没有标注文件名！</strong><br>
+                            这个视频（${videoInfo.name}）的 <code>annotation_file_name</code> 字段为空。<br>
+                            <br>
+                            <strong>原因：</strong>可能是在添加该字段之前上传的视频。
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="alert success">
+                            <strong>✅ 有标注文件名！</strong><br>
+                            标注文件名：<code>${annotationFileName}</code><br>
+                            <br>
+                            前端应该能够正常显示。
+                        </div>
+                    `;
+                }
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查4失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 模拟失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查5：查看最近上传的视频
+        async function check5_recentVideos() {
+            const result = document.getElementById('check5Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在查询...</div>';
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, annotation_file_name, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+
+                if (error) throw error;
+
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">最近上传的20个视频：</h3>';
+                html += '<table><thead><tr><th>视频名称</th><th>标注文件名</th><th>上传时间</th><th>状态</th></tr></thead><tbody>';
+
+                data.forEach(video => {
+                    const hasFileName = video.annotation_file_name && video.annotation_file_name.trim() !== '';
+                    const statusIcon = hasFileName ? '✅' : '❌';
+                    const statusText = hasFileName ? '有' : '无';
+                    const rowStyle = hasFileName ? '' : 'background: #fff3cd;';
+                    const uploadTime = new Date(video.created_at).toLocaleString('zh-CN');
+                    
+                    html += `
+                        <tr style="${rowStyle}">
+                            <td>${video.name}</td>
+                            <td>${video.annotation_file_name || '<span style="color: #999;">空</span>'}</td>
+                            <td>${uploadTime}</td>
+                            <td>${statusIcon} ${statusText}</td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table>';
+
+                const hasFileNameCount = data.filter(v => v.annotation_file_name && v.annotation_file_name.trim() !== '').length;
+                if (hasFileNameCount === 0) {
+                    html += `
+                        <div class="alert error" style="margin-top: 20px;">
+                            <strong>❌ 所有最近上传的视频都没有标注文件名！</strong><br>
+                            <br>
+                            <strong>可能的原因：</strong><br>
+                            1. 上传代码没有正确保存 <code>annotation_file_name</code><br>
+                            2. 所有视频都是在添加该字段之前上传的<br>
+                            <br>
+                            <strong>建议：</strong><br>
+                            1. 检查 VideoManagePage.tsx 第601行的代码<br>
+                            2. 重新上传一个视频测试
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="alert success" style="margin-top: 20px;">
+                            <strong>✅ 找到 ${hasFileNameCount} 个有标注文件名的视频</strong>
+                        </div>
+                    `;
+                }
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查5失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 查询失败: ${error.message}</div>`;
+            }
+        }
+
+        // 页面加载时自动运行检查1
+        window.addEventListener('load', () => {
+            console.log('🔍 调试页面加载完成');
+            check1_fieldExists();
+        });
+    </script>
+</body>
+</html>
+
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔍 调试标注文件名显示问题</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 32px;
+            text-align: center;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .section h2 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: transform 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+        .alert.success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .alert.error {
+            background: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        .alert.warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .alert.info {
+            background: #d1ecf1;
+            border-left: 4px solid #0c5460;
+            color: #0c5460;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-size: 13px;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+        tr:hover {
+            background: #f8f9fa;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card .number {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 5px 0;
+        }
+        .stat-card .label {
+            font-size: 12px;
+            opacity: 0.9;
+        }
+        code {
+            background: #f1f3f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            color: #e83e8c;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 调试标注文件名显示问题</h1>
+        <p class="subtitle">检查数据库中的 annotation_file_name 字段</p>
+
+        <div class="alert info">
+            <strong>ℹ️ 问题描述：</strong><br>
+            用户反馈："标注文件名没展示出来"<br>
+            可能的原因：<br>
+            1. 数据库中 <code>annotation_file_name</code> 字段不存在<br>
+            2. 数据库中的数据没有 <code>annotation_file_name</code> 值<br>
+            3. 前端查询时没有包含这个字段<br>
+            4. 前端渲染逻辑有问题
+        </div>
+
+        <!-- 检查1：数据库字段是否存在 -->
+        <div class="section">
+            <h2>🗄️ 检查1：数据库字段是否存在</h2>
+            <p style="margin-bottom: 15px;">检查 <code>videos</code> 表中是否有 <code>annotation_file_name</code> 字段</p>
+            <button class="btn" onclick="check1_fieldExists()">🔍 检查字段</button>
+            <div id="check1Result"></div>
+        </div>
+
+        <!-- 检查2：数据统计 -->
+        <div class="section">
+            <h2>📊 检查2：数据统计</h2>
+            <p style="margin-bottom: 15px;">统计有多少视频有 <code>annotation_file_name</code> 值</p>
+            <button class="btn" onclick="check2_dataStats()">📊 查看统计</button>
+            <div id="check2Result"></div>
+        </div>
+
+        <!-- 检查3：用户提到的视频 -->
+        <div class="section">
+            <h2>🎯 检查3：用户提到的视频</h2>
+            <p style="margin-bottom: 15px;">查看用户截图中的几个视频是否有标注文件名</p>
+            <button class="btn" onclick="check3_specificVideos()">🔍 检查具体视频</button>
+            <div id="check3Result"></div>
+        </div>
+
+        <!-- 检查4：模拟前端查询 -->
+        <div class="section">
+            <h2>💻 检查4：模拟前端查询</h2>
+            <p style="margin-bottom: 15px;">模拟质检管理页面的数据查询，看看是否能获取到 <code>annotation_file_name</code></p>
+            <button class="btn" onclick="check4_simulateFrontend()">💻 模拟查询</button>
+            <div id="check4Result"></div>
+        </div>
+
+        <!-- 检查5：查看最近上传的视频 -->
+        <div class="section">
+            <h2>🆕 检查5：查看最近上传的视频</h2>
+            <p style="margin-bottom: 15px;">查看最近上传的视频（应该有标注文件名）</p>
+            <button class="btn" onclick="check5_recentVideos()">🔍 查看最近上传</button>
+            <div id="check5Result"></div>
+        </div>
+    </div>
+
+    <script>
+        const SUPABASE_URL = 'https://yybbjsltzxqfvquxauny.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5YmJqc2x0enhxZnZxdXhhdW55Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzI2ODU5NzYsImV4cCI6MjA0ODI2MTk3Nn0.7h9OsNCqjlC9s-dJx9ZYuUFvvUjN13SksgcdFkaBwgY';
+        
+        const { createClient } = supabase;
+        const supabaseClient = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // 检查1：数据库字段是否存在
+        async function check1_fieldExists() {
+            const result = document.getElementById('check1Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在检查...</div>';
+
+            try {
+                // 尝试查询 annotation_file_name 字段
+                const { data, error } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, annotation_file_name')
+                    .limit(1);
+
+                if (error) {
+                    // 如果字段不存在，会报错
+                    if (error.message.includes('column') && error.message.includes('does not exist')) {
+                        result.innerHTML = `
+                            <div class="alert error">
+                                <strong>❌ 字段不存在！</strong><br>
+                                <code>videos</code> 表中没有 <code>annotation_file_name</code> 字段。<br>
+                                <br>
+                                <strong>解决方案：</strong><br>
+                                在 Supabase SQL Editor 中执行以下SQL：<br>
+                                <pre style="background: #f1f3f5; padding: 10px; border-radius: 5px; margin-top: 10px;">
+ALTER TABLE videos 
+ADD COLUMN IF NOT EXISTS annotation_file_name TEXT;
+
+COMMENT ON COLUMN videos.annotation_file_name IS '标注数据文件名（上传的Excel文件名）';
+                                </pre>
+                            </div>
+                        `;
+                    } else {
+                        result.innerHTML = `<div class="alert error">❌ 查询失败: ${error.message}</div>`;
+                    }
+                } else {
+                    result.innerHTML = `
+                        <div class="alert success">
+                            <strong>✅ 字段存在！</strong><br>
+                            <code>videos</code> 表中有 <code>annotation_file_name</code> 字段。<br>
+                            示例数据：<br>
+                            <pre style="background: #f1f3f5; padding: 10px; border-radius: 5px; margin-top: 10px;">
+${JSON.stringify(data[0], null, 2)}
+                            </pre>
+                        </div>
+                    `;
+                }
+
+            } catch (error) {
+                console.error('检查1失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 检查失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查2：数据统计
+        async function check2_dataStats() {
+            const result = document.getElementById('check2Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在统计...</div>';
+
+            try {
+                // 查询所有视频
+                const { data: allVideos, error: allError } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, annotation_file_name');
+
+                if (allError) throw allError;
+
+                const total = allVideos.length;
+                const hasFileName = allVideos.filter(v => v.annotation_file_name && v.annotation_file_name.trim() !== '').length;
+                const noFileName = total - hasFileName;
+                const percentage = total > 0 ? ((hasFileName / total) * 100).toFixed(1) : 0;
+
+                let html = '<div class="stats">';
+                html += `
+                    <div class="stat-card">
+                        <div class="label">总视频数</div>
+                        <div class="number">${total}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">有文件名</div>
+                        <div class="number">${hasFileName}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">无文件名</div>
+                        <div class="number">${noFileName}</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="label">覆盖率</div>
+                        <div class="number" style="font-size: 24px;">${percentage}%</div>
+                    </div>
+                `;
+                html += '</div>';
+
+                if (hasFileName === 0) {
+                    html += `
+                        <div class="alert error">
+                            <strong>❌ 没有任何视频有标注文件名！</strong><br>
+                            这可能是因为：<br>
+                            1. 所有视频都是在添加 <code>annotation_file_name</code> 字段之前上传的<br>
+                            2. 上传代码没有正确保存文件名<br>
+                            <br>
+                            <strong>建议：</strong>重新上传一个视频测试，或手动更新数据库中的文件名。
+                        </div>
+                    `;
+                } else if (hasFileName < total) {
+                    html += `
+                        <div class="alert warning">
+                            <strong>⚠️ 部分视频有标注文件名</strong><br>
+                            有 ${noFileName} 个视频没有标注文件名，可能是老数据。
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="alert success">
+                            <strong>✅ 所有视频都有标注文件名！</strong>
+                        </div>
+                    `;
+                }
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查2失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 统计失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查3：用户提到的视频
+        async function check3_specificVideos() {
+            const result = document.getElementById('check3Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在查询...</div>';
+
+            try {
+                const videoNames = [
+                    '1027-英语-1.mp4',
+                    '1104-数学-3.mp4',
+                    '1027-物理-1.mp4'
+                ];
+
+                let html = '<table><thead><tr><th>视频名称</th><th>标注文件名</th><th>状态</th></tr></thead><tbody>';
+
+                for (const videoName of videoNames) {
+                    const { data, error } = await supabaseClient
+                        .from('videos')
+                        .select('id, name, annotation_file_name')
+                        .ilike('name', `%${videoName}%`);
+
+                    if (error) throw error;
+
+                    if (data.length === 0) {
+                        html += `
+                            <tr style="background: #fff3cd;">
+                                <td>${videoName}</td>
+                                <td colspan="2">❌ 未找到该视频</td>
+                            </tr>
+                        `;
+                    } else {
+                        data.forEach(video => {
+                            const hasFileName = video.annotation_file_name && video.annotation_file_name.trim() !== '';
+                            const statusIcon = hasFileName ? '✅' : '❌';
+                            const statusText = hasFileName ? '有文件名' : '无文件名';
+                            const rowStyle = hasFileName ? '' : 'background: #f8d7da;';
+                            html += `
+                                <tr style="${rowStyle}">
+                                    <td>${video.name}</td>
+                                    <td>${video.annotation_file_name || '<span style="color: #999;">空</span>'}</td>
+                                    <td>${statusIcon} ${statusText}</td>
+                                </tr>
+                            `;
+                        });
+                    }
+                }
+
+                html += '</tbody></table>';
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查3失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 查询失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查4：模拟前端查询
+        async function check4_simulateFrontend() {
+            const result = document.getElementById('check4Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在模拟...</div>';
+
+            try {
+                // 随机选择一个有标注数据的视频
+                const { data: annotations, error: annotationsError } = await supabaseClient
+                    .from('annotations')
+                    .select('video_id')
+                    .eq('status', true)
+                    .not('annotator', 'is', null)
+                    .neq('annotator', '')
+                    .limit(1);
+
+                if (annotationsError) throw annotationsError;
+
+                if (!annotations || annotations.length === 0) {
+                    result.innerHTML = '<div class="alert warning">⚠️ 没有找到任何标注数据</div>';
+                    return;
+                }
+
+                const videoId = annotations[0].video_id;
+
+                // 模拟前端查询（InspectionManagePage.tsx 第304行的逻辑）
+                const { data: videosData, error: videosError } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, url, annotation_file_name')
+                    .in('id', [videoId]);
+
+                if (videosError) throw videosError;
+
+                const videoInfo = videosData[0];
+                const annotationFileName = videoInfo?.annotation_file_name || '';
+
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">模拟查询结果：</h3>';
+                html += '<pre style="background: #f1f3f5; padding: 15px; border-radius: 5px;">';
+                html += JSON.stringify({
+                    videoId: videoInfo.id,
+                    videoName: videoInfo.name,
+                    videoUrl: videoInfo.url,
+                    annotationFileName: annotationFileName,
+                    hasFileName: annotationFileName && annotationFileName.trim() !== ''
+                }, null, 2);
+                html += '</pre>';
+
+                if (!annotationFileName || annotationFileName.trim() === '') {
+                    html += `
+                        <div class="alert error">
+                            <strong>❌ 没有标注文件名！</strong><br>
+                            这个视频（${videoInfo.name}）的 <code>annotation_file_name</code> 字段为空。<br>
+                            <br>
+                            <strong>原因：</strong>可能是在添加该字段之前上传的视频。
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="alert success">
+                            <strong>✅ 有标注文件名！</strong><br>
+                            标注文件名：<code>${annotationFileName}</code><br>
+                            <br>
+                            前端应该能够正常显示。
+                        </div>
+                    `;
+                }
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查4失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 模拟失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查5：查看最近上传的视频
+        async function check5_recentVideos() {
+            const result = document.getElementById('check5Result');
+            result.innerHTML = '<div class="alert info">⏳ 正在查询...</div>';
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from('videos')
+                    .select('id, name, annotation_file_name, created_at')
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+
+                if (error) throw error;
+
+                let html = '<h3 style="margin-top: 20px; color: #667eea;">最近上传的20个视频：</h3>';
+                html += '<table><thead><tr><th>视频名称</th><th>标注文件名</th><th>上传时间</th><th>状态</th></tr></thead><tbody>';
+
+                data.forEach(video => {
+                    const hasFileName = video.annotation_file_name && video.annotation_file_name.trim() !== '';
+                    const statusIcon = hasFileName ? '✅' : '❌';
+                    const statusText = hasFileName ? '有' : '无';
+                    const rowStyle = hasFileName ? '' : 'background: #fff3cd;';
+                    const uploadTime = new Date(video.created_at).toLocaleString('zh-CN');
+                    
+                    html += `
+                        <tr style="${rowStyle}">
+                            <td>${video.name}</td>
+                            <td>${video.annotation_file_name || '<span style="color: #999;">空</span>'}</td>
+                            <td>${uploadTime}</td>
+                            <td>${statusIcon} ${statusText}</td>
+                        </tr>
+                    `;
+                });
+
+                html += '</tbody></table>';
+
+                const hasFileNameCount = data.filter(v => v.annotation_file_name && v.annotation_file_name.trim() !== '').length;
+                if (hasFileNameCount === 0) {
+                    html += `
+                        <div class="alert error" style="margin-top: 20px;">
+                            <strong>❌ 所有最近上传的视频都没有标注文件名！</strong><br>
+                            <br>
+                            <strong>可能的原因：</strong><br>
+                            1. 上传代码没有正确保存 <code>annotation_file_name</code><br>
+                            2. 所有视频都是在添加该字段之前上传的<br>
+                            <br>
+                            <strong>建议：</strong><br>
+                            1. 检查 VideoManagePage.tsx 第601行的代码<br>
+                            2. 重新上传一个视频测试
+                        </div>
+                    `;
+                } else {
+                    html += `
+                        <div class="alert success" style="margin-top: 20px;">
+                            <strong>✅ 找到 ${hasFileNameCount} 个有标注文件名的视频</strong>
+                        </div>
+                    `;
+                }
+
+                result.innerHTML = html;
+
+            } catch (error) {
+                console.error('检查5失败:', error);
+                result.innerHTML = `<div class="alert error">❌ 查询失败: ${error.message}</div>`;
+            }
+        }
+
+        // 页面加载时自动运行检查1
+        window.addEventListener('load', () => {
+            console.log('🔍 调试页面加载完成');
+            check1_fieldExists();
+        });
+    </script>
+</body>
+</html>
+

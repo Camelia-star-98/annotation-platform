@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>诊断郭其其视频数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f5f5f5;
+    }
+    .container {
+      max-width: 1400px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    h2 {
+      color: #333;
+      border-bottom: 2px solid #1890ff;
+      padding-bottom: 10px;
+    }
+    h3 {
+      color: #666;
+      margin-top: 30px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background-color: #1890ff;
+      color: white;
+    }
+    tr:nth-child(even) {
+      background-color: #f2f2f2;
+    }
+    .error {
+      color: red;
+      padding: 10px;
+      background: #ffebee;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    .success {
+      color: green;
+      padding: 10px;
+      background: #e8f5e9;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    .warning {
+      color: orange;
+      padding: 10px;
+      background: #fff3e0;
+      border-radius: 4px;
+      margin: 10px 0;
+    }
+    .stat {
+      display: inline-block;
+      margin: 10px 20px 10px 0;
+      padding: 10px 20px;
+      background: #e3f2fd;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    button {
+      padding: 10px 20px;
+      background: #1890ff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+    button:hover {
+      background: #40a9ff;
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🔍 诊断郭其其视频数据问题</h2>
+    <button onclick="diagnose()">开始诊断</button>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://fxpybqyaqfubpmfdvtey.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ4cHlicXlhcWZ1YnBtZmR2dGV5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQzMTU0NzUsImV4cCI6MjA0OTg5MTQ3NX0.gxLGzsvhKJHFdl2J-YTNN5Y1MYc_wR3DDiCwKSblj44';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function diagnose() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<div class="success">正在诊断...</div>';
+
+      try {
+        const fileName = '第七批第一次改写_语文-01.xlsx';
+
+        // 1. 查找视频
+        const { data: videos, error: videoError } = await supabase
+          .from('videos')
+          .select('*')
+          .eq('annotation_file_name', fileName)
+          .limit(1);
+
+        if (videoError) throw videoError;
+        if (!videos || videos.length === 0) {
+          resultDiv.innerHTML = '<div class="error">❌ 未找到视频</div>';
+          return;
+        }
+
+        const video = videos[0];
+        let html = `<h3>📹 视频信息</h3>`;
+        html += `<div class="stat">视频ID: ${video.id}</div>`;
+        html += `<div class="stat">视频名称: ${video.name}</div>`;
+        html += `<div class="stat">标注文件名: ${video.annotation_file_name}</div>`;
+        html += `<div class="stat">总句数: ${video.total_sentences}</div>`;
+
+        // 2. 查询 annotations 表数据
+        const { data: annotations, error: annoError } = await supabase
+          .from('annotations')
+          .select('*')
+          .eq('video_id', video.id)
+          .order('sentence_no', { ascending: true });
+
+        if (annoError) throw annoError;
+
+        html += `<h3>📊 annotations 表统计</h3>`;
+        html += `<div class="stat">总记录数: ${annotations?.length || 0}</div>`;
+
+        const hasAnnotator = annotations?.filter(a => a.annotator && a.annotator.trim() !== '') || [];
+        const completed = annotations?.filter(a => a.status === true) || [];
+        const inspected = annotations?.filter(a => a.inspector && a.inspector.trim() !== '') || [];
+        const passed = annotations?.filter(a => a.is_qualified === true) || [];
+        const rejected = annotations?.filter(a => a.is_qualified === false) || [];
+        const pending = annotations?.filter(a => !a.inspector || a.inspector.trim() === '') || [];
+
+        html += `<div class="stat">有标注人: ${hasAnnotator.length}</div>`;
+        html += `<div class="stat">已完成: ${completed.length}</div>`;
+        html += `<div class="stat">已质检: ${inspected.length}</div>`;
+        html += `<div class="stat">通过: ${passed.length}</div>`;
+        html += `<div class="stat">不通过: ${rejected.length}</div>`;
+        html += `<div class="stat">待质检: ${pending.length}</div>`;
+
+        // 3. 按标注人统计
+        const annotatorStats = {};
+        annotations?.forEach(a => {
+          const annotator = a.annotator || '(空)';
+          if (!annotatorStats[annotator]) {
+            annotatorStats[annotator] = {
+              total: 0,
+              completed: 0,
+              pending: 0,
+              passed: 0,
+              rejected: 0
+            };
+          }
+          annotatorStats[annotator].total++;
+          if (a.status === true) annotatorStats[annotator].completed++;
+          if (!a.inspector || a.inspector.trim() === '') {
+            annotatorStats[annotator].pending++;
+          } else if (a.is_qualified === true) {
+            annotatorStats[annotator].passed++;
+          } else if (a.is_qualified === false) {
+            annotatorStats[annotator].rejected++;
+          }
+        });
+
+        html += `<h3>👥 标注人统计</h3>`;
+        html += `<table><tr><th>标注人</th><th>总数</th><th>已完成</th><th>待质检</th><th>通过</th><th>不通过</th></tr>`;
+        for (const [annotator, stats] of Object.entries(annotatorStats)) {
+          html += `<tr>
+            <td>${annotator}</td>
+            <td>${stats.total}</td>
+            <td>${stats.completed}</td>
+            <td>${stats.pending}</td>
+            <td>${stats.passed}</td>
+            <td>${stats.rejected}</td>
+          </tr>`;
+        }
+        html += `</table>`;
+
+        // 4. 查询 rejected_annotations 表
+        const { data: rejectedAnno, error: rejError } = await supabase
+          .from('rejected_annotations')
+          .select('*')
+          .eq('video_id', video.id)
+          .order('rejected_at', { ascending: false });
+
+        html += `<h3>🚫 rejected_annotations 表数据</h3>`;
+        if (rejError) {
+          html += `<div class="error">查询失败: ${rejError.message}</div>`;
+        } else if (!rejectedAnno || rejectedAnno.length === 0) {
+          html += `<div class="warning">该表中没有这个视频的数据</div>`;
+        } else {
+          html += `<div class="stat">总记录数: ${rejectedAnno.length}</div>`;
+          const notResubmitted = rejectedAnno.filter(r => !r.is_resubmitted);
+          html += `<div class="stat">未重新提交: ${notResubmitted.length}</div>`;
+
+          // 统计标注人
+          const rejAnnotators = {};
+          rejectedAnno.forEach(r => {
+            const annotator = r.annotator || '(空)';
+            if (!rejAnnotators[annotator]) {
+              rejAnnotators[annotator] = { total: 0, notResubmitted: 0 };
+            }
+            rejAnnotators[annotator].total++;
+            if (!r.is_resubmitted) rejAnnotators[annotator].notResubmitted++;
+          });
+
+          html += `<h4>标注人分布</h4>`;
+          html += `<table><tr><th>标注人</th><th>总被打回数</th><th>未重新提交</th></tr>`;
+          for (const [annotator, stats] of Object.entries(rejAnnotators)) {
+            html += `<tr><td>${annotator}</td><td>${stats.total}</td><td>${stats.notResubmitted}</td></tr>`;
+          }
+          html += `</table>`;
+
+          // 显示前10条详细记录
+          html += `<h4>详细记录（前10条）</h4>`;
+          html += `<table>
+            <tr>
+              <th>句子号</th>
+              <th>标注人</th>
+              <th>质检人</th>
+              <th>是否重新提交</th>
+              <th>打回时间</th>
+            </tr>`;
+          rejectedAnno.slice(0, 10).forEach(r => {
+            html += `<tr>
+              <td>${r.sentence_no}</td>
+              <td>${r.annotator || '(空)'}</td>
+              <td>${r.inspector || '(空)'}</td>
+              <td>${r.is_resubmitted ? '是' : '否'}</td>
+              <td>${r.rejected_at ? new Date(r.rejected_at).toLocaleString('zh-CN') : '-'}</td>
+            </tr>`;
+          });
+          html += `</table>`;
+        }
+
+        // 5. 问题分析
+        html += `<h3>🔍 问题分析</h3>`;
+        if (rejectedAnno && rejectedAnno.length > 0) {
+          const emptyAnnotator = rejectedAnno.filter(r => !r.annotator || r.annotator.trim() === '');
+          if (emptyAnnotator.length > 0) {
+            html += `<div class="error">⚠️ 发现 ${emptyAnnotator.length} 条 rejected_annotations 记录的 annotator 字段为空！</div>`;
+            html += `<div>这就是为什么在被打回重标列表中看不到标注人的原因。</div>`;
+          }
+
+          const notResubmitted = rejectedAnno.filter(r => !r.is_resubmitted);
+          if (notResubmitted.length > 0 && pending.length > 0) {
+            html += `<div class="warning">⚠️ 该视频有 ${notResubmitted.length} 条未重新提交的被打回记录，但在 annotations 表中有 ${pending.length} 条待质检的记录</div>`;
+            html += `<div>这可能导致视频同时出现在"已标注任务"（显示待质检）和"被打回重标"列表中。</div>`;
+          }
+        } else {
+          html += `<div class="warning">⚠️ rejected_annotations 表中没有该视频的记录，但视频出现在被打回列表中，这可能是查询逻辑问题。</div>`;
+        }
+
+        // 6. 查看 annotations 表中 is_qualified = false 的记录
+        const rejectedInAnnotations = annotations?.filter(a => a.is_qualified === false) || [];
+        if (rejectedInAnnotations.length > 0) {
+          html += `<h3>📋 annotations 表中 is_qualified = false 的记录</h3>`;
+          html += `<div class="stat">数量: ${rejectedInAnnotations.length}</div>`;
+          html += `<table>
+            <tr>
+              <th>句子号</th>
+              <th>标注人</th>
+              <th>质检人</th>
+              <th>状态</th>
+              <th>更新时间</th>
+            </tr>`;
+          rejectedInAnnotations.slice(0, 10).forEach(a => {
+            html += `<tr>
+              <td>${a.sentence_no}</td>
+              <td>${a.annotator || '(空)'}</td>
+              <td>${a.inspector || '(空)'}</td>
+              <td>${a.status ? '已完成' : '未完成'}</td>
+              <td>${a.updated_at ? new Date(a.updated_at).toLocaleString('zh-CN') : '-'}</td>
+            </tr>`;
+          });
+          html += `</table>`;
+        }
+
+        resultDiv.innerHTML = html;
+
+      } catch (error) {
+        console.error('诊断失败:', error);
+        resultDiv.innerHTML = `<div class="error">诊断失败: ${error.message}</div>`;
+      }
+    }
+  </script>
+</body>
+</html>
+

@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>创建 rejected_annotations 表</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 1200px;
+      margin: 50px auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background-color: white;
+      padding: 30px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    .step {
+      margin: 20px 0;
+      padding: 15px;
+      background-color: #f9f9f9;
+      border-left: 4px solid #2196F3;
+    }
+    .success {
+      color: #4CAF50;
+      font-weight: bold;
+    }
+    .error {
+      color: #f44336;
+      font-weight: bold;
+    }
+    .warning {
+      color: #ff9800;
+      font-weight: bold;
+    }
+    button {
+      background-color: #4CAF50;
+      color: white;
+      padding: 12px 24px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background-color: #45a049;
+    }
+    button:disabled {
+      background-color: #cccccc;
+      cursor: not-allowed;
+    }
+    pre {
+      background-color: #f4f4f4;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+    .info-box {
+      background-color: #e3f2fd;
+      padding: 15px;
+      border-radius: 4px;
+      margin: 15px 0;
+    }
+    .status {
+      padding: 10px;
+      margin: 10px 0;
+      border-radius: 4px;
+    }
+    .status.loading {
+      background-color: #fff9c4;
+      border-left: 4px solid #ffc107;
+    }
+    .status.success {
+      background-color: #c8e6c9;
+      border-left: 4px solid #4caf50;
+    }
+    .status.error {
+      background-color: #ffcdd2;
+      border-left: 4px solid #f44336;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🗄️ 创建 rejected_annotations 表</h1>
+    
+    <div class="info-box">
+      <h3>📋 说明</h3>
+      <p>这个页面用于检查和创建 <code>rejected_annotations</code> 表，该表用于记录所有被质检打回的标注数据。</p>
+      <p><strong>功能：</strong></p>
+      <ul>
+        <li>✅ 创建表结构（包含标注人、质检人、打回原因等字段）</li>
+        <li>✅ 创建索引以提高查询性能</li>
+        <li>✅ 设置 RLS 安全策略</li>
+        <li>✅ 迁移现有被打回的数据</li>
+      </ul>
+    </div>
+
+    <div class="step">
+      <h3>🔧 手动创建步骤（推荐）</h3>
+      <ol>
+        <li>打开 <strong>Supabase Dashboard</strong></li>
+        <li>进入 <strong>SQL Editor</strong></li>
+        <li>打开项目中的 <code>CREATE_REJECTED_ANNOTATIONS_TABLE.sql</code> 文件</li>
+        <li>复制所有SQL代码，粘贴到 SQL Editor 中</li>
+        <li>点击 <strong>Run</strong> 执行</li>
+        <li>回到此页面，点击"检查表是否存在"确认</li>
+      </ol>
+    </div>
+
+    <button onclick="checkTable()">🔍 检查表是否存在</button>
+    <button id="migrateBtn" onclick="migrateData()" style="background-color: #2196F3;">📦 迁移现有数据</button>
+    
+    <div id="output"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://dcqwxvekgxgjujurpipq.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRjcXd4dmVrZ3hnanVqdXJwaXBxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzM4MjYzNzQsImV4cCI6MjA0OTQwMjM3NH0.t9bcBNle2E2JWmFa3VfJeq6z5_vvD_fvXxXxzQlvTdE';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    function log(message, type = 'info') {
+      const output = document.getElementById('output');
+      const statusDiv = document.createElement('div');
+      statusDiv.className = `status ${type}`;
+      statusDiv.innerHTML = message;
+      output.appendChild(statusDiv);
+      console.log(message);
+    }
+
+    async function checkTable() {
+      const output = document.getElementById('output');
+      output.innerHTML = '';
+      log('🔍 检查 rejected_annotations 表是否存在...', 'loading');
+
+      try {
+        const { count, error } = await supabase
+          .from('rejected_annotations')
+          .select('*', { count: 'exact', head: true });
+
+        if (error) {
+          log(`❌ 表不存在或无法访问: ${error.message}`, 'error');
+          log('<br>⚠️ <strong>请按照上方步骤在 Supabase SQL Editor 中执行创建表脚本</strong>', 'warning');
+          log('📄 文件位置: <code>CREATE_REJECTED_ANNOTATIONS_TABLE.sql</code>', 'info');
+        } else {
+          log(`✅ <strong>表已存在！</strong> 当前记录数: ${count || 0}`, 'success');
+          
+          // 显示一些统计信息
+          const { data: stats } = await supabase
+            .from('rejected_annotations')
+            .select('video_id, annotator, inspector, is_resubmitted');
+          
+          if (stats) {
+            const videoCount = new Set(stats.map(s => s.video_id)).size;
+            const annotatorCount = new Set(stats.map(s => s.annotator).filter(Boolean)).size;
+            const inspectorCount = new Set(stats.map(s => s.inspector).filter(Boolean)).size;
+            const resubmittedCount = stats.filter(s => s.is_resubmitted).length;
+            
+            log(`<br>📊 <strong>统计信息：</strong>`, 'info');
+            log(`&nbsp;&nbsp;• 涉及视频数: ${videoCount}`, 'info');
+            log(`&nbsp;&nbsp;• 标注人数: ${annotatorCount}`, 'info');
+            log(`&nbsp;&nbsp;• 质检人数: ${inspectorCount}`, 'info');
+            log(`&nbsp;&nbsp;• 已重新提交: ${resubmittedCount} 条`, 'info');
+            log(`&nbsp;&nbsp;• 未重新提交: ${(count || 0) - resubmittedCount} 条`, 'info');
+          }
+        }
+      } catch (err) {
+        log(`❌ 检查失败: ${err.message}`, 'error');
+      }
+    }
+
+    async function migrateData() {
+      const output = document.getElementById('output');
+      output.innerHTML = '';
+      const btn = document.getElementById('migrateBtn');
+      btn.disabled = true;
+
+      log('📦 开始迁移现有被打回的数据...', 'loading');
+
+      try {
+        // 先检查表是否存在
+        const { error: checkError } = await supabase
+          .from('rejected_annotations')
+          .select('id', { count: 'exact', head: true });
+
+        if (checkError) {
+          log(`❌ rejected_annotations 表不存在，请先创建表！`, 'error');
+          btn.disabled = false;
+          return;
+        }
+
+        // 查询现有被打回的数据
+        log('🔍 查询 annotations 表中被打回的记录...', 'info');
+        const { data: rejectedData, error: queryError } = await supabase
+          .from('annotations')
+          .select(`
+            id,
+            video_id,
+            sentence_no,
+            time_range,
+            start_time,
+            end_time,
+            original_text,
+            ai_rewritten_text,
+            human_annotated_text,
+            major_category,
+            minor_category,
+            remark,
+            annotator,
+            inspector,
+            rejection_count,
+            updated_at,
+            videos!inner(name, subject)
+          `)
+          .eq('is_qualified', false)
+          .not('inspector', 'is', null)
+          .neq('inspector', '');
+
+        if (queryError) {
+          log(`❌ 查询失败: ${queryError.message}`, 'error');
+          btn.disabled = false;
+          return;
+        }
+
+        log(`✅ 找到 ${rejectedData?.length || 0} 条被打回的记录`, 'success');
+
+        if (!rejectedData || rejectedData.length === 0) {
+          log('ℹ️ 没有需要迁移的数据', 'info');
+          btn.disabled = false;
+          return;
+        }
+
+        // 检查哪些记录已经存在
+        log('🔍 检查已存在的记录...', 'info');
+        const { data: existingRecords } = await supabase
+          .from('rejected_annotations')
+          .select('annotation_id');
+
+        const existingIds = new Set(existingRecords?.map(r => r.annotation_id) || []);
+        
+        // 过滤出需要插入的记录
+        const toInsert = rejectedData.filter(item => !existingIds.has(item.id));
+        
+        if (toInsert.length === 0) {
+          log('✅ 所有记录都已存在，无需迁移', 'success');
+          btn.disabled = false;
+          return;
+        }
+
+        log(`📝 准备插入 ${toInsert.length} 条新记录...`, 'info');
+
+        // 插入到 rejected_annotations 表
+        const insertData = toInsert.map(item => ({
+          annotation_id: item.id,
+          video_id: item.video_id,
+          video_name: item.videos.name,
+          subject: item.videos.subject,
+          sentence_no: item.sentence_no,
+          time_range: item.time_range,
+          start_time: item.start_time,
+          end_time: item.end_time,
+          original_text: item.original_text,
+          ai_rewritten_text: item.ai_rewritten_text,
+          human_annotated_text: item.human_annotated_text,
+          major_category: item.major_category || '',
+          minor_category: item.minor_category || '',
+          remark: item.remark || '',
+          annotator: item.annotator,
+          inspector: item.inspector,
+          rejection_count: item.rejection_count || 1,
+          is_resubmitted: false,
+          rejected_at: item.updated_at
+        }));
+
+        // 分批插入（每次500条）
+        const batchSize = 500;
+        let insertedCount = 0;
+        
+        for (let i = 0; i < insertData.length; i += batchSize) {
+          const batch = insertData.slice(i, i + batchSize);
+          const { data: insertResult, error: insertError } = await supabase
+            .from('rejected_annotations')
+            .insert(batch)
+            .select();
+
+          if (insertError) {
+            log(`⚠️ 批次 ${Math.floor(i / batchSize) + 1} 插入失败: ${insertError.message}`, 'warning');
+          } else {
+            insertedCount += insertResult?.length || 0;
+            log(`✅ 批次 ${Math.floor(i / batchSize) + 1}: 插入 ${insertResult?.length || 0} 条`, 'success');
+          }
+        }
+
+        log(`<br>🎉 <strong>迁移完成！</strong>`, 'success');
+        log(`✅ 成功插入 ${insertedCount} 条记录`, 'success');
+
+        // 重新检查表状态
+        await checkTable();
+
+      } catch (err) {
+        log(`❌ 迁移过程中出错: ${err.message}`, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    // 页面加载时检查表是否存在
+    window.onload = () => {
+      checkTable();
+    };
+  </script>
+</body>
+</html>
+
