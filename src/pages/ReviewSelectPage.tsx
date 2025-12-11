@@ -47,6 +47,7 @@ interface VideoWithAnnotators {
   subject: string;
   annotators: AnnotatorData[];
   reviewCompletedAt?: string; // 复检完成时间
+  updatedAt?: string; // 更新时间（作为备选排序字段）
   annotationFileName?: string; // 标注文件名（从videos表获取）
 }
 
@@ -452,12 +453,11 @@ export default function ReviewSelectPage() {
       
       console.log('📊 加载所有已复检视频（is_completed = true 的视频）...');
       
-      // 1. 查询所有标记为已完成的视频（包括标注文件名）
+      // 1. 查询所有标记为已完成的视频（包括标注文件名和更新时间）
       const { data: completedVideos, error: videoError } = await supabase
         .from('videos')
-        .select('id, name, subject, review_completed_at, annotation_file_name')
-        .eq('is_completed', true)
-        .order('review_completed_at', { ascending: false });
+        .select('id, name, subject, review_completed_at, annotation_file_name, updated_at')
+        .eq('is_completed', true);
       
       if (videoError) {
         console.error('查询已完成视频失败:', videoError);
@@ -614,6 +614,7 @@ export default function ReviewSelectPage() {
           subject: video.subject || '未知',
           annotators: allAnnotators,
           reviewCompletedAt: video.review_completed_at,
+          updatedAt: video.updated_at, // 🆕 添加更新时间作为备选排序字段
           annotationFileName: video.annotation_file_name // 🆕 添加标注文件名
         };
       });
@@ -622,8 +623,13 @@ export default function ReviewSelectPage() {
       const result = (videoStatsResults.filter(v => v !== null) as VideoWithAnnotators[])
         .sort((a, b) => {
           // 🆕 按复检完成时间降序排序（最新完成的在最上面）
-          const timeA = a.reviewCompletedAt ? new Date(a.reviewCompletedAt).getTime() : 0;
-          const timeB = b.reviewCompletedAt ? new Date(b.reviewCompletedAt).getTime() : 0;
+          // 如果 review_completed_at 为空，则使用 updated_at 作为备选
+          const timeA = a.reviewCompletedAt 
+            ? new Date(a.reviewCompletedAt).getTime() 
+            : (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
+          const timeB = b.reviewCompletedAt 
+            ? new Date(b.reviewCompletedAt).getTime() 
+            : (b.updatedAt ? new Date(b.updatedAt).getTime() : 0);
           
           return timeB - timeA; // 降序排序，最新完成的在最上面
         });

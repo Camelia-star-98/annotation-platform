@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>检查 review_completed_at 字段</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>检查 review_completed_at 字段</h1>
+  <div id="result"></div>
+
+  <script>
+    const supabaseUrl = 'https://lmwjbjofazaqdejurcjv.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imxtd2piam9mYXphcWRlanVyY2p2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzMxMjc2NzksImV4cCI6MjA0ODcwMzY3OX0.nY_eX4BhfdjC73MFIiwP3OBcOAn2o0sLG_QQo_Aw7_s';
+    const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+    async function checkReviewCompletedAt() {
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '<p>正在检查...</p>';
+
+      try {
+        // 1. 查询所有已完成的视频
+        const { data: videos, error } = await supabase
+          .from('videos')
+          .select('id, name, is_completed, review_completed_at, created_at')
+          .eq('is_completed', true)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (error) {
+          resultDiv.innerHTML = `<p style="color: red;">错误: ${error.message}</p>`;
+          return;
+        }
+
+        let html = '<h2>已完成的视频 (最多显示20个)</h2>';
+        html += `<p>总数: ${videos?.length || 0}</p>`;
+        
+        if (videos && videos.length > 0) {
+          html += '<table border="1" cellpadding="5" style="border-collapse: collapse;">';
+          html += '<tr><th>视频ID</th><th>视频名称</th><th>is_completed</th><th>review_completed_at</th><th>created_at</th></tr>';
+          
+          let withCompletedAt = 0;
+          let withoutCompletedAt = 0;
+          
+          videos.forEach(video => {
+            if (video.review_completed_at) {
+              withCompletedAt++;
+            } else {
+              withoutCompletedAt++;
+            }
+            
+            html += '<tr>';
+            html += `<td>${video.id}</td>`;
+            html += `<td>${video.name || '无名称'}</td>`;
+            html += `<td>${video.is_completed}</td>`;
+            html += `<td style="${video.review_completed_at ? '' : 'color: red; font-weight: bold;'}">${video.review_completed_at || '❌ NULL'}</td>`;
+            html += `<td>${video.created_at}</td>`;
+            html += '</tr>';
+          });
+          
+          html += '</table>';
+          html += `<p><strong>统计：</strong></p>`;
+          html += `<p>有 review_completed_at 的视频: ${withCompletedAt}</p>`;
+          html += `<p style="color: red;">没有 review_completed_at 的视频: ${withoutCompletedAt}</p>`;
+        } else {
+          html += '<p>没有找到已完成的视频</p>';
+        }
+
+        // 2. 检查所有视频的情况
+        const { data: allVideos, error: allError } = await supabase
+          .from('videos')
+          .select('is_completed, review_completed_at')
+          .not('review_completed_at', 'is', null);
+
+        if (!allError && allVideos) {
+          html += '<hr>';
+          html += '<h2>所有视频中有 review_completed_at 值的</h2>';
+          html += `<p>总数: ${allVideos.length}</p>`;
+        }
+
+        resultDiv.innerHTML = html;
+
+      } catch (err) {
+        resultDiv.innerHTML = `<p style="color: red;">异常: ${err.message}</p>`;
+      }
+    }
+
+    // 页面加载时自动执行
+    checkReviewCompletedAt();
+  </script>
+</body>
+</html>
+
