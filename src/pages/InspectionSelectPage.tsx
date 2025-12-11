@@ -169,6 +169,15 @@ export default function InspectionSelectPage() {
           item.is_qualified === false && item.inspector && item.inspector.trim() !== ''
         ).length;
         
+        // 🆕 抽检逻辑：如果视频有质检通过的数据且没有质检不通过的数据，则不显示在质检列表
+        // 即使还有待质检数据，只要抽检的数据全部通过，就应该进入复检流程
+        if (passedCount > 0 && failedCount === 0) {
+          console.log(`⏭️ 跳过视频 ${video.name}：抽检数据全部通过（${passedCount}条通过，0条不通过），应进入复检流程`);
+          continue; // 跳过这个视频，不显示在质检列表中
+        }
+        
+        console.log(`📊 视频 ${video.name} 统计：总${deduplicatedAnnotations.length}条，通过${passedCount}条，不通过${failedCount}条，待质检${pendingCount}条`);
+        
         // 收集所有标注人姓名（去重）
         const annotatorsSet = new Set<string>();
         deduplicatedAnnotations.forEach(item => {
