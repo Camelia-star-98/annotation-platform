@@ -292,6 +292,13 @@ export default function HomePage() {
           completedAnnotators: annotatorCountMap?.get(video.id) || 0
         }));
         
+        // 按完成时间降序排序（最新的在最前面）
+        videosWithCount.sort((a, b) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return timeB - timeA;
+        });
+        
         setCompletedVideos(videosWithCount);
         console.log(`✅ 加载了 ${videosWithCount.length} 个视频（搜索后）`);
       } else {
@@ -337,6 +344,13 @@ export default function HomePage() {
           ...video,
           completedAnnotators: annotatorCount.get(video.id)?.size || 0
         }));
+        
+        // 按完成时间降序排序（最新的在最前面）
+        videosWithCount.sort((a, b) => {
+          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return timeB - timeA;
+        });
         
         setCompletedVideos(videosWithCount);
         setTotalCount(idsToUse.size);
