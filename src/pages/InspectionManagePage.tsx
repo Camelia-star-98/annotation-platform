@@ -81,7 +81,16 @@ export default function InspectionManagePage() {
     const result: any[] = [];
     videoGroups.forEach((items, videoId) => {
       const videoName = items[0]?.videoName || videoId;
+      const annotationFileName = items[0]?.annotationFileName || ''; // 🔧 从第一个子项获取标注文件名
       const totalAnnotated = videoTotalAnnotated.get(videoId) || 0;
+      
+      // 🔧 调试日志：检查标注文件名
+      console.log(`📋 视频分组 - ${videoName}:`, {
+        videoId,
+        annotationFileName,
+        itemCount: items.length,
+        firstItemFileName: items[0]?.annotationFileName
+      });
       
       // 父级行（视频）
       result.push({
@@ -89,6 +98,7 @@ export default function InspectionManagePage() {
         isGroup: true,
         videoId,
         videoName,
+        annotationFileName, // 🔧 在父级行也保存标注文件名
         itemCount: items.length,
         totalAnnotated, // 已标注总数
         children: items.map(item => ({
@@ -313,6 +323,16 @@ export default function InspectionManagePage() {
           const videoName = videoInfo?.name || item.video_id || '未知视频';
           const videoUrl = videoInfo?.url || '';
           const annotationFileName = videoInfo?.annotation_file_name || '';
+          
+          // 🔧 验证关键字段
+          if (!item.annotator || item.annotator.trim() === '') {
+            console.warn('⚠️ 警告：发现标注人为空的记录', { 
+              id: item.id, 
+              video_id: item.video_id, 
+              sentence_no: item.sentence_no 
+            });
+          }
+          
           return {
               id: item.id || '',
               videoId: item.video_id || '',
@@ -327,7 +347,7 @@ export default function InspectionManagePage() {
               minorCategory: item.minor_category || '',
               remark: '',
             status: false,
-            annotator: item.annotator || '',
+            annotator: item.annotator || '', // 保留原有逻辑，但在质检页面会进行验证
             isQualified: undefined,
             inspector: item.inspector || '',
             reviewer: '',
@@ -676,9 +696,29 @@ export default function InspectionManagePage() {
       width: 200,
       ellipsis: { showTitle: false },
       render: (text: string, record: any) => {
-        if (record.isGroup) return null;
+        if (record.isGroup) {
+          // 🔧 在视频行显示标注文件名（优先从 record.annotationFileName 获取，兜底从子项获取）
+          const fileName = record.annotationFileName || 
+            (record.children && record.children.length > 0 
+              ? record.children[0].annotationFileName 
+              : '');
+          
+          // 🔧 调试日志
+          console.log('📋 渲染标注文件名:', {
+            videoName: record.videoName,
+            fileName,
+            recordFileName: record.annotationFileName,
+            childFileName: record.children?.[0]?.annotationFileName
+          });
+          
+          if (!fileName || fileName.trim() === '') {
+            return <span style={{ color: '#999' }}>未上传标注文件</span>;
+          }
+          return <Tag color="green">{fileName}</Tag>;
+        }
+        // 在句子行显示标注文件名
         if (!text || text.trim() === '') {
-          return <span style={{ color: '#999' }}>未上传标注文件</span>;
+          return <span style={{ color: '#999' }}>未上传</span>;
         }
         return text;
       }

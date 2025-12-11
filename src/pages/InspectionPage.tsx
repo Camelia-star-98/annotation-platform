@@ -119,7 +119,9 @@ export default function InspectionPage() {
 
     // 计算错误率
     const failedCount = inspectionData.filter(item => !item.isQualified).length;
+    const passedCount = inspectionData.filter(item => item.isQualified === true).length;
     const errorRate = (failedCount / inspectionData.length) * 100;
+    const allPassed = failedCount === 0; // 🆕 是否全部通过
 
     // 保存质检结果到后端
     try {
@@ -127,6 +129,7 @@ export default function InspectionPage() {
       
       console.log('📤 开始提交质检数据，共', inspectionData.length, '条');
       console.log('📤 质检人姓名:', inspectorName.trim());
+      console.log('📤 抽检结果:', { 通过: passedCount, 不通过: failedCount, 全部通过: allPassed });
       
       let successCount = 0;
       let failCount = 0;
@@ -144,6 +147,49 @@ export default function InspectionPage() {
         rejectionCountMap.set(ann.id, ann.rejection_count || 0);
       });
       
+      // 🆕 抽检逻辑优化：如果全部通过，自动将该视频的其他未抽检句子也标记为通过
+      if (allPassed && inspectionData.length > 0) {
+        const firstItem = inspectionData[0];
+        const videoId = firstItem.videoId;
+        
+        console.log('🎯 抽检全部通过！开始自动标记该视频的其他未抽检句子为通过...');
+        console.log('📹 视频ID:', videoId);
+        
+        // 查询该视频的所有未质检的句子（排除当前已抽检的句子）
+        const { data: uncheckedAnnotations, error: queryError } = await supabase
+          .from('annotations')
+          .select('id, sentence_no')
+          .eq('video_id', videoId)
+          .not('id', 'in', `(${annotationIds.join(',')})`) // 排除已抽检的
+          .or('inspector.is.null,inspector.eq.'); // 未质检的（inspector为空或null）
+        
+        if (queryError) {
+          console.error('❌ 查询未抽检句子失败:', queryError);
+        } else if (uncheckedAnnotations && uncheckedAnnotations.length > 0) {
+          console.log(`📊 发现 ${uncheckedAnnotations.length} 条未抽检的句子，将自动标记为通过`);
+          
+          // 批量更新未抽检的句子为"通过"
+          const { error: batchUpdateError } = await supabase
+            .from('annotations')
+            .update({
+              is_qualified: true,
+              inspector: inspectorName.trim()
+            })
+            .in('id', uncheckedAnnotations.map(item => item.id));
+          
+          if (batchUpdateError) {
+            console.error('❌ 批量更新未抽检句子失败:', batchUpdateError);
+            message.warning('部分未抽检句子自动标记失败，请手动检查');
+          } else {
+            console.log(`✅ 已自动标记 ${uncheckedAnnotations.length} 条未抽检句子为通过`);
+            successCount += uncheckedAnnotations.length;
+          }
+        } else {
+          console.log('ℹ️ 没有发现未抽检的句子（可能已全部抽检或视频已完成质检）');
+        }
+      }
+      
+      // 处理已抽检的句子（原有逻辑）
       for (const item of inspectionData) {
         const updateData: any = {
           isQualified: item.isQualified,
@@ -158,6 +204,12 @@ export default function InspectionPage() {
           
           // 🆕 将被打回的数据记录到 rejected_annotations 表（所有人可见，便于相互学习）
           try {
+            // 🔧 与"所有已标注任务"对齐：跳过标注人为空的记录（不插入）
+            if (!item.annotator || item.annotator.trim() === '') {
+              console.warn(`⚠️ 句子 ${item.sentenceNo} 的标注人为空，跳过插入 rejected_annotations 表`, item);
+              continue;
+            }
+            
             const { error: insertError } = await supabase
               .from('rejected_annotations')
               .insert({
@@ -175,7 +227,7 @@ export default function InspectionPage() {
                 major_category: item.majorCategory || '',
                 minor_category: item.minorCategory || '',
                 remark: item.remark || '',
-                annotator: item.annotator || '',
+                annotator: item.annotator.trim(),
                 inspector: inspectorName.trim(),
                 rejection_count: updateData.rejectionCount,
                 is_resubmitted: false,
@@ -212,6 +264,9 @@ export default function InspectionPage() {
         message.error(`质检完成，但有 ${failCount} 条数据保存失败`);
       } else if (errorRate > 2) {
         message.error(`错误率 ${errorRate.toFixed(1)}% 超过 2%，标注将被打回重新标注`);
+      } else if (allPassed) {
+        // 🆕 全部通过时，显示更友好的提示信息
+        message.success(`🎉 抽检完成！全部通过，整个视频已自动标记为质检通过（共 ${successCount} 条）`);
       } else {
         message.success(`质检完成！错误率 ${errorRate.toFixed(1)}%，共提交 ${successCount} 条数据`);
       }

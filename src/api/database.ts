@@ -425,6 +425,8 @@ export async function getPendingInspectionAnnotations(
       // ✅ 只查询有标注人的数据（排除未标注的数据）
       .not('annotator', 'is', null)
       .neq('annotator', '')
+      // 🆕 只查询待质检的数据（inspector 为空或 null）
+      .or('inspector.is.null,inspector.eq.')
       .order('sentence_no', { ascending: true });
 
     // 应用分页
@@ -909,4 +911,6 @@ export async function deleteProblemCategory(majorCategory: string, minorCategory
     return false;
   }
 }
+
+
 

@@ -5,10 +5,10 @@
 
 -- 1. 创建 rejected_annotations 表
 CREATE TABLE IF NOT EXISTS rejected_annotations (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   
   -- 原始标注记录ID（关联到 annotations 表）
-  annotation_id UUID NOT NULL,
+  annotation_id TEXT NOT NULL,
   
   -- 视频信息
   video_id TEXT NOT NULL,
@@ -35,14 +35,11 @@ CREATE TABLE IF NOT EXISTS rejected_annotations (
   rejection_reason TEXT DEFAULT '', -- 打回原因
   rejection_count INTEGER DEFAULT 1, -- 这是第几次被打回
   is_resubmitted BOOLEAN DEFAULT false, -- 是否已重新提交
-  new_annotation_id UUID, -- 重新提交后生成的新记录ID
+  new_annotation_id TEXT, -- 重新提交后生成的新记录ID
   
   -- 时间戳
   rejected_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  resubmitted_at TIMESTAMP WITH TIME ZONE,
-  
-  -- 创建索引以提高查询性能
-  CONSTRAINT fk_annotation FOREIGN KEY (annotation_id) REFERENCES annotations(id) ON DELETE CASCADE
+  resubmitted_at TIMESTAMP WITH TIME ZONE
 );
 
 -- 2. 创建索引
@@ -130,11 +127,10 @@ JOIN videos v ON a.video_id = v.id
 WHERE a.is_qualified = false 
   AND a.inspector IS NOT NULL 
   AND a.inspector != ''
-ON CONFLICT DO NOTHING;
+ON CONFLICT (id) DO NOTHING;
 
 -- 完成提示
 SELECT 
   '✅ rejected_annotations 表创建成功！' as status,
   COUNT(*) as migrated_records
 FROM rejected_annotations;
-

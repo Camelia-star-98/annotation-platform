@@ -38,6 +38,7 @@ interface VideoInspectionData {
   failedInspection: number;
   uploadTime: string;
   annotators: string[]; // 标注人列表
+  annotationFileNames: string[]; // 标注文件名列表
 }
 
 export default function InspectionSelectPage() {
@@ -69,7 +70,7 @@ export default function InspectionSelectPage() {
       console.time('⏱️ 查询视频列表');
       const { data: allVideos, error: videosError } = await supabase
         .from('videos')
-        .select('id, name, subject, created_at, is_completed, total_sentences')
+        .select('id, name, subject, created_at, is_completed, total_sentences, annotation_file_name')
         .or('is_completed.is.null,is_completed.eq.false')
         .order('created_at', { ascending: false });
       console.timeEnd('⏱️ 查询视频列表');
@@ -177,6 +178,12 @@ export default function InspectionSelectPage() {
         });
         const annotators = Array.from(annotatorsSet).sort(); // 按字母排序
         
+        // 🔧 获取标注文件名（直接从 video 对象获取，而不是从 annotations）
+        const annotationFileName = video.annotation_file_name || '';
+        const annotationFileNames = annotationFileName.trim() !== '' ? [annotationFileName] : [];
+        
+        console.log(`📋 视频 ${video.name} 的标注文件名:`, annotationFileNames);
+        
         videoStats.push({
           id: video.id,
           videoName: video.name,
@@ -186,7 +193,8 @@ export default function InspectionSelectPage() {
           passedInspection: passedCount,
           failedInspection: failedCount,
           uploadTime: video.created_at || '',
-          annotators: annotators // 添加标注人列表
+          annotators: annotators, // 添加标注人列表
+          annotationFileNames: annotationFileNames // 添加标注文件名列表
         });
       }
       console.timeEnd('⏱️ 内存中分组统计');
@@ -272,6 +280,20 @@ export default function InspectionSelectPage() {
             </Space>
           </Tooltip>
         );
+      }
+    },
+    {
+      title: '标注文件名',
+      dataIndex: 'annotationFileNames',
+      key: 'annotationFileNames',
+      width: 200,
+      ellipsis: true,
+      render: (fileNames: string[]) => {
+        if (!fileNames || fileNames.length === 0 || !fileNames[0]) {
+          return <span style={{ color: '#999' }}>-</span>;
+        }
+        // 只显示第一个文件名（实际上每个视频只有一个标注文件）
+        return <Tag color="cyan">{fileNames[0]}</Tag>;
       }
     },
     {

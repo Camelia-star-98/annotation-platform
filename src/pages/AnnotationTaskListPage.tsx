@@ -52,6 +52,7 @@ interface RejectedAnnotation {
   inspectors: string[]; // 质检人列表
   lastRejectedTime: string; // 最后打回时间
   annotationIds: string[]; // 被打回的annotation ID列表（用于跳转）
+  annotationFileName?: string; // 标注数据文件名
 }
 
 interface CompletedTask {
@@ -294,6 +295,7 @@ export default function AnnotationTaskListPage() {
           annotationIds: string[];
           lastRejectedTime: string;
           count: number;
+          annotationFileName?: string;
         }>();
         
         (allAnnotations || []).forEach(item => {
@@ -309,15 +311,19 @@ export default function AnnotationTaskListPage() {
               inspectors: new Set<string>(),
               annotationIds: [],
               lastRejectedTime: item.updated_at || item.created_at || '',
-              count: 0
+              count: 0,
+              annotationFileName: video?.annotation_file_name
             });
           }
           
-          const videoData = videoRejectedMap.get(videoId)!;
-          videoData.count++;
-          if (item.annotator) videoData.annotators.add(item.annotator);
-          if (item.inspector) videoData.inspectors.add(item.inspector);
-          videoData.annotationIds.push(item.id);
+        const videoData = videoRejectedMap.get(videoId)!;
+        videoData.count++;
+        // 🔧 与"所有已标注任务"对齐：只统计有标注人的记录
+        if (item.annotator && item.annotator.trim() !== '') {
+          videoData.annotators.add(item.annotator);
+        }
+        if (item.inspector) videoData.inspectors.add(item.inspector);
+        videoData.annotationIds.push(item.id);
           
           // 更新最后打回时间（取最新的）
           const currentTime = item.updated_at || item.created_at || '';
@@ -337,7 +343,8 @@ export default function AnnotationTaskListPage() {
             annotators: Array.from(item.annotators),
             inspectors: Array.from(item.inspectors),
             lastRejectedTime: item.lastRejectedTime,
-            annotationIds: item.annotationIds
+            annotationIds: item.annotationIds,
+            annotationFileName: item.annotationFileName
           }))
           .sort((a, b) => b.lastRejectedTime.localeCompare(a.lastRejectedTime));
         
@@ -347,6 +354,16 @@ export default function AnnotationTaskListPage() {
       }
       
       console.log('📊 从 rejected_annotations 表查询到的数据数量:', rejectedData?.length || 0);
+      
+      // 🔍 调试：打印前3条数据查看字段
+      if (rejectedData && rejectedData.length > 0) {
+        console.log('🔍 rejected_annotations 表数据样本（前3条）:', rejectedData.slice(0, 3));
+        console.log('🔍 第一条数据的字段:', Object.keys(rejectedData[0]));
+      }
+      
+      // 获取所有视频信息以获取 annotation_file_name
+      const allVideos = await getVideos();
+      const videoMap = new Map(allVideos.map(v => [v.id, v]));
       
       // 🆕 按视频分组统计被打回的数据
       const videoRejectedMap = new Map<string, {
@@ -358,10 +375,17 @@ export default function AnnotationTaskListPage() {
         annotationIds: string[];
         lastRejectedTime: string;
         count: number;
+        annotationFileName?: string;
       }>();
       
       (rejectedData || []).forEach(item => {
         const videoId = item.video_id;
+        const video = videoMap.get(videoId);
+        
+        // 🔍 调试：打印标注人和质检人信息
+        if (!videoRejectedMap.has(videoId)) {
+          console.log(`🔍 处理视频 ${item.video_name}, annotator: "${item.annotator}", inspector: "${item.inspector}"`);
+        }
         
         if (!videoRejectedMap.has(videoId)) {
           videoRejectedMap.set(videoId, {
@@ -372,13 +396,17 @@ export default function AnnotationTaskListPage() {
             inspectors: new Set<string>(),
             annotationIds: [],
             lastRejectedTime: item.rejected_at || '',
-            count: 0
+            count: 0,
+            annotationFileName: video?.annotation_file_name
           });
         }
         
         const videoData = videoRejectedMap.get(videoId)!;
         videoData.count++;
-        if (item.annotator) videoData.annotators.add(item.annotator);
+        // 🔧 与"所有已标注任务"对齐：只统计有标注人的记录
+        if (item.annotator && item.annotator.trim() !== '') {
+          videoData.annotators.add(item.annotator);
+        }
         if (item.inspector) videoData.inspectors.add(item.inspector);
         videoData.annotationIds.push(item.annotation_id);
         
@@ -399,9 +427,13 @@ export default function AnnotationTaskListPage() {
           annotators: Array.from(item.annotators),
           inspectors: Array.from(item.inspectors),
           lastRejectedTime: item.lastRejectedTime,
-          annotationIds: item.annotationIds
+          annotationIds: item.annotationIds,
+          annotationFileName: item.annotationFileName
         }))
         .sort((a, b) => b.lastRejectedTime.localeCompare(a.lastRejectedTime));
+      
+      // 🔍 调试：打印最终的rejected数组
+      console.log('🔍 最终的rejected数组（前3条）:', rejected.slice(0, 3));
       
       setRejectedItems(rejected);
       console.log(`✅ 加载了 ${rejected.length} 个视频的被打回数据，共 ${rejectedData?.length || 0} 条句子（所有标注人，未重新提交）`);
@@ -720,6 +752,13 @@ export default function AnnotationTaskListPage() {
       width: 300
     },
     {
+      title: '标注文件名称',
+      dataIndex: 'annotationFileName',
+      key: 'annotationFileName',
+      width: 200,
+      render: (text: string) => text || '-'
+    },
+    {
       title: '科目',
       dataIndex: 'subject',
       key: 'subject',
@@ -797,17 +836,28 @@ export default function AnnotationTaskListPage() {
 
   const completedColumns = [
     {
+      title: '标注文件名',
+      dataIndex: 'annotationFileName',
+      key: 'annotationFileName',
+      width: 180,
+      render: (name: string) => (
+        <Tag color="cyan">{name || '-'}</Tag>
+      )
+    },
+    {
       title: '视频名称',
       dataIndex: 'videoName',
       key: 'videoName',
       width: 300
     },
     {
-      title: '科目',
-      dataIndex: 'subject',
-      key: 'subject',
-      width: 100,
-      render: (text: string) => <Tag color="blue">{text}</Tag>
+      title: '标注人',
+      dataIndex: 'annotator',
+      key: 'annotator',
+      width: 120,
+      render: (text: string) => (
+        <Tag color="purple" icon={<UserOutlined />}>{text || '未知标注员'}</Tag>
+      )
     },
     {
       title: '标注进度',
@@ -882,15 +932,6 @@ export default function AnnotationTaskListPage() {
           </div>
         );
       }
-    },
-    {
-      title: '标注文件名',
-      dataIndex: 'annotationFileName',
-      key: 'annotationFileName',
-      width: 180,
-      render: (name: string) => (
-        <Tag color="cyan">{name || '-'}</Tag>
-      )
     },
     {
       title: '状态',
@@ -1105,7 +1146,7 @@ export default function AnnotationTaskListPage() {
                       showSizeChanger: true,
                       showTotal: (total) => `共 ${total} 个视频有被打回的数据`
                     }}
-                    scroll={{ x: 1200 }}
+                    scroll={{ x: 1500 }}
                   />
                 )
               }
