@@ -374,10 +374,10 @@ export default function ReviewSelectPage() {
         console.log('⚠️ 没有找到任何有待复检数据的视频');
       }
       
-      // 3. 获取所有视频详细信息（包括标注文件名）
+      // 3. 获取所有视频详细信息（包括标注文件名和完成状态）
       const { data: allVideos, error: videosError } = await supabase
         .from('videos')
-        .select('id, name, subject, created_at, annotation_file_name')
+        .select('id, name, subject, created_at, annotation_file_name, is_completed')
         .in('id', videosWithPending.map(v => v.videoId));
       
       if (videosError) {
@@ -621,24 +621,17 @@ export default function ReviewSelectPage() {
       const videoStatsResults = await Promise.all(videoStatsPromises);
       const result = (videoStatsResults.filter(v => v !== null) as VideoWithAnnotators[])
         .sort((a, b) => {
-          // 🆕 按标注人的最早提交时间降序排序（最新的在最上面）
-          const getEarliestSubmitTime = (video: VideoWithAnnotators) => {
-            const times = video.annotators
-              .map(ann => ann.submittedAt)
-              .filter(t => t !== undefined) as string[];
-            return times.length > 0 ? Math.min(...times.map(t => new Date(t).getTime())) : 0;
-          };
+          // 🆕 按复检完成时间降序排序（最新完成的在最上面）
+          const timeA = a.reviewCompletedAt ? new Date(a.reviewCompletedAt).getTime() : 0;
+          const timeB = b.reviewCompletedAt ? new Date(b.reviewCompletedAt).getTime() : 0;
           
-          const timeA = getEarliestSubmitTime(a);
-          const timeB = getEarliestSubmitTime(b);
-          
-          return timeB - timeA; // 降序排序，最新的在最上面
+          return timeB - timeA; // 降序排序，最新完成的在最上面
         });
       
-      console.log('  - 前5个视频的提交时间:', 
+      console.log('  - 前5个视频的复检完成时间:', 
         result.slice(0, 5).map(v => ({
           videoName: v.videoName,
-          earliestSubmitTime: Math.min(...v.annotators.map(a => a.submittedAt ? new Date(a.submittedAt).getTime() : Infinity))
+          reviewCompletedAt: v.reviewCompletedAt
         }))
       );
       
