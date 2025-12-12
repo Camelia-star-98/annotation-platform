@@ -278,11 +278,31 @@ export default function HomePage() {
           video.id?.toLowerCase().includes(searchLower)
         );
         
+        // 🆕 获取每个视频的最新完成时间（从 annotation_completions 表）
+        const videoIdsForCompletion = filteredVideos.map(v => v.id);
+        const { data: completionData } = await supabase
+          .from('annotation_completions')
+          .select('video_id, completed_at')
+          .in('video_id', videoIdsForCompletion)
+          .order('completed_at', { ascending: false });
+        
+        // 构建每个视频的最新完成时间映射
+        const videoCompletionTime = new Map<string, string>();
+        completionData?.forEach(item => {
+          if (!videoCompletionTime.has(item.video_id)) {
+            // 只保留最新的完成时间
+            videoCompletionTime.set(item.video_id, item.completed_at);
+          }
+        });
+        
         // 按完成时间降序排序（最新的在最前面）- 在分页之前排序
         filteredVideos.sort((a, b) => {
-          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-          return timeB - timeA;
+          const timeA = videoCompletionTime.get(a.id) || a.created_at || '';
+          const timeB = videoCompletionTime.get(b.id) || b.created_at || '';
+          if (!timeA && !timeB) return 0;
+          if (!timeA) return 1;  // 没有完成时间的排后面
+          if (!timeB) return -1;
+          return timeB.localeCompare(timeA);  // 降序：新的在前
         });
         
         // 更新总数
@@ -316,11 +336,30 @@ export default function HomePage() {
           return;
         }
         
+        // 🆕 获取每个视频的最新完成时间（从 annotation_completions 表）
+        const { data: completionData } = await supabase
+          .from('annotation_completions')
+          .select('video_id, completed_at')
+          .in('video_id', idsArray)
+          .order('completed_at', { ascending: false });
+        
+        // 构建每个视频的最新完成时间映射
+        const videoCompletionTime = new Map<string, string>();
+        completionData?.forEach(item => {
+          if (!videoCompletionTime.has(item.video_id)) {
+            // 只保留最新的完成时间
+            videoCompletionTime.set(item.video_id, item.completed_at);
+          }
+        });
+        
         // 按完成时间降序排序（最新的在最前面）- 在分页之前排序
         const sortedVideos = (allVideos || []).sort((a, b) => {
-          const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-          return timeB - timeA;
+          const timeA = videoCompletionTime.get(a.id) || a.created_at || '';
+          const timeB = videoCompletionTime.get(b.id) || b.created_at || '';
+          if (!timeA && !timeB) return 0;
+          if (!timeA) return 1;  // 没有完成时间的排后面
+          if (!timeB) return -1;
+          return timeB.localeCompare(timeA);  // 降序：新的在前
         });
         
         // 分页
