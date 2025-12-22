@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>诊断已复检数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      padding: 20px;
+      max-width: 1600px;
+      margin: 0 auto;
+      background: #f5f5f5;
+    }
+    h1 { color: #333; }
+    h2 { color: #666; margin-top: 30px; }
+    .section {
+      background: white;
+      margin: 20px 0;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      max-height: 500px;
+      font-size: 12px;
+    }
+    .error { color: #f5222d; font-weight: bold; }
+    .success { color: #52c41a; font-weight: bold; }
+    .warning { color: #fa8c16; font-weight: bold; }
+    .info { color: #1890ff; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      font-size: 13px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #fafafa;
+      font-weight: bold;
+    }
+    .stats {
+      display: flex;
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      flex: 1;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .stat-card h3 {
+      margin: 0 0 10px 0;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    .stat-card .number {
+      font-size: 32px;
+      font-weight: bold;
+      margin: 0;
+    }
+    button {
+      background: #1890ff;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin: 10px 5px;
+    }
+    button:hover {
+      background: #40a9ff;
+    }
+    button.danger {
+      background: #f5222d;
+    }
+    button.danger:hover {
+      background: #ff4d4f;
+    }
+    button.success {
+      background: #52c41a;
+    }
+    button.success:hover {
+      background: #73d13d;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 诊断已复检数据状态</h1>
+  
+  <div class="stats" id="stats-container">
+    <div class="stat-card" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
+      <h3>annotation_completions 记录数</h3>
+      <p class="number" id="stat-completions">-</p>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+      <h3>videos 表中 is_completed=true</h3>
+      <p class="number" id="stat-videos">-</p>
+    </div>
+    <div class="stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+      <h3>annotations 中 review_status=true</h3>
+      <p class="number" id="stat-annotations">-</p>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>1️⃣ annotation_completions 表中的已完成复检记录</h2>
+    <div id="completions-data"></div>
+  </div>
+  
+  <div class="section">
+    <h2>2️⃣ videos 表中 is_completed = true 的视频</h2>
+    <div id="videos-data"></div>
+  </div>
+  
+  <div class="section">
+    <h2>3️⃣ annotations 表中复检状态统计</h2>
+    <div id="annotations-stats"></div>
+  </div>
+
+  <div class="section">
+    <h2>4️⃣ 数据一致性检查</h2>
+    <div id="consistency-check"></div>
+  </div>
+
+  <div class="section">
+    <h2>🔧 恢复操作</h2>
+    <p>如果发现数据丢失或不一致，可以执行以下操作：</p>
+    <button class="success" onclick="syncVideoCompletionStatus()">🔄 同步 videos 表的完成状态（基于 annotation_completions）</button>
+    <button onclick="checkAndFixReviewStatus()">✅ 检查并修复 annotations 的 review_status</button>
+    <div id="fix-result" style="margin-top: 20px;"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pwufacekikjqcgjptnxh.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3dWZhY2VraWtqcWNnanB0bnhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIxNjkyODAsImV4cCI6MjA0Nzc0NTI4MH0.TRo-RdJEU-0fZ1sImQ6_T1wXFFb1nJTnBPabdXJVHKE';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function diagnoseData() {
+      console.log('🔍 开始诊断已复检数据...');
+      
+      // 1. 查询 annotation_completions 表
+      const { data: completions, error: completionsError } = await supabase
+        .from('annotation_completions')
+        .select('*')
+        .order('completed_at', { ascending: false });
+      
+      if (completionsError) {
+        document.getElementById('completions-data').innerHTML = 
+          `<pre class="error">❌ 错误: ${JSON.stringify(completionsError, null, 2)}</pre>`;
+      } else {
+        document.getElementById('stat-completions').textContent = completions?.length || 0;
+        
+        if (!completions || completions.length === 0) {
+          document.getElementById('completions-data').innerHTML = 
+            `<p class="warning">⚠️ annotation_completions 表中没有数据！这意味着没有任何视频被标记为"已完成复检"。</p>`;
+        } else {
+          let tableHTML = `
+            <p class="success">✅ 找到 ${completions.length} 条已完成复检的记录</p>
+            <table>
+              <tr>
+                <th>视频ID</th>
+                <th>视频名称</th>
+                <th>完成时间</th>
+                <th>复检人</th>
+              </tr>
+          `;
+          
+          completions.forEach(c => {
+            tableHTML += `
+              <tr>
+                <td>${c.video_id}</td>
+                <td>${c.video_name || '-'}</td>
+                <td>${c.completed_at ? new Date(c.completed_at).toLocaleString('zh-CN') : '-'}</td>
+                <td>${c.reviewer || '-'}</td>
+              </tr>
+            `;
+          });
+          
+          tableHTML += '</table>';
+          document.getElementById('completions-data').innerHTML = tableHTML;
+          
+          console.log('annotation_completions 数据:', completions);
+        }
+      }
+      
+      // 2. 查询 videos 表中 is_completed = true 的视频
+      const { data: completedVideos, error: videosError } = await supabase
+        .from('videos')
+        .select('id, name, subject, is_completed, review_completed_at, updated_at')
+        .eq('is_completed', true)
+        .order('updated_at', { ascending: false });
+      
+      if (videosError) {
+        document.getElementById('videos-data').innerHTML = 
+          `<pre class="error">❌ 错误: ${JSON.stringify(videosError, null, 2)}</pre>`;
+      } else {
+        document.getElementById('stat-videos').textContent = completedVideos?.length || 0;
+        
+        if (!completedVideos || completedVideos.length === 0) {
+          document.getElementById('videos-data').innerHTML = 
+            `<p class="warning">⚠️ videos 表中没有 is_completed = true 的视频！</p>`;
+        } else {
+          let tableHTML = `
+            <p class="success">✅ 找到 ${completedVideos.length} 个已完成复检的视频</p>
+            <table>
+              <tr>
+                <th>视频ID</th>
+                <th>视频名称</th>
+                <th>主题</th>
+                <th>review_completed_at</th>
+                <th>updated_at</th>
+              </tr>
+          `;
+          
+          completedVideos.forEach(v => {
+            const reviewTime = v.review_completed_at 
+              ? new Date(v.review_completed_at).toLocaleString('zh-CN')
+              : '<span class="warning">无</span>';
+            const updateTime = v.updated_at 
+              ? new Date(v.updated_at).toLocaleString('zh-CN')
+              : '-';
+            
+            tableHTML += `
+              <tr>
+                <td>${v.id}</td>
+                <td>${v.name}</td>
+                <td>${v.subject || '-'}</td>
+                <td>${reviewTime}</td>
+                <td>${updateTime}</td>
+              </tr>
+            `;
+          });
+          
+          tableHTML += '</table>';
+          document.getElementById('videos-data').innerHTML = tableHTML;
+          
+          console.log('videos 表中已完成的视频:', completedVideos);
+        }
+      }
+      
+      // 3. 统计 annotations 表中的复检状态
+      const { data: reviewedAnnotations, error: annotationsError } = await supabase
+        .from('annotations')
+        .select('video_id, annotator, review_status')
+        .eq('review_status', true);
+      
+      if (annotationsError) {
+        document.getElementById('annotations-stats').innerHTML = 
+          `<pre class="error">❌ 错误: ${JSON.stringify(annotationsError, null, 2)}</pre>`;
+      } else {
+        document.getElementById('stat-annotations').textContent = reviewedAnnotations?.length || 0;
+        
+        if (!reviewedAnnotations || reviewedAnnotations.length === 0) {
+          document.getElementById('annotations-stats').innerHTML = 
+            `<p class="warning">⚠️ annotations 表中没有 review_status = true 的数据！</p>`;
+        } else {
+          // 按视频分组统计
+          const videoStats = new Map();
+          reviewedAnnotations.forEach(a => {
+            if (!videoStats.has(a.video_id)) {
+              videoStats.set(a.video_id, new Set());
+            }
+            videoStats.get(a.video_id).add(a.annotator);
+          });
+          
+          let statsHTML = `
+            <p class="success">✅ 找到 ${reviewedAnnotations.length} 条已复检的标注数据</p>
+            <p class="info">📊 涉及 ${videoStats.size} 个视频</p>
+            <table>
+              <tr>
+                <th>视频ID</th>
+                <th>标注人数</th>
+                <th>已复检标注数</th>
+              </tr>
+          `;
+          
+          Array.from(videoStats.entries()).forEach(([videoId, annotators]) => {
+            const count = reviewedAnnotations.filter(a => a.video_id === videoId).length;
+            statsHTML += `
+              <tr>
+                <td>${videoId}</td>
+                <td>${annotators.size} 位标注人</td>
+                <td>${count} 条</td>
+              </tr>
+            `;
+          });
+          
+          statsHTML += '</table>';
+          document.getElementById('annotations-stats').innerHTML = statsHTML;
+          
+          console.log('annotations 中的复检数据:', reviewedAnnotations);
+        }
+      }
+      
+      // 4. 数据一致性检查
+      let consistencyHTML = '<h3>一致性检查结果：</h3>';
+      
+      // 检查 annotation_completions 和 videos 的一致性
+      if (completions && completedVideos) {
+        const completionVideoIds = new Set(completions.map(c => c.video_id));
+        const videosIds = new Set(completedVideos.map(v => v.id));
+        
+        const inCompletionsButNotInVideos = Array.from(completionVideoIds).filter(id => !videosIds.has(id));
+        const inVideosButNotInCompletions = Array.from(videosIds).filter(id => !completionVideoIds.has(id));
+        
+        if (inCompletionsButNotInVideos.length > 0) {
+          consistencyHTML += `
+            <p class="warning">⚠️ 警告：${inCompletionsButNotInVideos.length} 个视频在 annotation_completions 中有记录，但在 videos 表中 is_completed 不是 true：</p>
+            <pre>${inCompletionsButNotInVideos.join(', ')}</pre>
+          `;
+        }
+        
+        if (inVideosButNotInCompletions.length > 0) {
+          consistencyHTML += `
+            <p class="warning">⚠️ 警告：${inVideosButNotInCompletions.length} 个视频在 videos 表中 is_completed = true，但在 annotation_completions 中没有记录：</p>
+            <pre>${inVideosButNotInCompletions.join(', ')}</pre>
+          `;
+        }
+        
+        if (inCompletionsButNotInVideos.length === 0 && inVideosButNotInCompletions.length === 0) {
+          consistencyHTML += '<p class="success">✅ annotation_completions 和 videos 表的数据一致！</p>';
+        }
+      }
+      
+      document.getElementById('consistency-check').innerHTML = consistencyHTML;
+      
+      console.log('✅ 诊断完成！');
+    }
+
+    // 同步 videos 表的完成状态（基于 annotation_completions）
+    async function syncVideoCompletionStatus() {
+      const resultDiv = document.getElementById('fix-result');
+      resultDiv.innerHTML = '<p class="info">🔄 正在同步视频完成状态...</p>';
+      
+      try {
+        // 1. 获取所有 annotation_completions 记录
+        const { data: completions, error: completionsError } = await supabase
+          .from('annotation_completions')
+          .select('video_id, completed_at, reviewer');
+        
+        if (completionsError) throw completionsError;
+        
+        if (!completions || completions.length === 0) {
+          resultDiv.innerHTML = '<p class="warning">⚠️ annotation_completions 表中没有数据，无法同步。</p>';
+          return;
+        }
+        
+        resultDiv.innerHTML += `<p class="info">📊 找到 ${completions.length} 条完成记录，开始更新 videos 表...</p>`;
+        
+        // 2. 对每个视频，更新 videos 表的 is_completed 和 review_completed_at
+        let successCount = 0;
+        let errorCount = 0;
+        
+        for (const completion of completions) {
+          const { error } = await supabase
+            .from('videos')
+            .update({
+              is_completed: true,
+              review_completed_at: completion.completed_at
+            })
+            .eq('id', completion.video_id);
+          
+          if (error) {
+            console.error(`更新视频 ${completion.video_id} 失败:`, error);
+            errorCount++;
+          } else {
+            successCount++;
+          }
+        }
+        
+        resultDiv.innerHTML += `
+          <p class="success">✅ 同步完成！</p>
+          <p>成功: ${successCount} 个视频</p>
+          <p>失败: ${errorCount} 个视频</p>
+        `;
+        
+        // 重新诊断
+        setTimeout(() => {
+          diagnoseData();
+        }, 1000);
+        
+      } catch (error) {
+        resultDiv.innerHTML += `<p class="error">❌ 同步失败: ${error.message}</p>`;
+        console.error('同步失败:', error);
+      }
+    }
+
+    // 检查并修复 annotations 的 review_status
+    async function checkAndFixReviewStatus() {
+      const resultDiv = document.getElementById('fix-result');
+      resultDiv.innerHTML = '<p class="info">🔍 正在检查 annotations 的复检状态...</p>';
+      
+      try {
+        // 查询所有有 reviewer 字段但 review_status 不是 true 的数据
+        const { data: needFix, error: needFixError } = await supabase
+          .from('annotations')
+          .select('id, video_id, annotator, reviewer, review_status')
+          .not('reviewer', 'is', null)
+          .neq('reviewer', '')
+          .neq('review_status', true);
+        
+        if (needFixError) throw needFixError;
+        
+        if (!needFix || needFix.length === 0) {
+          resultDiv.innerHTML += '<p class="success">✅ 所有有复检人的数据都已正确标记为已复检！</p>';
+          return;
+        }
+        
+        resultDiv.innerHTML += `<p class="warning">⚠️ 找到 ${needFix.length} 条需要修复的数据...</p>`;
+        
+        // 批量更新
+        const { error: updateError } = await supabase
+          .from('annotations')
+          .update({ review_status: true })
+          .not('reviewer', 'is', null)
+          .neq('reviewer', '')
+          .neq('review_status', true);
+        
+        if (updateError) throw updateError;
+        
+        resultDiv.innerHTML += `<p class="success">✅ 已修复 ${needFix.length} 条数据的复检状态！</p>`;
+        
+        // 重新诊断
+        setTimeout(() => {
+          diagnoseData();
+        }, 1000);
+        
+      } catch (error) {
+        resultDiv.innerHTML += `<p class="error">❌ 检查失败: ${error.message}</p>`;
+        console.error('检查失败:', error);
+      }
+    }
+
+    // 页面加载时自动诊断
+    diagnoseData();
+  </script>
+</body>
+</html>
+
+

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查完成时间数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    h1 { color: #333; }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #f5f5f5;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查完成时间数据</h1>
+  
+  <div class="section">
+    <h2>1. annotation_completions 表数据</h2>
+    <div id="completions-data"></div>
+  </div>
+  
+  <div class="section">
+    <h2>2. 已复检视频列表</h2>
+    <div id="reviewed-videos"></div>
+  </div>
+  
+  <div class="section">
+    <h2>3. 完成时间映射</h2>
+    <div id="completion-mapping"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pwufacekikjqcgjptnxh.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3dWZhY2VraWtqcWNnanB0bnhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIxNjkyODAsImV4cCI6MjA0Nzc0NTI4MH0.TRo-RdJEU-0fZ1sImQ6_T1wXFFb1nJTnBPabdXJVHKE';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function checkData() {
+      console.log('开始检查数据...');
+      
+      // 1. 查询 annotation_completions 表
+      const { data: completions, error: completionsError } = await supabase
+        .from('annotation_completions')
+        .select('*')
+        .order('completed_at', { ascending: false })
+        .limit(20);
+      
+      if (completionsError) {
+        document.getElementById('completions-data').innerHTML = 
+          `<pre style="color: red;">错误: ${JSON.stringify(completionsError, null, 2)}</pre>`;
+      } else {
+        document.getElementById('completions-data').innerHTML = 
+          `<p>总数: ${completions?.length || 0} 条</p>
+           <pre>${JSON.stringify(completions, null, 2)}</pre>`;
+      }
+      
+      // 2. 查询已复检的视频
+      const { data: annotations } = await supabase
+        .from('annotations')
+        .select('video_id, review_status, status')
+        .eq('status', true)
+        .eq('review_status', true)
+        .limit(1000);
+      
+      // 统计有哪些视频有已复检数据
+      const reviewedVideoIds = new Set();
+      annotations?.forEach(item => {
+        reviewedVideoIds.add(item.video_id);
+      });
+      
+      document.getElementById('reviewed-videos').innerHTML = 
+        `<p>有已复检数据的视频数量: ${reviewedVideoIds.size}</p>
+         <pre>${JSON.stringify([...reviewedVideoIds].slice(0, 20), null, 2)}</pre>`;
+      
+      // 3. 查询这些视频的完成时间
+      if (reviewedVideoIds.size > 0) {
+        const videoIds = [...reviewedVideoIds].slice(0, 20);
+        const { data: completionTimes } = await supabase
+          .from('annotation_completions')
+          .select('video_id, completed_at')
+          .in('video_id', videoIds)
+          .order('completed_at', { ascending: false });
+        
+        // 构建映射
+        const mapping = new Map();
+        completionTimes?.forEach(item => {
+          if (!mapping.has(item.video_id)) {
+            mapping.set(item.video_id, item.completed_at);
+          }
+        });
+        
+        // 显示映射表
+        let tableHTML = '<table><tr><th>视频ID</th><th>最新完成时间</th></tr>';
+        videoIds.forEach(id => {
+          const time = mapping.get(id) || '无';
+          tableHTML += `<tr><td>${id}</td><td>${time}</td></tr>`;
+        });
+        tableHTML += '</table>';
+        
+        document.getElementById('completion-mapping').innerHTML = 
+          `<p>前20个视频的完成时间映射:</p>${tableHTML}`;
+      }
+    }
+
+    checkData();
+  </script>
+</body>
+</html>
+
+

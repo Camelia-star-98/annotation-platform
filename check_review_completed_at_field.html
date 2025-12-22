@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>检查 videos 表的 review_completed_at 字段</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 { color: #333; }
+    h2 { color: #666; margin-top: 30px; }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      max-height: 500px;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .error { color: red; }
+    .success { color: green; }
+    .warning { color: orange; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+    th {
+      background: #f5f5f5;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 检查 videos 表的 review_completed_at 字段</h1>
+  
+  <div class="section">
+    <h2>1. videos 表中 is_completed = true 的视频</h2>
+    <div id="completed-videos"></div>
+  </div>
+  
+  <div class="section">
+    <h2>2. review_completed_at 字段的数据分布</h2>
+    <div id="field-stats"></div>
+  </div>
+  
+  <div class="section">
+    <h2>3. 详细数据（前20条）</h2>
+    <div id="detailed-data"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pwufacekikjqcgjptnxh.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3dWZhY2VraWtqcWNnanB0bnhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIxNjkyODAsImV4cCI6MjA0Nzc0NTI4MH0.TRo-RdJEU-0fZ1sImQ6_T1wXFFb1nJTnBPabdXJVHKE';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function checkData() {
+      console.log('开始检查数据...');
+      
+      // 1. 查询所有 is_completed = true 的视频
+      const { data: completedVideos, error: completedError } = await supabase
+        .from('videos')
+        .select('id, name, subject, review_completed_at, updated_at, created_at, is_completed')
+        .eq('is_completed', true)
+        .order('updated_at', { ascending: false })
+        .limit(50);
+      
+      if (completedError) {
+        document.getElementById('completed-videos').innerHTML = 
+          `<pre class="error">错误: ${JSON.stringify(completedError, null, 2)}</pre>`;
+        return;
+      }
+      
+      document.getElementById('completed-videos').innerHTML = 
+        `<p class="success">找到 ${completedVideos?.length || 0} 个已完成复检的视频</p>`;
+      
+      if (!completedVideos || completedVideos.length === 0) {
+        document.getElementById('field-stats').innerHTML = 
+          `<p class="warning">没有已完成复检的视频</p>`;
+        return;
+      }
+      
+      // 2. 统计 review_completed_at 字段
+      const withReviewCompletedAt = completedVideos.filter(v => v.review_completed_at).length;
+      const withoutReviewCompletedAt = completedVideos.filter(v => !v.review_completed_at).length;
+      
+      document.getElementById('field-stats').innerHTML = 
+        `<p>总视频数: ${completedVideos.length}</p>
+         <p class="success">有 review_completed_at 的视频: ${withReviewCompletedAt} 个</p>
+         <p class="warning">没有 review_completed_at 的视频: ${withoutReviewCompletedAt} 个</p>`;
+      
+      // 3. 显示详细数据表格
+      let tableHTML = `
+        <table>
+          <tr>
+            <th>视频名称</th>
+            <th>review_completed_at</th>
+            <th>updated_at</th>
+            <th>created_at</th>
+          </tr>
+      `;
+      
+      completedVideos.slice(0, 20).forEach(video => {
+        const reviewTime = video.review_completed_at 
+          ? new Date(video.review_completed_at).toLocaleString('zh-CN')
+          : '<span style="color: red;">无</span>';
+        const updateTime = video.updated_at 
+          ? new Date(video.updated_at).toLocaleString('zh-CN')
+          : '-';
+        const createTime = video.created_at 
+          ? new Date(video.created_at).toLocaleString('zh-CN')
+          : '-';
+        
+        tableHTML += `
+          <tr>
+            <td>${video.name}</td>
+            <td>${reviewTime}</td>
+            <td>${updateTime}</td>
+            <td>${createTime}</td>
+          </tr>
+        `;
+      });
+      
+      tableHTML += '</table>';
+      document.getElementById('detailed-data').innerHTML = tableHTML;
+      
+      // 控制台输出前5条
+      console.log('前5条数据:', completedVideos.slice(0, 5));
+    }
+
+    checkData();
+  </script>
+</body>
+</html>
+
+

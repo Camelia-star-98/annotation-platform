@@ -47,7 +47,6 @@ interface VideoWithAnnotators {
   subject: string;
   annotators: AnnotatorData[];
   reviewCompletedAt?: string; // 复检完成时间
-  updatedAt?: string; // 更新时间（作为备选排序字段）
   annotationFileName?: string; // 标注文件名（从videos表获取）
 }
 
@@ -182,7 +181,7 @@ export default function ReviewSelectPage() {
         // 注意：需要查询 inspector 字段来判断是否已质检，还需要 sentence_no 用于去重
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('id, video_id, sentence_no, annotator, human_annotated_text, status, review_status, reviewer, inspector, updated_at, is_qualified, created_at')
+          .select('id, video_id, sentence_no, annotator, human_annotated_text, status, review_status, reviewer, inspector, is_qualified, created_at')
           .eq('video_id', videoId)
           .not('annotator', 'is', null)
           .neq('annotator', '')
@@ -212,9 +211,9 @@ export default function ReviewSelectPage() {
               // 旧数据有质检状态，当前数据没有，保留旧数据
               // 不做任何操作
             } else {
-              // 都有或都没有质检状态，保留最新的（按 updated_at）
-              const existingTime = existing.updated_at || existing.created_at || '';
-              const currentTime = ann.updated_at || ann.created_at || '';
+              // 都有或都没有质检状态，保留最新的（按 created_at）
+              const existingTime = existing.created_at || '';
+              const currentTime = ann.created_at || '';
               if (currentTime > existingTime) {
                 deduplicatedMap.set(key, ann);
               }
@@ -299,9 +298,9 @@ export default function ReviewSelectPage() {
               if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
                 annotatorData.reviewers.push(ann.reviewer);
               }
-              if (ann.updated_at) {
-                if (!annotatorData.lastReviewTime || ann.updated_at > annotatorData.lastReviewTime) {
-                  annotatorData.lastReviewTime = ann.updated_at;
+              if (ann.created_at) {
+                if (!annotatorData.lastReviewTime || ann.created_at > annotatorData.lastReviewTime) {
+                  annotatorData.lastReviewTime = ann.created_at;
                 }
               }
             } 
@@ -453,10 +452,10 @@ export default function ReviewSelectPage() {
       
       console.log('📊 加载所有已复检视频（is_completed = true 的视频）...');
       
-      // 1. 查询所有标记为已完成的视频（包括标注文件名和更新时间）
+      // 1. 查询所有标记为已完成的视频（包括标注文件名）
       const { data: completedVideos, error: videoError } = await supabase
         .from('videos')
-        .select('id, name, subject, review_completed_at, annotation_file_name, updated_at')
+        .select('id, name, subject, review_completed_at, annotation_file_name')
         .eq('is_completed', true);
       
       if (videoError) {
@@ -483,7 +482,7 @@ export default function ReviewSelectPage() {
         // 🔧 重要：必须包含 sentence_no 和 status 字段，用于去重逻辑和完成状态判断
         const { data: annotations, error } = await supabase
           .from('annotations')
-          .select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, updated_at, is_qualified, created_at, status')
+          .select('video_id, sentence_no, annotator, human_annotated_text, review_status, reviewer, inspector, is_qualified, created_at, status')
           .eq('video_id', video.id)
           .not('annotator', 'is', null)
           .neq('annotator', '')
@@ -513,9 +512,9 @@ export default function ReviewSelectPage() {
               // 旧数据有质检状态，当前数据没有，保留旧数据
               // 不做任何操作
             } else {
-              // 都有或都没有质检状态，保留最新的（按 updated_at）
-              const existingTime = existing.updated_at || existing.created_at || '';
-              const currentTime = ann.updated_at || ann.created_at || '';
+              // 都有或都没有质检状态，保留最新的（按 created_at）
+              const existingTime = existing.created_at || '';
+              const currentTime = ann.created_at || '';
               if (currentTime > existingTime) {
                 deduplicatedMap.set(key, ann);
               }
@@ -584,9 +583,9 @@ export default function ReviewSelectPage() {
               if (ann.reviewer && !annotatorData.reviewers.includes(ann.reviewer)) {
                 annotatorData.reviewers.push(ann.reviewer);
               }
-              if (ann.updated_at) {
-                if (!annotatorData.lastReviewTime || ann.updated_at > annotatorData.lastReviewTime) {
-                  annotatorData.lastReviewTime = ann.updated_at;
+              if (ann.created_at) {
+                if (!annotatorData.lastReviewTime || ann.created_at > annotatorData.lastReviewTime) {
+                  annotatorData.lastReviewTime = ann.created_at;
                 }
               }
             } 
@@ -614,22 +613,16 @@ export default function ReviewSelectPage() {
           subject: video.subject || '未知',
           annotators: allAnnotators,
           reviewCompletedAt: video.review_completed_at,
-          updatedAt: video.updated_at, // 🆕 添加更新时间作为备选排序字段
-          annotationFileName: video.annotation_file_name // 🆕 添加标注文件名
+          annotationFileName: video.annotation_file_name
         };
       });
       
       const videoStatsResults = await Promise.all(videoStatsPromises);
       const result = (videoStatsResults.filter(v => v !== null) as VideoWithAnnotators[])
         .sort((a, b) => {
-          // 🆕 按复检完成时间降序排序（最新完成的在最上面）
-          // 如果 review_completed_at 为空，则使用 updated_at 作为备选
-          const timeA = a.reviewCompletedAt 
-            ? new Date(a.reviewCompletedAt).getTime() 
-            : (a.updatedAt ? new Date(a.updatedAt).getTime() : 0);
-          const timeB = b.reviewCompletedAt 
-            ? new Date(b.reviewCompletedAt).getTime() 
-            : (b.updatedAt ? new Date(b.updatedAt).getTime() : 0);
+          // 按复检完成时间降序排序（最新完成的在最上面）
+          const timeA = a.reviewCompletedAt ? new Date(a.reviewCompletedAt).getTime() : 0;
+          const timeB = b.reviewCompletedAt ? new Date(b.reviewCompletedAt).getTime() : 0;
           
           return timeB - timeA; // 降序排序，最新完成的在最上面
         });

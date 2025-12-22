@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>调试标注数据</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      padding: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+    h1 { color: #333; }
+    h2 { color: #666; margin-top: 30px; }
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      border-radius: 4px;
+      overflow-x: auto;
+      max-height: 400px;
+    }
+    .section {
+      margin: 20px 0;
+      padding: 15px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+    .error { color: red; }
+    .success { color: green; }
+    .warning { color: orange; }
+  </style>
+</head>
+<body>
+  <h1>🔍 调试标注数据查询</h1>
+  
+  <div class="section">
+    <h2>1. 查询所有标注数据（前100条）</h2>
+    <div id="all-annotations"></div>
+  </div>
+  
+  <div class="section">
+    <h2>2. 筛选条件：status === true</h2>
+    <div id="status-true"></div>
+  </div>
+  
+  <div class="section">
+    <h2>3. 筛选条件：status === true AND review_status === true</h2>
+    <div id="both-true"></div>
+  </div>
+  
+  <div class="section">
+    <h2>4. 按视频ID分组统计</h2>
+    <div id="video-stats"></div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = 'https://pwufacekikjqcgjptnxh.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB3dWZhY2VraWtqcWNnanB0bnhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzIxNjkyODAsImV4cCI6MjA0Nzc0NTI4MH0.TRo-RdJEU-0fZ1sImQ6_T1wXFFb1nJTnBPabdXJVHKE';
+    
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    async function debugData() {
+      console.log('开始调试数据...');
+      
+      // 1. 查询所有标注数据（前100条）
+      const { data: allData, error: allError } = await supabase
+        .from('annotations')
+        .select('video_id, annotator, review_status, status')
+        .not('annotator', 'is', null)
+        .neq('annotator', '')
+        .neq('annotator', 'unknown')
+        .limit(100);
+      
+      if (allError) {
+        document.getElementById('all-annotations').innerHTML = 
+          `<pre class="error">错误: ${JSON.stringify(allError, null, 2)}</pre>`;
+        return;
+      }
+      
+      document.getElementById('all-annotations').innerHTML = 
+        `<p class="success">总数: ${allData?.length || 0} 条</p>
+         <p>status类型分布: ${JSON.stringify(getStatusDistribution(allData), null, 2)}</p>
+         <p>review_status类型分布: ${JSON.stringify(getReviewStatusDistribution(allData), null, 2)}</p>
+         <pre>${JSON.stringify(allData?.slice(0, 10), null, 2)}</pre>`;
+      
+      // 2. 筛选 status === true
+      const statusTrueData = allData?.filter(item => item.status === true) || [];
+      document.getElementById('status-true').innerHTML = 
+        `<p class="success">筛选后数量: ${statusTrueData.length} 条</p>
+         <pre>${JSON.stringify(statusTrueData.slice(0, 10), null, 2)}</pre>`;
+      
+      // 3. 筛选 status === true AND review_status === true
+      const bothTrueData = statusTrueData.filter(item => item.review_status === true);
+      document.getElementById('both-true').innerHTML = 
+        `<p class="success">筛选后数量: ${bothTrueData.length} 条</p>
+         <pre>${JSON.stringify(bothTrueData.slice(0, 10), null, 2)}</pre>`;
+      
+      // 4. 按视频ID分组统计
+      const videoStats = new Map();
+      bothTrueData.forEach(item => {
+        if (!videoStats.has(item.video_id)) {
+          videoStats.set(item.video_id, new Set());
+        }
+        videoStats.get(item.video_id).add(item.annotator);
+      });
+      
+      const statsArray = Array.from(videoStats.entries()).map(([videoId, annotators]) => ({
+        videoId,
+        annotatorCount: annotators.size
+      }));
+      
+      document.getElementById('video-stats').innerHTML = 
+        `<p class="success">有已复检数据的视频数量: ${statsArray.length}</p>
+         <pre>${JSON.stringify(statsArray.slice(0, 20), null, 2)}</pre>`;
+    }
+    
+    function getStatusDistribution(data) {
+      const dist = {};
+      data?.forEach(item => {
+        const type = typeof item.status;
+        const value = String(item.status);
+        const key = `${type}: ${value}`;
+        dist[key] = (dist[key] || 0) + 1;
+      });
+      return dist;
+    }
+    
+    function getReviewStatusDistribution(data) {
+      const dist = {};
+      data?.forEach(item => {
+        const type = typeof item.review_status;
+        const value = String(item.review_status);
+        const key = `${type}: ${value}`;
+        dist[key] = (dist[key] || 0) + 1;
+      });
+      return dist;
+    }
+
+    debugData();
+  </script>
+</body>
+</html>
+
+

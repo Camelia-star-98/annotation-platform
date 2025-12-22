@@ -1,11 +1,12 @@
 -- ===================================================================
--- 创建或替换 RPC 函数：get_all_annotations（过滤空值标注人）
+-- 修复 RPC 函数：移除 updated_at 字段引用
+-- 原因：annotations 表已经没有 updated_at 字段
 -- ===================================================================
 
--- 1. 先删除旧函数（如果存在）
+-- 1. 先删除旧函数
 DROP FUNCTION IF EXISTS get_all_annotations();
 
--- 2. 创建新的 RPC 函数
+-- 2. 创建新的 RPC 函数（不包含 updated_at）
 CREATE OR REPLACE FUNCTION get_all_annotations()
 RETURNS TABLE (
   id text,
@@ -53,25 +54,27 @@ AS $$
   ORDER BY created_at DESC;
 $$;
 
--- 3. 授权给 anon 和 authenticated 角色（如果需要）
+-- 3. 授权给 anon 和 authenticated 角色
 GRANT EXECUTE ON FUNCTION get_all_annotations() TO anon;
 GRANT EXECUTE ON FUNCTION get_all_annotations() TO authenticated;
 
--- 4. 测试查询（统计总数）
+-- 4. 测试查询
 SELECT 
-  '=== 测试 RPC 函数 ===' as 说明,
+  '=== 测试修复后的 RPC 函数 ===' as 说明,
   COUNT(*) as 总数,
   COUNT(DISTINCT video_id) as 视频数,
   COUNT(DISTINCT annotator) as 标注人数
 FROM get_all_annotations();
 
--- 5. 测试查询（查看前10条）
+-- 5. 查看前5条数据确认
 SELECT 
-  '=== 前10条数据 ===' as 说明,
+  '=== 前5条数据 ===' as 说明,
   video_id,
   sentence_no,
   annotator,
-  LEFT(human_annotated_text, 30) as 标注文本前30字
+  created_at,
+  LEFT(human_annotated_text, 30) as 标注文本
 FROM get_all_annotations()
-LIMIT 10;
+LIMIT 5;
+
 
