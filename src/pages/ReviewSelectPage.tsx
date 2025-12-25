@@ -607,6 +607,14 @@ export default function ReviewSelectPage() {
         // 显示所有标注人的信息（不管是否完成复检）
         const allAnnotators = Array.from(annotatorMap.values());
         
+        // 🔧 修复：如果所有标注人的 reviewedCount 都为 0，说明这个视频被错误地标记为已完成
+        // 不应该出现在"已复检"标签页中
+        const hasAnyReviewed = allAnnotators.some(ann => ann.reviewedCount > 0);
+        if (!hasAnyReviewed) {
+          console.log(`⚠️ 视频 ${video.name} (ID: ${video.id}) 被标记为 is_completed=true，但没有任何已复检数据，跳过显示`);
+          return null;
+        }
+        
         return { 
           videoId: video.id,
           videoName: video.name,
