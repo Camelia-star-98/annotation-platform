@@ -9,3 +9,4 @@ WHERE table_name = 'videos'
 ORDER BY ordinal_position;
 
 
+
